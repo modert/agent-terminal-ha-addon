@@ -1,0 +1,24 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+# Ingress web terminal. HA authenticates the Ingress session, so ttyd itself
+# runs without credentials but is only reachable through Ingress. The command
+# runs inside a persistent tmux session shared with SSH logins.
+WEB_CMD="$(jq -r '.web_command // "claude"' /data/options.json)"
+export CLAUDE_CONFIG_DIR=/data/claude/.claude
+export TERM=xterm-256color
+if [ -r /run/s6/container_environment/SUPERVISOR_TOKEN ]; then
+    SUPERVISOR_TOKEN="$(cat /run/s6/container_environment/SUPERVISOR_TOKEN)"
+    export SUPERVISOR_TOKEN
+fi
+
+cd /homeassistant 2>/dev/null || cd /root
+
+echo "[claude-code] web terminal (ttyd) -> tmux 'claude' running: ${WEB_CMD}"
+exec ttyd \
+    --port 8099 \
+    --interface 0.0.0.0 \
+    --writable \
+    --client-option fontSize=14 \
+    --client-option 'rendererType=canvas' \
+    --client-option 'titleFixed=Claude Code' \
+    /usr/local/bin/claude-session "${WEB_CMD}"
