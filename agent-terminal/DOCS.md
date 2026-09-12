@@ -54,6 +54,8 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
   `ha_call_service`, `ha_render_template`, `ha_list_services`,
   `ha_get_error_log`. No token to configure - it uses the add-on's own
   Supervisor token.
+- **GitHub CLI (`gh`)** - run `gh auth login` once; the login is kept in
+  `/data/gh`, and git uses it for HTTPS pushes/pulls to GitHub.
 - **`ha` CLI** on PATH for Supervisor-level operations (`ha core restart`, etc.).
 
 ## Options

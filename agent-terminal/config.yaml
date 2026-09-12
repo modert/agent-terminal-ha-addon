@@ -1,5 +1,5 @@
 name: "Agent Terminal"
-version: "2.0.0"
+version: "2.1.0"
 slug: "agent_terminal"
 description: "AI coding-agent CLI (Claude Code for now) on the HA host - persistent login, mobile-friendly web terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"
