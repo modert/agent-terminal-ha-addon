@@ -1,0 +1,5 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+# If sshd dies, take the whole add-on down so Supervisor restarts it cleanly.
+echo "[agent-terminal] sshd exited ($1) - halting"
+exec /run/s6/basedir/bin/halt

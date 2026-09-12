@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+echo "[agent-terminal] starting sshd"
+exec /usr/sbin/sshd -D -e

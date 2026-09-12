@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- maximum-scale/user-scalable: a drag on the terminal must scroll, never zoom.
+     interactive-widget=resizes-content: Chrome shrinks the page instead of
+     scrolling it when the on-screen keyboard opens. iOS ignores it - the
+     visualViewport handler below covers that case. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="color-scheme" content="dark">
+<title>Agent Terminal</title>
+<style>
+/*{{XTERM_CSS}}*/
+
+:root {
+  --bg: #0f1115;
+  --fg: #e6e6e6;
+  --bar: #181b22;
+  --key: #262a33;
+  --key-down: #3d4350;
+  --line: #2a2f3a;
+  --accent: #d97757;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg); color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%;
+}
+body { position: fixed; inset: 0; }
+
+/* Height + offset are driven by visualViewport, so the terminal always sits in
+   the part of the screen the keyboard isn't covering. */
+#app {
+  position: fixed; left: 0; top: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+}
+#term { flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; touch-action: none; }
+.xterm { height: 100%; }
+/* iOS zooms the page when focusing an input under 16px. xterm's hidden input
+   inherits the terminal font size, so pin it. */
+.xterm-helper-textarea { font-size: 16px !important; }
+
+#bar {
+  flex: 0 0 auto; background: var(--bar); border-top: 1px solid var(--line);
+  padding-bottom: var(--safe-b);
+  user-select: none; -webkit-user-select: none;
+}
+#bar[hidden] { display: none; }
+.row { display: flex; gap: 4px; padding: 4px; }
+.row[hidden] { display: none; }
+.k {
+  flex: 1 1 0; min-width: 0; height: 34px; padding: 0;
+  border: 0; border-radius: 7px; background: var(--key); color: var(--fg);
+  font: inherit; font-size: 13px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.k:active, .k.down { background: var(--key-down); }
+.k.on { background: var(--key-down); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+#overlay {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; text-align: center; font-size: 15px; line-height: 1.5;
+  background: rgba(15, 17, 21, 0.88); color: var(--fg);
+}
+#overlay[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="term"></div>
+  <div id="bar" hidden>
+    <div class="row" id="row1"></div>
+    <div class="row" id="row2"></div>
+  </div>
+  <div id="overlay" hidden><div id="overlay-msg"></div></div>
+</div>
+
+<script>/*{{XTERM_JS}}*/</script>
+<script>/*{{FIT_JS}}*/</script>
+<script>
+/* Mobile-friendly ttyd client for the Agent Terminal add-on.
+ *
+ * Speaks ttyd's websocket protocol directly (server: '0' output, '1' title,
+ * '2' preferences; client: '0' input, '1' resize) so the page can own its own
+ * layout, on-screen keys and touch scrolling.
+ */
+(function () {
+  'use strict';
+
+  var base     = location.pathname.replace(/\/+$/, '');
+  var wsUrl    = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + base + '/ws' + location.search;
+  var tokenUrl = location.protocol + '//' + location.host + base + '/token';
+
+  var OUTPUT = '0', TITLE = '1', PREFS = '2';
+  var INPUT  = '0', RESIZE = '1';
+
+  var enc = new TextEncoder();
+  var dec = new TextDecoder();
+
+  var app     = document.getElementById('app');
+  var termEl  = document.getElementById('term');
+  var bar     = document.getElementById('bar');
+  var row1El  = document.getElementById('row1');
+  var row2El  = document.getElementById('row2');
+  var overlay = document.getElementById('overlay');
+  var overlayMsg = document.getElementById('overlay-msg');
+
+  // ---------------------------------------------------------------- storage
+  var LS = 'cc-mobile:';
+  function lsGet(k, d) { try { var v = localStorage.getItem(LS + k); return v === null ? d : v; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(LS + k, v); } catch (e) {} }
+
+  var userFont = parseInt(lsGet('font', ''), 10) || 0;
+
+  // --------------------------------------------------------------- terminal
+  var term = new Terminal({
+    cursorBlink: true,
+    fontSize: userFont || 14,
+    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+    scrollback: 5000,
+    macOptionIsMeta: true,
+    allowProposedApi: true,
+    theme: {
+      background: '#0f1115', foreground: '#e6e6e6',
+      cursor: '#d97757', cursorAccent: '#0f1115', selectionBackground: '#3d4350'
+    }
+  });
+  var fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(termEl);
+
+  // --------------------------------------------------------------- overlay
+  function showOverlay(msg) { overlayMsg.textContent = msg; overlay.hidden = false; }
+  function hideOverlay() { overlay.hidden = true; }
+
+  // ------------------------------------------------------------- websocket
+  var sock = null, opened = false, retry = 500;
+
+  function connect() {
+    showOverlay('Connecting…');
+    fetch(tokenUrl, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { token: '' }; })
+      .then(function (j) { openSocket((j && j.token) || ''); })
+      .catch(function () { scheduleReconnect(); });
+  }
+
+  function scheduleReconnect() {
+    showOverlay('Disconnected — reconnecting…');
+    setTimeout(connect, retry);
+    retry = Math.min(retry * 2, 8000);
+  }
+
+  function openSocket(token) {
+    var s;
+    try { s = new WebSocket(wsUrl, ['tty']); } catch (e) { scheduleReconnect(); return; }
+    sock = s;
+    s.binaryType = 'arraybuffer';
+
+    s.onopen = function () {
+      retry = 500;
+      hideOverlay();
+      s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
+      if (opened) { term.reset(); }
+      opened = true;
+      doFit();
+      term.focus();
+    };
+
+    s.onmessage = function (ev) {
+      var buf = typeof ev.data === 'string' ? enc.encode(ev.data) : new Uint8Array(ev.data);
+      if (!buf.length) return;
+      var cmd = String.fromCharCode(buf[0]);
+      var body = buf.subarray(1);
+      if (cmd === OUTPUT) term.write(body);
+      else if (cmd === TITLE) document.title = dec.decode(body);
+      else if (cmd === PREFS) applyPrefs(dec.decode(body));
+    };
+
+    s.onclose = function () { if (sock === s) { sock = null; scheduleReconnect(); } };
+    s.onerror = function () {};
+  }
+
+  function send(data) {
+    if (sock && sock.readyState === WebSocket.OPEN) sock.send(enc.encode(INPUT + data));
+  }
+  function sendResize() {
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(enc.encode(RESIZE + JSON.stringify({ columns: term.cols, rows: term.rows })));
+    }
+  }
+
+  term.onResize(sendResize);
+  term.onData(function (d) { send(applyMods(d)); });
+  term.onBinary(function (d) {
+    if (!sock || sock.readyState !== WebSocket.OPEN) return;
+    var str = INPUT + d, u = new Uint8Array(str.length);
+    for (var i = 0; i < str.length; i++) u[i] = str.charCodeAt(i) & 255;
+    sock.send(u);
+  });
+
+  // ttyd pushes --client-option values here. Only options xterm actually
+  // understands are applied, and a font size the user picked on this device wins.
+  var PREF_KEYS = ['fontSize', 'fontFamily', 'fontWeight', 'fontWeightBold', 'lineHeight',
+                   'letterSpacing', 'cursorBlink', 'cursorStyle', 'cursorWidth',
+                   'scrollback', 'tabStopWidth', 'macOptionIsMeta', 'theme'];
+  function applyPrefs(text) {
+    var p;
+    try { p = JSON.parse(text); } catch (e) { return; }
+    PREF_KEYS.forEach(function (k) {
+      if (!(k in p)) return;
+      if (k === 'fontSize' && userFont) return;
+      try { term.options[k] = p[k]; } catch (e) {}
+    });
+    scheduleFit();
+  }
+
+  // ------------------------------------------------------- sticky modifiers
+  var mods = { ctrl: false, alt: false };
+  var modBtns = {};
+
+  function setMod(name, on) {
+    mods[name] = on;
+    if (modBtns[name]) modBtns[name].classList.toggle('on', on);
+  }
+  function clearMods() { setMod('ctrl', false); setMod('alt', false); }
+
+  function applyMods(d) {
+    // Anything longer than one character is an escape sequence or a mouse
+    // report, not a keystroke: pass it through, leave the modifier armed.
+    if ((!mods.ctrl && !mods.alt) || d.length !== 1) return d;
+    var out = d;
+    if (mods.ctrl) {
+      var c = d.toUpperCase().charCodeAt(0);
+      if (c >= 64 && c <= 95) out = String.fromCharCode(c - 64);   // @ A-Z [ \ ] ^ _
+      else if (c === 32) out = '\x00';
+      else if (d === '?') out = '\x7f';
+    }
+    if (mods.alt) out = '\x1b' + out;
+    clearMods();
+    return out;
+  }
+
+  // ----------------------------------------------------------- scrolling
+  // Claude Code (and anything else that turns on mouse tracking) scrolls on
+  // wheel events, which a touchscreen never produces - that is why long output
+  // is unreachable on a phone. Synthesising a wheel event lets xterm route it
+  // the same way it routes a real one: as a mouse report when the app asked for
+  // mouse tracking, as arrow keys on an alternate screen that didn't, and as a
+  // plain scrollback scroll otherwise.
+  function wheelOnce(up) {
+    var el = term.element;
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    var x = r.left + r.width / 2, y = r.top + r.height / 2;
+    var target = document.elementFromPoint(x, y);
+    if (!target || !el.contains(target)) target = el;
+    target.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: up ? -1 : 1, deltaX: 0, deltaMode: 1,   // 1 = DOM_DELTA_LINE
+      clientX: x, clientY: y,
+      bubbles: true, cancelable: true
+    }));
+  }
+  function scrollLines(n) {                            // n < 0 = back in history
+    var up = n < 0, count = Math.min(Math.abs(n), 200);
+    for (var i = 0; i < count; i++) wheelOnce(up);
+  }
+  function page() { return Math.max(3, term.rows - 2); }
+
+  function cellHeight() {
+    var el = term.element;
+    var h = el ? el.clientHeight : 0;
+    return (h > 0 && term.rows > 0) ? (h / term.rows) : 18;
+  }
+
+  // Drag anywhere on the terminal to scroll. Listeners are in the capture
+  // phase so a real scroll gesture never reaches xterm's own touch handling,
+  // while a tap still falls through to it and opens the keyboard.
+  var tY = null, tAcc = 0, tScrolling = false;
+
+  termEl.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) { tY = null; return; }
+    tY = e.touches[0].clientY; tAcc = 0; tScrolling = false;
+  }, { capture: true, passive: true });
+
+  termEl.addEventListener('touchmove', function (e) {
+    if (tY === null || e.touches.length !== 1) return;
+    var y = e.touches[0].clientY, dy = tY - y;
+    if (!tScrolling && Math.abs(dy) < 8) return;       // let short taps be taps
+    tScrolling = true;
+    e.preventDefault();
+    e.stopPropagation();
+    tY = y;
+    tAcc += dy;
+    var cell = cellHeight();
+    var lines = (tAcc / cell) | 0;
+    if (lines) { tAcc -= lines * cell; scrollLines(lines); }
+  }, { capture: true, passive: false });
+
+  function endTouch(e) {
+    if (tScrolling) e.stopPropagation();
+    tY = null; tScrolling = false;
+  }
+  termEl.addEventListener('touchend', endTouch, { capture: true, passive: true });
+  termEl.addEventListener('touchcancel', endTouch, { capture: true, passive: true });
+
+  // --------------------------------------------------------------- actions
+  function key(seq) { send(applyMods(seq)); }
+
+  function arrow(letter) {
+    var m = 1 + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
+    var seq = m === 1 ? '\x1b[' + letter : '\x1b[1;' + m + letter;
+    clearMods();
+    send(seq);
+  }
+
+  function setFont(delta) {
+    var size = Math.max(8, Math.min(28, (term.options.fontSize || 14) + delta));
+    term.options.fontSize = size;
+    userFont = size;
+    lsSet('font', String(size));
+    doFit();
+  }
+
+  function toggleKeyboard() {
+    var ta = termEl.querySelector('.xterm-helper-textarea');
+    if (ta && document.activeElement === ta) ta.blur();
+    else term.focus();
+  }
+
+  function toggleRow2() {
+    var hide = !row2El.hidden;
+    row2El.hidden = hide;
+    lsSet('row2', hide ? '0' : '1');
+    layout();
+  }
+
+  // ------------------------------------------------------------- on-screen keys
+  var ROW1 = [
+    { l: 'Esc',  t: 'Escape',              go: function () { key('\x1b'); } },
+    { l: '⇥', t: 'Tab',               go: function () { key('\t'); } },
+    { l: '⇧⇥', t: 'Shift+Tab',   go: function () { key('\x1b[Z'); } },
+    { l: '←', t: 'Left',  rep: true,  go: function () { arrow('D'); } },
+    { l: '↑', t: 'Up',    rep: true,  go: function () { arrow('A'); } },
+    { l: '↓', t: 'Down',  rep: true,  go: function () { arrow('B'); } },
+    { l: '→', t: 'Right', rep: true,  go: function () { arrow('C'); } },
+    { l: '⇞', t: 'Scroll up a page',   rep: true, go: function () { scrollLines(-page()); } },
+    { l: '⇟', t: 'Scroll down a page', rep: true, go: function () { scrollLines(page()); } },
+    { l: '⋯', t: 'More keys',         go: toggleRow2 }
+  ];
+
+  var ROW2 = [
+    { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
+    { l: 'Alt',  t: 'Alt (applies to the next key)',  mod: 'alt',  go: function () { setMod('alt', !mods.alt); } },
+    { l: '^C',   t: 'Ctrl+C',       go: function () { clearMods(); send('\x03'); } },
+    { l: '⌫', t: 'Backspace', rep: true, go: function () { key('\x7f'); } },
+    { l: '⇱', t: 'Home',       go: function () { key('\x1b[H'); } },
+    { l: '⇲', t: 'End',        go: function () { key('\x1b[F'); } },
+    { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
+    { l: 'A+',   t: 'Larger text',  go: function () { setFont(1); } },
+    { l: '⌨', t: 'Show / hide the keyboard', go: toggleKeyboard }
+  ];
+
+  function buildKey(spec, parent) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'k';
+    b.textContent = spec.l;
+    b.title = spec.t;
+    b.setAttribute('aria-label', spec.t);
+
+    var holdTimer = null, repeatTimer = null;
+
+    function stop() {
+      clearTimeout(holdTimer); clearInterval(repeatTimer);
+      holdTimer = repeatTimer = null;
+      b.classList.remove('down');
+    }
+
+    b.addEventListener('pointerdown', function (e) {
+      e.preventDefault();               // never move focus - keeps the keyboard up
+      b.classList.add('down');
+      try { b.setPointerCapture(e.pointerId); } catch (err) {}
+      spec.go();
+      if (spec.rep) {
+        holdTimer = setTimeout(function () {
+          repeatTimer = setInterval(spec.go, 55);
+        }, 380);
+      }
+    });
+    ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'].forEach(function (ev) {
+      b.addEventListener(ev, stop);
+    });
+
+    if (spec.mod) modBtns[spec.mod] = b;
+    parent.appendChild(b);
+  }
+
+  ROW1.forEach(function (s) { buildKey(s, row1El); });
+  ROW2.forEach(function (s) { buildKey(s, row2El); });
+  row2El.hidden = lsGet('row2', '1') !== '1';
+
+  // The bar only earns its screen space on touch devices; a desktop keyboard
+  // already has every key on it.
+  var touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  var force = /[?&]keys=(\d)/.exec(location.search);
+  bar.hidden = force ? force[1] === '0' : !touch;
+
+  // ---------------------------------------------------------------- layout
+  var vv = window.visualViewport;
+  var fitTimer = null, maxH = 0;
+  // ?debug=1 shows the viewport numbers the layout is working from.
+  var debug = null;
+  if (/[?&]debug=1/.test(location.search)) {
+    debug = document.createElement('div');
+    debug.style.cssText = 'position:absolute;top:0;right:0;z-index:9;font:11px monospace;background:#000c;color:#0f0;padding:2px 4px;pointer-events:none';
+    app.appendChild(debug);
+  }
+
+  function doFit() {
+    try { fitAddon.fit(); } catch (e) {}
+  }
+  function scheduleFit() {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(doFit, 60);
+  }
+
+  // The Ingress panel lives in an iframe inside the HA frontend (same origin).
+  // The on-screen keyboard shrinks the *top* window's visual viewport, not the
+  // iframe's, so measure how much of our frame is actually visible up there.
+  function hostTop() {
+    try { return (window.top !== window && window.frameElement) ? window.top : null; }
+    catch (e) { return null; }
+  }
+  function frameVisible() {
+    var top = hostTop();
+    if (!top || !top.visualViewport) return null;
+    try {
+      // Frame position in the top window's layout coordinates (walks nested frames).
+      var y = 0, w = window, fh = window.innerHeight;
+      while (w !== top && w.frameElement) {
+        var r = w.frameElement.getBoundingClientRect();
+        var cs = w.parent.getComputedStyle(w.frameElement);
+        y += r.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0);
+        w = w.parent;
+      }
+      var tv = top.visualViewport;
+      var visTop = Math.max(y, tv.offsetTop);
+      var visBottom = Math.min(y + fh, tv.offsetTop + tv.height);
+      return { top: Math.max(0, visTop - y), height: Math.max(80, visBottom - visTop) };
+    } catch (e) { return null; }
+  }
+
+  function layout() {
+    var h = vv ? vv.height : window.innerHeight;
+    var top = vv ? vv.offsetTop : 0;
+    var host = frameVisible();
+    if (host && host.height < h) { h = host.height; top = host.top; }
+    if (h > maxH) maxH = h;
+    if (debug) debug.textContent = 'inner ' + window.innerHeight + ' vv ' + (vv ? Math.round(vv.height) : '-') +
+      ' host ' + (host ? Math.round(host.height) + '@' + Math.round(host.top) : '-') + ' -> ' + Math.round(h);
+    app.style.height = h + 'px';
+    app.style.transform = top ? 'translateY(' + top + 'px)' : '';
+    // Drop the home-indicator gutter while the keyboard is covering it anyway.
+    var keyboardUp = (maxH - h) > 120;
+    document.documentElement.style.setProperty(
+      '--safe-b', keyboardUp ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+    scheduleFit();
+  }
+
+  if (vv) {
+    vv.addEventListener('resize', layout);
+    vv.addEventListener('scroll', layout);
+  }
+  var hostWin = hostTop();
+  if (hostWin) {
+    try {
+      if (hostWin.visualViewport) {
+        hostWin.visualViewport.addEventListener('resize', layout);
+        hostWin.visualViewport.addEventListener('scroll', layout);
+      }
+      hostWin.addEventListener('resize', layout);
+    } catch (e) {}
+  }
+  // Some WebViews report the keyboard late; re-measure around focus changes.
+  termEl.addEventListener('focusin', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
+  termEl.addEventListener('focusout', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', function () {
+    maxH = 0;
+    setTimeout(layout, 100);
+    setTimeout(layout, 400);
+  });
+  // iOS still nudges the document when the keyboard opens; snap it back.
+  window.addEventListener('scroll', function () {
+    if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
+  });
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+
+  overlay.addEventListener('click', function () { retry = 500; connect(); });
+
+  layout();
+  doFit();
+  connect();
+})();
+</script>
+</body>
+</html>
