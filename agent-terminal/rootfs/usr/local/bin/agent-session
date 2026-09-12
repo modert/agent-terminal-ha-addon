@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Attach to the shared persistent tmux session "agent", creating it first if
+# needed. The session is created *detached* so it exists independently of any
+# client - it survives browser refresh, SSH disconnect and network drops.
+# (A full add-on restart still starts fresh; the agent's *login* persists.)
+#
+# Usage: agent-session [command]   (default: the configured agent's CLI)
+# `claude-session` is kept as an alias for existing habits and scripts.
+set -uo pipefail
+
+# shellcheck source=/usr/local/lib/agent.sh
+. /usr/local/lib/agent.sh
+if [ -z "${SUPERVISOR_TOKEN:-}" ] && [ -r /run/s6/container_environment/SUPERVISOR_TOKEN ]; then
+    SUPERVISOR_TOKEN="$(cat /run/s6/container_environment/SUPERVISOR_TOKEN)"
+    export SUPERVISOR_TOKEN
+fi
+
+SESSION="agent"
+START_CMD="${1:-${AGENT_COMMAND}}"
+
+if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
+    cd /homeassistant 2>/dev/null || cd /root
+    tmux new-session -d -s "${SESSION}" "${START_CMD}"
+fi
+
+# Attach if we have a terminal; otherwise the detached session just keeps running.
+if [ -t 1 ]; then
+    exec tmux attach-session -t "${SESSION}"
+fi
+echo "agent-session: '${SESSION}' is running detached (no TTY here to attach to)." >&2
+echo "Open the sidebar panel, or 'ssh -t ... agent-session', to attach." >&2

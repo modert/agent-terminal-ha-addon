@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Build time: install agent CLIs into the image.
+# Usage: agent-install claude [other-adapter ...]
+set -euo pipefail
+for name in "$@"; do
+    adapter="/opt/agents/${name}.sh"
+    [ -r "${adapter}" ] || { echo "agent-install: no adapter ${adapter}" >&2; exit 1; }
+    (
+        # shellcheck source=/dev/null
+        . "${adapter}"
+        echo "[agent-install] ${name}: ${AGENT_TITLE}"
+        agent_install
+    )
+done

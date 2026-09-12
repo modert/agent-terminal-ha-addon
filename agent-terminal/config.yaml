@@ -1,0 +1,52 @@
+name: "Agent Terminal"
+version: "1.3.0"
+# Kept from the add-on's Claude-only days: changing the slug makes HA treat it
+# as a new add-on (fresh /data, so every agent login is lost).
+slug: "claude_code"
+description: "AI coding-agent CLI (Claude Code for now) on the HA host - persistent login, mobile-friendly web terminal + SSH"
+url: "https://github.com/modert/agent-terminal-ha-addon"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:robot-happy-outline"
+panel_title: "Agent Terminal"
+hassio_api: true
+hassio_role: manager
+homeassistant_api: true
+host_network: false
+apparmor: false
+map:
+  - "homeassistant_config:rw"
+  - "addons:rw"
+  - "share:rw"
+  - "ssl:ro"
+  - "backup:rw"
+  - "media:rw"
+ports:
+  "2202/tcp": 2202
+ports_description:
+  "2202/tcp": "SSH - point VS Code Remote-SSH at <ha-host>:2202"
+options:
+  agent: claude
+  ssh_port: 2202
+  web_command: ""
+  mobile_ui: true
+  git_user_name: ""
+  git_user_email: ""
+  # Add your own SSH public key(s) here after install, e.g.:
+  #   - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... you@yourlaptop"
+  authorized_keys: []
+schema:
+  agent: "list(claude)"
+  ssh_port: "port"
+  web_command: "str?"
+  mobile_ui: "bool?"
+  git_user_name: "str?"
+  git_user_email: "str?"
+  authorized_keys:
+    - "str"
