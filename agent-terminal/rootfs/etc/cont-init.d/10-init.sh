@@ -122,6 +122,22 @@ GIT_EMAIL="$(jq -r '.git_user_email // empty' "${OPTIONS}")"
 git config --system --add safe.directory '*' || true
 
 # ---------------------------------------------------------------------------
+# GitHub CLI: keep `gh auth login` across restarts (its config lives in
+# /data/gh) and let git push/pull over HTTPS with that login.
+# ---------------------------------------------------------------------------
+mkdir -p /data/gh /root/.config
+if [ -d /root/.config/gh ] && [ ! -L /root/.config/gh ]; then
+    cp -an /root/.config/gh/. /data/gh/ && rm -rf /root/.config/gh
+fi
+chmod 700 /data/gh             # after the copy - cp -a carries the source dir's mode
+ln -sfn /data/gh /root/.config/gh
+if command -v gh >/dev/null 2>&1; then
+    git config --system --unset-all credential.https://github.com.helper || true
+    git config --system --add credential.https://github.com.helper ''
+    git config --system --add credential.https://github.com.helper '!gh auth git-credential'
+fi
+
+# ---------------------------------------------------------------------------
 # Register the built-in Home Assistant MCP server with the agent (idempotent;
 # adapters never clobber a config file they can't parse).
 # ---------------------------------------------------------------------------

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0
+- GitHub CLI (`gh`) is installed in the image.
+- `gh auth login` now survives restarts and updates: its config is kept in
+  `/data/gh`, and git is set up at boot to use it for github.com over HTTPS.
+- The one-time import also brings over a `gh/` folder, so an exported gh
+  login carries across the slug change.
+
 ## 2.0.0
 - **Breaking:** slug is now `agent_terminal` (was `claude_code`). Home Assistant
   treats this as a new add-on with its own empty `/data`, sidebar URL and

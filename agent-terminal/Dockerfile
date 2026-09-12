@@ -13,11 +13,12 @@ ENV LANG=C.UTF-8 \
 ARG AGENTS="claude"
 
 # System deps: node/npm for the agent CLIs, openssh for VS Code Remote-SSH,
-# ttyd for the Ingress web terminal, plus the usual dev CLIs.
+# ttyd for the Ingress web terminal, gh for GitHub, plus the usual dev CLIs.
 RUN apk add --no-cache \
         nodejs \
         npm \
         git \
+        github-cli \
         openssh \
         openssh-client \
         openssh-sftp-server \
