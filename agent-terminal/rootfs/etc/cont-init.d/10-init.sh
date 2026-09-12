@@ -12,6 +12,47 @@ OPTIONS="/data/options.json"
 
 echo "[agent-terminal] initialising (agent: ${AGENT} - ${AGENT_TITLE}) ..."
 
+# ---------------------------------------------------------------------------
+# One-time import (e.g. moving from the old claude_code slug, whose /data
+# Home Assistant keeps separate). Copies agent data + SSH host keys without
+# overwriting anything, applies the saved options, then deletes the import
+# folder so credentials don't linger in /share.
+# ---------------------------------------------------------------------------
+IMPORT_DIR="/share/agent-terminal/import"
+if [ -d "${IMPORT_DIR}" ] && [ ! -e /data/.imported ]; then
+    echo "[agent-terminal] importing from ${IMPORT_DIR} ..."
+    for src in "${IMPORT_DIR}"/*/; do
+        [ -d "${src}" ] || continue
+        name="$(basename "${src}")"
+        if [ -e "/data/${name}" ]; then
+            echo "[agent-terminal]   /data/${name} already exists - skipped"
+        else
+            cp -a "${src%/}" "/data/${name}"
+            echo "[agent-terminal]   imported /data/${name}"
+        fi
+    done
+    if [ -s "${IMPORT_DIR}/options.json" ]; then
+        # Only carry over keys this add-on's schema knows (they're all present
+        # in the current options.json, which Supervisor fills with defaults).
+        merged="$(jq -s '.[0] as $cur
+                         | $cur + (.[1] | with_entries(select(.key as $k | $cur | has($k))))' \
+                  "${OPTIONS}" "${IMPORT_DIR}/options.json")"
+        if curl -sf -X POST -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n --argjson o "${merged}" '{options: $o}')" \
+                http://supervisor/addons/self/options >/dev/null; then
+            printf '%s\n' "${merged}" > "${OPTIONS}"
+            echo "[agent-terminal]   applied imported options"
+        else
+            cp -f "${IMPORT_DIR}/options.json" /data/imported-options.json
+            echo "[agent-terminal]   WARNING: could not apply options; copy kept at /data/imported-options.json"
+        fi
+    fi
+    touch /data/.imported
+    rm -rf "${IMPORT_DIR}"
+    rmdir /share/agent-terminal 2>/dev/null || true
+fi
+
 mkdir -p /data/ssh /root/.ssh
 chmod 700 /root/.ssh
 
