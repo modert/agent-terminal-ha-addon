@@ -1,8 +1,6 @@
 name: "Agent Terminal"
-version: "1.3.0"
-# Kept from the add-on's Claude-only days: changing the slug makes HA treat it
-# as a new add-on (fresh /data, so every agent login is lost).
-slug: "claude_code"
+version: "2.0.0"
+slug: "agent_terminal"
 description: "AI coding-agent CLI (Claude Code for now) on the HA host - persistent login, mobile-friendly web terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"
 arch:

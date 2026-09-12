@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0
+- **Breaking:** slug is now `agent_terminal` (was `claude_code`). Home Assistant
+  treats this as a new add-on with its own empty `/data`, sidebar URL and
+  options, so the old one has to be replaced rather than updated.
+- One-time import on first boot: if `/share/agent-terminal/import/` exists,
+  its `claude/` and `ssh/` folders are copied into `/data` (never over
+  existing data), `options.json` there is applied as the add-on's options,
+  and the import folder is deleted so credentials don't linger in `/share`.
+  To move an existing `claude_code` install, run this inside it first:
+  ```
+  mkdir -p /share/agent-terminal/import && chmod 700 /share/agent-terminal
+  cp -a /data/claude /data/ssh /data/options.json /share/agent-terminal/import/
+  ```
+  Then stop the old add-on (both use port 2202), install and start this one.
+
 ## 1.3.0
 - Renamed to **Agent Terminal** and restructured around agent adapters, so a
   CLI other than Claude Code can be added without touching the rest of the
