@@ -1,0 +1,11 @@
+{
+  "name": "claude-code-webui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Build-time deps for the add-on's web terminal; inlined into index.html by build.mjs",
+  "dependencies": {
+    "@xterm/xterm": "5.5.0",
+    "@xterm/addon-fit": "0.10.0"
+  }
+}

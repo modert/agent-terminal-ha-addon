@@ -54,7 +54,33 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
 | `authorized_keys` | `[]` | SSH public keys allowed to log in. Empty = SSH effectively unusable (no keys accepted). |
 | `ssh_port` | `2202` | Port sshd listens on. Also update the add-on's `ports` mapping if you change this. |
 | `web_command` | `claude` | Command the sidebar panel / tmux session launches. Use `bash -l` for a plain shell. |
+| `mobile_ui` | `true` | Serve the touch-friendly terminal page in the sidebar panel. Set `false` to use ttyd’s stock client. |
 | `git_user_name` / `git_user_email` | `""` | Optional system-wide git identity for commits made from this add-on. |
+
+## Using it from a phone
+
+The sidebar panel serves a terminal page built for touch, so the add-on is
+usable from the Home Assistant companion app:
+
+- **Drag anywhere on the terminal to scroll.** Claude Code asks the terminal for
+  mouse tracking and scrolls on wheel events; a touchscreen never produces one,
+  which is why long output used to be unreachable. Drags are translated into
+  wheel events, so scrolling also works in `less`, in shell scrollback, and in
+  anything else running here.
+- **A key bar** supplies what mobile keyboards leave out: `Esc`, `Tab`,
+  `Shift+Tab`, arrows and page up/down, and - behind the `...` key - `Home`/`End`,
+  `Backspace`, `Ctrl+C`, sticky `Ctrl`/`Alt`, text size, and a key that shows or
+  hides the on-screen keyboard. Arrows, page up/down and backspace repeat if you
+  hold them. Sticky `Ctrl`/`Alt` apply to the next key pressed, including keys
+  typed on the real keyboard - so `Ctrl` then `r` sends Ctrl+R.
+- **The keyboard no longer shoves the prompt off-screen.** The page sizes itself
+  to the visible viewport, so the terminal shrinks to fit above the keyboard
+  instead of the whole page scrolling.
+- Text size is remembered per device. The key bar is hidden on desktop, where
+  the keyboard already has these keys; append `?keys=1` to the panel URL to
+  force it on (or `?keys=0` off).
+
+Set `mobile_ui: false` to go back to ttyd's stock client.
 
 ## Known limitations
 

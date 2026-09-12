@@ -61,6 +61,16 @@ RUN cd /opt/ha-mcp \
     && npm cache clean --force \
     && node --check server.mjs
 
+# Web terminal UI: one self-contained index.html with xterm.js inlined, served
+# by ttyd's --index (which serves that single file and nothing beside it).
+# Adds on-screen keys, touch scrolling and keyboard-aware layout for phones.
+RUN cd /opt/webui \
+    && npm install --no-audit --no-fund \
+    && node build.mjs \
+    && rm -rf node_modules package-lock.json \
+    && npm cache clean --force \
+    && test -s index.html
+
 RUN chmod +x /usr/local/bin/claude-session \
     && find /etc/cont-init.d /etc/services.d -type f -exec chmod a+x {} \;
 
