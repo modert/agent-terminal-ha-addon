@@ -9,6 +9,7 @@ Supported agents:
 | `agent` | CLI | Login |
 |---|---|---|
 | `claude` | Anthropic's [Claude Code](https://github.com/anthropics/claude-code) | Your normal Claude account (subscription) - no API key |
+| `codex` | [OpenAI Codex](https://developers.openai.com/codex/cli/) (ChatGPT) | ChatGPT account with Codex access, using device code sign-in; API key also supported |
 
 The add-on is built around per-agent adapters, so more can be added - see
 [Adding an agent](#adding-an-agent).
@@ -26,20 +27,80 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
 
 ## Setup
 
-1. **Configuration tab**: add your SSH public key(s) to `authorized_keys` (leave
-   it empty to disable SSH and use the web panel only).
+1. **Configuration tab**: choose `agent: claude` or `agent: codex`. Add your SSH
+   public key(s) to `authorized_keys` if you want SSH access, or leave it empty
+   to use the web panel only. Leave `web_command` empty to launch the selected
+   agent.
 2. **Start** the add-on.
 3. Open the **Agent Terminal** panel in the sidebar (or SSH to `<ha-host>:<ssh_port>`
    as `root`).
-4. First run (Claude Code):
-   ```
-   claude
-   /login
-   ```
-   Choose **"Claude account with subscription"**, open the printed URL on any
-   device, approve, copy the code, paste it back. No browser needed on the HA
-   host itself. This only has to be done once - the login persists across
-   add-on restarts and updates.
+4. Sign in using the instructions for your selected agent below.
+
+### Claude Code
+
+First run:
+
+```
+claude
+/login
+```
+
+Choose **"Claude account with subscription"**, open the printed URL on any
+device, approve, copy the code, paste it back. No browser needed on the HA
+host itself. This only has to be done once - the login persists across
+add-on restarts and updates.
+
+### ChatGPT (OpenAI Codex)
+
+1. Set `agent: codex`, clear any existing `web_command` override, then **save
+   and restart** the add-on. Open the sidebar panel; it launches Codex.
+2. Enable **device code login** in your ChatGPT security settings. For a
+   managed workspace, an admin may need to enable it.
+3. Choose **Sign in with Device Code** in Codex. Open the displayed URL on
+   your phone or computer, sign in to ChatGPT, and enter the code **in that
+   browser**. No browser or localhost callback is needed on the HA host.
+4. Complete Codex's workspace trust prompts for `/homeassistant`. Use `/mcp`
+   to check the `homeassistant` tools and `/model` to choose among the models
+   your account can use.
+
+From an SSH shell (or temporarily set `web_command: "bash -l"`), the equivalent
+commands are:
+
+```sh
+codex login --device-auth
+codex login status
+codex
+```
+
+This runs OpenAI's Codex terminal agent using your ChatGPT account. ChatGPT
+sign-in requires account access to Codex and is subject to that account's
+usage limits. The add-on does not import chats or memory from the ChatGPT
+website. See [OpenAI's authentication documentation](https://developers.openai.com/codex/auth/)
+for sign-in requirements and device code troubleshooting.
+
+Codex can also use an OpenAI API key with separate API billing. To enter a key
+from a shell without putting it in command history:
+
+```sh
+read -rsp 'OpenAI API key: ' codex_api_key; printf '\n'
+printf '%s' "$codex_api_key" | codex login --with-api-key
+unset codex_api_key
+```
+
+The selected adapter sets `CODEX_HOME=/data/codex`. Credentials (`auth.json`),
+settings (`config.toml`), and saved sessions stay there across updates. A new
+config uses file-based credential storage; existing settings are preserved.
+Run `codex resume` to reopen a saved conversation after restarting. Changing
+back to `agent: claude` and restarting restores the Claude terminal with its
+own login intact.
+
+The built-in MCP server uses the add-on's Supervisor token at runtime; no HA
+token or API key needs to be copied into Codex's config. An existing
+`homeassistant` MCP entry is kept as configured, including disabled tools or
+an explicitly disabled server. Codex's normal
+approval and sandbox settings apply. Start with a read-only request such as
+"List my Home Assistant lights and their current state using the homeassistant
+tools."
 
 ## What you get
 
@@ -64,7 +125,7 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
 |---|---|---|
 | `authorized_keys` | `[]` | SSH public keys allowed to log in. Empty = SSH effectively unusable (no keys accepted). |
 | `ssh_port` | `2202` | Port sshd listens on. Also update the add-on's `ports` mapping if you change this. |
-| `agent` | `claude` | Which agent CLI to run. Only `claude` exists today. |
+| `agent` | `claude` | Agent CLI to run: `claude` (Claude Code) or `codex` (ChatGPT via OpenAI Codex). Save and restart to switch. |
 | `web_command` | *(agent's CLI)* | Command the sidebar panel / tmux session launches. Leave empty for the agent's own CLI; use `bash -l` for a plain shell. |
 | `mobile_ui` | `true` | Serve the touch-friendly terminal page in the sidebar panel. Set `false` to use ttyd’s stock client. |
 | `git_user_name` / `git_user_email` | `""` | Optional system-wide git identity for commits made from this add-on. |
@@ -121,11 +182,36 @@ that file through this contract:
 Switching `agent` keeps each agent's data in its own `AGENT_DATA`, so logins
 survive switching back and forth.
 
+### Checking the Codex adapter
+
+With Python 3.11+, Bash, Node, and the Codex version pinned in `codex.sh` on
+PATH, install the MCP server's dependencies and run from the repository root:
+
+```sh
+npm install --prefix agent-terminal/rootfs/opt/ha-mcp --no-package-lock
+python3 -m unittest discover -s tests -v
+```
+
+These checks use the real CLI to register and inspect MCP servers in temporary
+directories. They verify that settings, credentials, and saved sessions are
+preserved, tool restrictions survive restarts, malformed TOML is rejected,
+and Codex discovers the built-in HA tools. They do not sign in or make model
+requests.
+
+The `Validate add-on` GitHub Actions workflow builds complete images on native
+AMD64 and ARM64 runners and runs the checks inside each image. It also tests
+first-boot option import, SSH/login environments, tmux, agent switching, and
+the Supervisor token-file fallback against a local mock HA API.
+`tests/container-smoke.sh` is only for these disposable test containers.
+Live ChatGPT sign-in and operations against a real HA instance are manual
+acceptance checks after installation.
+
 ## Known limitations
 
-- The tmux session (and any in-progress conversation) does **not** survive a
-  full add-on restart or update - only the login does. Detach/reattach across
-  browser or SSH drops works fine; a container restart is a clean slate.
+- The live tmux process and any running task do **not** survive a full add-on
+  restart or update. Login and settings persist; Codex's saved conversations
+  can be reopened with `codex resume`. Detach/reattach across browser or SSH
+  drops keeps the live process running.
 - The first `http://supervisor/core/api/...` call right after boot can return
   `502` for a few seconds while the proxy warms up - retry.
 - Editing `custom_components/*.py` still requires `ha core restart` to take
