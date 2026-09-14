@@ -1,5 +1,5 @@
 name: "Agent Terminal"
-version: "2.2.0"
+version: "2.3.0"
 slug: "agent_terminal"
 description: "Claude Code or ChatGPT via OpenAI Codex on the HA host - persistent login, mobile-friendly web terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"

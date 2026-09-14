@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.3.0
+- Copy works in the web terminal. Selecting text with the mouse in Claude Code
+  now lands in your browser clipboard. tmux passes OSC 52 copies through
+  (`set-clipboard on`) and the page writes them to the clipboard, with a
+  fallback for plain-HTTP access.
+- Shift+drag (Option+drag on a Mac) makes a browser-side selection. Ctrl+C
+  copies it while something is selected and still interrupts otherwise;
+  Ctrl+Shift+C / ⌘C also copy.
+- Ctrl+V pastes the browser clipboard instead of sending ^V.
+- Right-click menu in the terminal: Copy, Paste, Select all, Clear selection.
+  Shift+right-click still opens the browser's own menu.
+- Optional "Right-click pastes" (toggle in that menu, remembered per browser):
+  right-click copies the selection if there is one, otherwise pastes;
+  Shift+right-click then opens the menu.
+- 📋 Paste key on the on-screen key bar's second row.
+- Long-press menu on touchscreens: Select text…, Copy screen, Paste.
+- Copying on a phone: **Select text…** (or the new **Copy** key) opens the
+  current screen as plain text; select it with the phone's own handles and
+  tap Copy (or Copy all). Also in the right-click menu as "Screen as text…".
+- Paste box: on touchscreens Paste always opens a text box (the browser's
+  clipboard permission is too unreliable there); on desktops it's the
+  fallback when clipboard access is refused. A paste into the box goes
+  straight to the terminal; typed text is sent with Send (or Ctrl+Enter).
+- Sheet buttons (Copy / Copy all / Done, Send / Cancel) moved to the bottom,
+  full-width and larger, with the main action highlighted.
+- Touchscreens keep at least half a key of space below the key bar, clear of
+  rounded screen corners.
+- **Esc²** key: sends Esc twice for Claude Code's rewind / clear input.
+
 ## 2.2.0
 - Add **ChatGPT via OpenAI Codex**: select `agent: codex` and sign in using
   the device code flow from any browser. Claude remains the default.
