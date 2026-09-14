@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0
+- Add **ChatGPT via OpenAI Codex**: select `agent: codex` and sign in using
+  the device code flow from any browser. Claude remains the default.
+- Install Codex CLI 0.154.0 alongside Claude Code in both architecture builds.
+- Persist Codex login, configuration, and saved conversations in `/data/codex`.
+  Use `codex resume` to reopen a saved conversation after an add-on restart.
+- Register the existing Home Assistant MCP tools using Codex's native config
+  editor, preserving unrelated settings and refusing malformed TOML.
+
 ## 2.1.0
 - GitHub CLI (`gh`) is installed in the image.
 - `gh auth login` now survives restarts and updates: its config is kept in
