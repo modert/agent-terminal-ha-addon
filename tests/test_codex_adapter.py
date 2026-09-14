@@ -108,6 +108,30 @@ class CodexAdapterTests(unittest.TestCase):
         config = tomllib.loads(self.config.read_text())
         self.assertEqual(config["mcp_servers"]["example"]["args"], args)
 
+    def test_registration_preserves_disabled_server_and_tool_restrictions(self):
+        config = (
+            'cli_auth_credentials_store = "file"\n'
+            '[mcp_servers.homeassistant]\n'
+            'command = "node"\n'
+            'args = ["/opt/ha-mcp/server.mjs"]\n'
+            'enabled = false\n'
+            'disabled_tools = ["ha_call_service"]\n'
+            'tool_timeout_sec = 45\n'
+        )
+        self.config.write_text(config)
+        self.run_adapter("agent_register_mcp", "homeassistant", "node", "/opt/ha-mcp/server.mjs")
+        self.assertEqual(self.config.read_text(), config)
+
+    def test_registration_preserves_existing_custom_server(self):
+        config = (
+            '[mcp_servers.homeassistant]\n'
+            'command = "custom-ha-server"\n'
+            'args = ["--custom"]\n'
+        )
+        self.config.write_text(config)
+        self.run_adapter("agent_register_mcp", "homeassistant", "node", "/opt/ha-mcp/server.mjs")
+        self.assertEqual(self.config.read_text(), config)
+
     def test_malformed_config_is_rejected_without_overwriting(self):
         bad_config = b'model = "unfinished\n'
         self.config.write_bytes(bad_config)

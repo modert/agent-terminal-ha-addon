@@ -8,6 +8,8 @@
   Use `codex resume` to reopen a saved conversation after an add-on restart.
 - Register the existing Home Assistant MCP tools using Codex's native config
   editor, preserving unrelated settings and refusing malformed TOML.
+- Preserve existing MCP entries, including disabled servers and tool filters,
+  across restarts. Resolve the selected agent after importing saved options.
 
 ## 2.1.0
 - GitHub CLI (`gh`) is installed in the image.

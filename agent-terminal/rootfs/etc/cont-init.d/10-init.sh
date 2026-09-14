@@ -7,11 +7,6 @@ set -euo pipefail
 
 OPTIONS="/data/options.json"
 
-# shellcheck source=/usr/local/lib/agent.sh
-. /usr/local/lib/agent.sh
-
-echo "[agent-terminal] initialising (agent: ${AGENT} - ${AGENT_TITLE}) ..."
-
 # ---------------------------------------------------------------------------
 # One-time import (e.g. moving from the old claude_code slug, whose /data
 # Home Assistant keeps separate). Copies agent data + SSH host keys without
@@ -52,6 +47,12 @@ if [ -d "${IMPORT_DIR}" ] && [ ! -e /data/.imported ]; then
     rm -rf "${IMPORT_DIR}"
     rmdir /share/agent-terminal 2>/dev/null || true
 fi
+
+# Import may have changed the selected agent. Resolve it only after applying
+# the imported options so persistence, MCP, and login environments all agree.
+# shellcheck source=/usr/local/lib/agent.sh
+. /usr/local/lib/agent.sh
+echo "[agent-terminal] initialising (agent: ${AGENT} - ${AGENT_TITLE}) ..."
 
 mkdir -p /data/ssh /root/.ssh
 chmod 700 /root/.ssh

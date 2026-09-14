@@ -31,12 +31,16 @@ agent_init() {
     fi
 }
 
-# Use Codex's own TOML parser/editor. It preserves unrelated settings and
-# refuses malformed config rather than replacing it. Auth lives separately
-# in auth.json. The HA server reads the Supervisor token from s6 at runtime;
-# never write that token into the Codex configuration.
+# Register missing servers with Codex's own TOML parser/editor. Leave existing
+# entries intact: `mcp add` replaces tool filters and enabled/disabled settings.
+# Invalid TOML is rejected by both commands without replacing the file.
+# Auth lives separately in auth.json. The HA server reads the Supervisor token
+# from s6 at runtime; never write that token into the Codex configuration.
 agent_register_mcp() {
     local name="$1" cmd="$2"; shift 2
+    if codex mcp get "${name}" --json >/dev/null 2>&1; then
+        return 0
+    fi
     codex mcp add "${name}" -- "${cmd}" "$@"
 }
 

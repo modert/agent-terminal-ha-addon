@@ -95,7 +95,9 @@ back to `agent: claude` and restarting restores the Claude terminal with its
 own login intact.
 
 The built-in MCP server uses the add-on's Supervisor token at runtime; no HA
-token or API key needs to be copied into Codex's config. Codex's normal
+token or API key needs to be copied into Codex's config. An existing
+`homeassistant` MCP entry is kept as configured, including disabled tools or
+an explicitly disabled server. Codex's normal
 approval and sandbox settings apply. Start with a read-only request such as
 "List my Home Assistant lights and their current state using the homeassistant
 tools."
@@ -182,18 +184,27 @@ survive switching back and forth.
 
 ### Checking the Codex adapter
 
-With Python 3.11+, Bash, and the Codex version pinned in `codex.sh` on PATH,
-run from the repository root:
+With Python 3.11+, Bash, Node, and the Codex version pinned in `codex.sh` on
+PATH, install the MCP server's dependencies and run from the repository root:
 
 ```sh
+npm install --prefix agent-terminal/rootfs/opt/ha-mcp --no-package-lock
 python3 -m unittest discover -s tests -v
 ```
 
 These checks use the real CLI to register and inspect MCP servers in temporary
 directories. They verify that settings, credentials, and saved sessions are
-preserved, repeated registration is stable, and malformed TOML is rejected.
-They do not sign in or make model requests. A full validation also requires
-building the add-on image and testing sign-in and HA tools on a running host.
+preserved, tool restrictions survive restarts, malformed TOML is rejected,
+and Codex discovers the built-in HA tools. They do not sign in or make model
+requests.
+
+The `Validate add-on` GitHub Actions workflow builds complete images on native
+AMD64 and ARM64 runners and runs the checks inside each image. It also tests
+first-boot option import, SSH/login environments, tmux, agent switching, and
+the Supervisor token-file fallback against a local mock HA API.
+`tests/container-smoke.sh` is only for these disposable test containers.
+Live ChatGPT sign-in and operations against a real HA instance are manual
+acceptance checks after installation.
 
 ## Known limitations
 
