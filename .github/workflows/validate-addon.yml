@@ -1,0 +1,43 @@
+name: Validate add-on
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build complete add-on image
+        env:
+          ADDON_ARCH: ${{ matrix.arch }}
+        run: |
+          docker build --build-arg "BUILD_FROM=ghcr.io/home-assistant/${ADDON_ARCH}-base:3.21" \
+            --tag agent-terminal:test agent-terminal
+      - name: Test adapters, import, sessions, and MCP in the image
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            --env AGENT_TERMINAL_TEST_CONTAINER=1 \
+            --mount "type=bind,src=${GITHUB_WORKSPACE},dst=/workspace,readonly" \
+            --workdir /workspace agent-terminal:test -euo pipefail -c '
+              apk add --no-cache python3
+              bash tests/container-smoke.sh
+              python3 -B -m unittest discover -s tests -v
+            '

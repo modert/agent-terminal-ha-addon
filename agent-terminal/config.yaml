@@ -1,7 +1,7 @@
 name: "Agent Terminal"
-version: "2.1.0"
+version: "2.2.0"
 slug: "agent_terminal"
-description: "AI coding-agent CLI (Claude Code for now) on the HA host - persistent login, mobile-friendly web terminal + SSH"
+description: "Claude Code or ChatGPT via OpenAI Codex on the HA host - persistent login, mobile-friendly web terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"
 arch:
   - amd64
@@ -40,7 +40,7 @@ options:
   #   - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... you@yourlaptop"
   authorized_keys: []
 schema:
-  agent: "list(claude)"
+  agent: "list(claude|codex)"
   ssh_port: "port"
   web_command: "str?"
   mobile_ui: "bool?"
