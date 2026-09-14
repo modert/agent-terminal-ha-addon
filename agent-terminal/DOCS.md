@@ -119,6 +119,28 @@ tools."
   `/data/gh`, and git uses it for HTTPS pushes/pulls to GitHub.
 - **`ha` CLI** on PATH for Supervisor-level operations (`ha core restart`, etc.).
 
+## Copy and paste (sidebar panel)
+
+- **Copy:** drag-select in Claude Code and it's copied (a "Copied N
+  characters" toast confirms). Or **Shift+drag** (Option+drag on a Mac) to
+  select anything on screen, then Ctrl+C / Ctrl+Shift+C / ⌘C or right-click →
+  Copy. Ctrl+C copies only while text is selected, otherwise it interrupts.
+- **Paste:** Ctrl+V / Ctrl+Shift+V / ⌘V, or right-click → Paste (needs HTTPS).
+  On a phone, tap 📋 (or long-press → Paste): a paste box opens with the
+  keyboard. Long-press in it and choose Paste (or tap the keyboard's clipboard
+  suggestion) and it goes straight to the terminal. Typed text needs **Send**.
+- **Esc twice on a phone:** the **Esc²** key on the second row.
+- **On a phone, long-press the terminal** for a menu: Select text…, Copy
+  screen, Paste.
+- **Copy on a phone:** scroll to what you want, then long-press → **Select
+  text…** (or tap **Copy** on the key bar). The screen opens as plain text:
+  select with your phone's handles and tap **Copy**, or **Copy all**. **Done**
+  goes back.
+- **Right-click** opens the terminal's menu; **Shift+right-click** opens the
+  browser's. Tick **Right-click pastes** in that menu for Windows Terminal
+  behaviour: right-click copies the selection, or pastes when nothing is
+  selected, and Shift+right-click opens the menu.
+
 ## Options
 
 | Option | Default | Description |

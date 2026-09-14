@@ -41,7 +41,7 @@ body { position: fixed; inset: 0; }
   position: fixed; left: 0; top: 0; width: 100%; height: 100%;
   display: flex; flex-direction: column;
 }
-#term { flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; touch-action: none; }
+#term { flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; touch-action: none; -webkit-touch-callout: none; }
 .xterm { height: 100%; }
 /* iOS zooms the page when focusing an input under 16px. xterm's hidden input
    inherits the terminal font size, so pin it. */
@@ -72,6 +72,59 @@ body { position: fixed; inset: 0; }
   background: rgba(15, 17, 21, 0.88); color: var(--fg);
 }
 #overlay[hidden] { display: none; }
+
+#menu {
+  position: absolute; z-index: 6; min-width: 200px; padding: 4px;
+  background: var(--bar); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); font-size: 13px;
+  user-select: none; -webkit-user-select: none;
+}
+#menu[hidden], #toast[hidden] { display: none; }
+.mi {
+  display: flex; justify-content: space-between; gap: 24px; width: 100%;
+  padding: 7px 10px; border: 0; border-radius: 5px; background: none;
+  color: var(--fg); font: inherit; text-align: left; cursor: pointer;
+}
+.mi:hover:not(:disabled) { background: var(--key-down); }
+.mi:disabled { opacity: 0.4; cursor: default; }
+@media (pointer: coarse) { .mi { padding: 12px 14px; font-size: 15px; } }
+.mi .hint, #menu .tip { color: #8b919c; }
+#menu .tip { white-space: pre-line; margin-top: 4px; padding: 6px 10px 3px; border-top: 1px solid var(--line); font-size: 12px; }
+/* Full-screen sheets: the screen as selectable text, and the paste box. */
+.sheet {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.sheet[hidden] { display: none; }
+#paste-text {
+  flex: 1 1 auto; min-height: 0; margin: 0; padding: 8px; border: 0; outline: none; resize: none;
+  background: var(--bg); color: var(--fg);
+  font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;   /* 16px: no iOS zoom */
+}
+/* Sheet buttons sit at the bottom, in thumb reach, primary action on the right. */
+.sheet-hint {
+  flex: 0 0 auto; padding: 6px 10px; text-align: center; font-size: 13px; color: #8b919c;
+  background: var(--bar); border-top: 1px solid var(--line);
+}
+.sheet-bar {
+  flex: 0 0 auto; display: flex; gap: 8px;
+  padding: 8px 8px calc(8px + var(--safe-b));
+  background: var(--bar); user-select: none; -webkit-user-select: none;
+}
+.sheet-bar .k { flex: 1 1 0; height: 44px; font-size: 15px; }
+.k.primary { background: var(--accent); color: var(--bg); font-weight: 600; }
+.k.primary:active { background: #e8906f; }
+#sel-text {
+  flex: 1 1 auto; min-height: 0; margin: 0; padding: 8px; overflow: auto;
+  color: var(--fg); line-height: 1.35; white-space: pre;
+  user-select: text; -webkit-user-select: text; -webkit-touch-callout: default;
+  touch-action: auto; -webkit-overflow-scrolling: touch;
+}
+#toast {
+  position: absolute; z-index: 7; left: 50%; top: 12px; transform: translateX(-50%);
+  padding: 6px 12px; border-radius: 6px; background: var(--key-down); color: var(--fg);
+  font-size: 13px; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
 </style>
 </head>
 <body>
@@ -82,6 +135,26 @@ body { position: fixed; inset: 0; }
     <div class="row" id="row2"></div>
   </div>
   <div id="overlay" hidden><div id="overlay-msg"></div></div>
+  <div id="menu" role="menu" hidden></div>
+  <div id="paste" class="sheet" hidden>
+    <textarea id="paste-text" placeholder="Long-press here and choose Paste (or tap your keyboard's clipboard suggestion). Pasted text goes straight to the terminal."
+              autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <div class="sheet-hint">Pastes go straight in · typed text needs Send</div>
+    <div class="sheet-bar">
+      <button type="button" class="k" id="paste-cancel">Cancel</button>
+      <button type="button" class="k primary" id="paste-send">Send</button>
+    </div>
+  </div>
+  <div id="sel" class="sheet" hidden>
+    <pre id="sel-text"></pre>
+    <div class="sheet-hint">Select with your phone's handles, then tap Copy</div>
+    <div class="sheet-bar">
+      <button type="button" class="k" id="sel-done">Done</button>
+      <button type="button" class="k" id="sel-all">Copy all</button>
+      <button type="button" class="k primary" id="sel-copy">Copy</button>
+    </div>
+  </div>
+  <div id="toast" role="status" hidden></div>
 </div>
 
 <script>/*{{XTERM_JS}}*/</script>
@@ -128,6 +201,7 @@ body { position: fixed; inset: 0; }
     fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
     scrollback: 5000,
     macOptionIsMeta: true,
+    macOptionClickForcesSelection: true,   // Option+drag selects, like Shift+drag elsewhere
     allowProposedApi: true,
     theme: {
       background: '#0f1115', foreground: '#e6e6e6',
@@ -208,6 +282,304 @@ body { position: fixed; inset: 0; }
     sock.send(u);
   });
 
+  // ------------------------------------------------------------- clipboard
+  // Text reaches the browser clipboard by two routes:
+  //  - Programs copy with OSC 52: Claude Code's own mouse selection, tmux
+  //    copy-mode. tmux forwards it (set-clipboard on), but xterm.js ignores
+  //    OSC 52 unless something handles it - that's the handler below.
+  //  - Shift+drag (Option+drag on a Mac) skips mouse tracking and makes an
+  //    xterm selection, copied by the keys or the right-click menu.
+  var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 1600);
+  }
+
+  // navigator.clipboard only exists over HTTPS. Plain-HTTP LAN access falls
+  // back to execCommand, which browsers allow shortly after a user gesture.
+  function execCopy(text) {
+    var prev = document.activeElement;
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    if (prev && prev.focus) prev.focus();
+    return ok;
+  }
+
+  function copyText(text) {
+    if (!text) return;
+    var n = text.length;
+    function done() { toast('Copied ' + n + (n === 1 ? ' character' : ' characters')); }
+    function fallback() {
+      if (execCopy(text)) done();
+      else toast('The browser blocked the copy - select, then right-click → Copy');
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  }
+
+  // Reading the clipboard needs HTTPS plus a permission that mobile browsers
+  // refuse or hide behind a bubble that is easy to dismiss. So touchscreens
+  // always use the paste box, opened inside the tap so the keyboard comes up
+  // with it, and the OS's own Paste always works there. Desktops try the
+  // clipboard first and fall back to the box.
+  var clipReadOK = true;
+  function pasteText() {
+    if (touch || !clipReadOK || !navigator.clipboard || !navigator.clipboard.readText) { openPaste(); return; }
+    navigator.clipboard.readText().then(
+      function (t) { if (t) term.paste(t); },
+      function () { clipReadOK = false; openPaste(); });
+  }
+
+  // OSC 52 is "52;<selection>;<base64>". A "?" payload asks to *read* the
+  // clipboard; that is never answered.
+  term.parser.registerOscHandler(52, function (data) {
+    var b64 = data.slice(data.indexOf(';') + 1);
+    if (!b64 || b64 === '?') return true;
+    try {
+      var bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      copyText(dec.decode(bytes));
+    } catch (e) {}
+    return true;
+  });
+
+  term.attachCustomKeyEventHandler(function (e) {
+    if (e.type !== 'keydown' || e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return true;
+    var k = e.key.toLowerCase();
+    if (k === 'c') {
+      // Ctrl+C copies only while there's a selection (then clears it, so the
+      // next one interrupts). Ctrl+Shift+C is swallowed: Chrome's is devtools.
+      if (term.hasSelection()) {
+        copyText(term.getSelection());
+        if (!isMac && !e.shiftKey) term.clearSelection();
+      } else if (!isMac && !e.shiftKey) {
+        return true;
+      }
+      e.preventDefault();
+      return false;
+    }
+    // Returning false without preventDefault lets the browser fire a real
+    // paste event, which xterm sends as a bracketed paste. Otherwise Ctrl+V
+    // would go to the program as ^V, and Claude Code would look for an image
+    // on the add-on's (non-existent) clipboard.
+    if (k === 'v') return false;
+    return true;
+  });
+
+  // ----------------------------------------------------------- context menu
+  // Claude Code turns mouse tracking on, so a right-click would be sent to it
+  // as a click and never open the browser's menu. Intercept it (capture phase,
+  // before xterm sees it) and show ours. Shift+right-click gets the native one.
+  var menu = document.getElementById('menu');
+  var MENU = [
+    { l: 'Copy', hint: isMac ? '⌘C' : 'Ctrl+C', when: function () { return term.hasSelection(); },
+      go: function () { copyText(term.getSelection()); } },
+    { l: 'Paste', hint: isMac ? '⌘V' : 'Ctrl+V', go: pasteText },
+    { l: 'Select all', go: function () { term.selectAll(); } },
+    { l: 'Screen as text…', go: openSelect },
+    { l: 'Clear selection', when: function () { return term.hasSelection(); },
+      go: function () { term.clearSelection(); } },
+    { l: 'Right-click pastes', check: function () { return rcPaste; }, go: function () {
+        rcPaste = !rcPaste;
+        lsSet('rcpaste', rcPaste ? '1' : '0');
+        toast(rcPaste ? 'Right-click pastes (or copies a selection) - Shift+right-click for the menu'
+                      : 'Right-click opens the menu');
+      } }
+  ];
+  // Windows Terminal style: right-click copies a selection, otherwise pastes.
+  var rcPaste = lsGet('rcpaste', '0') === '1';
+  // Whether a right-click is ours to handle rather than the browser's menu.
+  function oursRC(e) { return e.button === 2 && (rcPaste || !e.shiftKey); }
+
+  function hideMenu() { menu.hidden = true; }
+
+  // Long-press on a touchscreen: the same menu, with what makes sense there.
+  var TOUCH_MENU = [
+    { l: 'Select text…', go: openSelect },
+    { l: 'Copy screen', go: function () { copyText(screenText()); } },
+    { l: 'Paste', go: pasteText }
+  ];
+
+  function showMenu(x, y, items, tipText) {
+    menu.textContent = '';
+    items.forEach(function (item) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mi';
+      b.setAttribute('role', 'menuitem');
+      b.disabled = item.when ? !item.when() : false;
+      var label = document.createElement('span');
+      label.textContent = item.l;
+      b.appendChild(label);
+      var hintText = item.check ? (item.check() ? '✓' : '') : item.hint;
+      if (hintText) {
+        var hint = document.createElement('span');
+        hint.className = 'hint';
+        hint.textContent = hintText;
+        b.appendChild(hint);
+      }
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep terminal focus
+      b.addEventListener('click', function () { hideMenu(); item.go(); });
+      menu.appendChild(b);
+    });
+    if (tipText) {
+      var tip = document.createElement('div');
+      tip.className = 'tip';
+      tip.textContent = tipText;
+      menu.appendChild(tip);
+    }
+
+    menu.hidden = false;
+    var a = app.getBoundingClientRect(), m = menu.getBoundingClientRect();
+    menu.style.left = Math.max(4, Math.min(x - a.left, a.width - m.width - 4)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y - a.top, a.height - m.height - 4)) + 'px';
+  }
+
+  termEl.addEventListener('contextmenu', function (e) {
+    if (!rcPaste && e.shiftKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (rcPaste && !e.shiftKey) {
+      if (term.hasSelection()) { copyText(term.getSelection()); term.clearSelection(); }
+      else pasteText();
+    } else {
+      showMenu(e.clientX, e.clientY, MENU, (isMac ? 'Option' : 'Shift') + '+drag to select text\n' +
+        'Shift+right-click: ' + (rcPaste ? 'this menu' : "the browser's menu"));
+    }
+  }, true);
+  termEl.addEventListener('mousedown', function (e) {
+    if (oursRC(e)) e.stopPropagation();
+  }, true);
+  window.addEventListener('mouseup', function (e) {
+    if (oursRC(e)) e.stopPropagation();
+  }, true);
+  ['mousedown', 'touchstart'].forEach(function (type) {
+    document.addEventListener(type, function (e) {
+      if (!menu.hidden && !menu.contains(e.target)) hideMenu();
+    }, { capture: true, passive: true });
+  });
+  window.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!menu.hidden) hideMenu();
+    else if (!pasteEl.hidden) closePaste();
+    else if (!selEl.hidden) closeSelect();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+  window.addEventListener('blur', hideMenu);
+
+  // --------------------------------------------------------- select as text
+  // A touchscreen can't make a terminal selection: a drag scrolls, a tap opens
+  // the keyboard, and Claude Code's own selection needs a mouse. Instead, show
+  // what's on screen as ordinary text so the phone's native selection handles
+  // and copy menu work. Opened from the long-press menu, the Copy key, or the
+  // right-click menu.
+  var selEl = document.getElementById('sel');
+  var selText = document.getElementById('sel-text');
+  var lastSel = '';
+
+  function screenText() {
+    var buf = term.buffer.active, out = [], line;
+    for (var y = buf.viewportY; y < buf.viewportY + term.rows; y++) {
+      if (!(line = buf.getLine(y))) break;
+      var s = line.translateToString(false);
+      if (line.isWrapped && out.length) out[out.length - 1] += s;
+      else out.push(s);
+    }
+    return out.map(function (l) { return l.replace(/\s+$/, ''); }).join('\n').replace(/\n+$/, '');
+  }
+
+  function openSelect() {
+    hideMenu();
+    var ta = termEl.querySelector('.xterm-helper-textarea');
+    if (ta) ta.blur();                         // drop the on-screen keyboard
+    selText.style.fontFamily = term.options.fontFamily;
+    selText.style.fontSize = term.options.fontSize + 'px';
+    selText.textContent = screenText();
+    lastSel = '';
+    sheetOpenedAt = Date.now();
+    selEl.hidden = false;
+    selText.scrollTop = selText.scrollHeight;
+  }
+  function closeSelect() {
+    selEl.hidden = true;
+    var s = window.getSelection();
+    if (s) s.removeAllRanges();
+  }
+
+  // Tapping a button can collapse the selection first, so remember the last
+  // non-empty one made inside the text.
+  document.addEventListener('selectionchange', function () {
+    if (selEl.hidden) return;
+    var s = window.getSelection();
+    if (s && s.rangeCount && selText.contains(s.anchorNode) && String(s)) lastSel = String(s);
+  });
+
+  // A sheet opened from a key-bar tap covers that key, and the tap's trailing
+  // click would land on whichever sheet button is now under the finger.
+  var sheetOpenedAt = 0;
+  function selButton(id, go) {
+    var b = document.getElementById(id);
+    b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+    b.addEventListener('click', function () { if (Date.now() - sheetOpenedAt > 400) go(); });
+  }
+  selButton('sel-copy', function () {
+    if (lastSel) copyText(lastSel);
+    else toast('Select some text first - or use Copy all');
+  });
+  selButton('sel-all', function () { copyText(selText.textContent); });
+  selButton('sel-done', closeSelect);
+
+  // -------------------------------------------------------------- paste box
+  var pasteEl = document.getElementById('paste');
+  var pasteBox = document.getElementById('paste-text');
+
+  function openPaste() {
+    hideMenu();
+    pasteBox.value = '';
+    sheetOpenedAt = Date.now();
+    pasteEl.hidden = false;
+    pasteBox.focus();
+  }
+  function closePaste() {
+    pasteEl.hidden = true;
+    pasteBox.blur();
+  }
+  function sendPaste() {
+    var t = pasteBox.value;
+    closePaste();
+    if (t) term.paste(t);
+    term.focus();
+  }
+
+  selButton('paste-send', sendPaste);
+  selButton('paste-cancel', closePaste);
+  // A paste into the empty box goes straight to the terminal - no Send needed.
+  pasteBox.addEventListener('paste', function (e) {
+    var t = e.clipboardData && e.clipboardData.getData('text');
+    if (!t || pasteBox.value) return;          // no data, or adding to typed text
+    e.preventDefault();
+    closePaste();
+    term.paste(t);
+    toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
+  });
+  pasteBox.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPaste(); }
+  });
+
   // ttyd pushes --client-option values here. Only options xterm actually
   // understands are applied, and a font size the user picked on this device wins.
   var PREF_KEYS = ['fontSize', 'fontFamily', 'fontWeight', 'fontWeightBold', 'lineHeight',
@@ -285,11 +657,21 @@ body { position: fixed; inset: 0; }
   // Drag anywhere on the terminal to scroll. Listeners are in the capture
   // phase so a real scroll gesture never reaches xterm's own touch handling,
   // while a tap still falls through to it and opens the keyboard.
+  // Holding still for LONG_PRESS_MS opens the touch menu.
   var tY = null, tAcc = 0, tScrolling = false;
+  var LONG_PRESS_MS = 500, pressTimer = null, longPressed = false;
 
   termEl.addEventListener('touchstart', function (e) {
+    clearTimeout(pressTimer);
+    longPressed = false;
     if (e.touches.length !== 1) { tY = null; return; }
-    tY = e.touches[0].clientY; tAcc = 0; tScrolling = false;
+    var pressX = e.touches[0].clientX, pressY = e.touches[0].clientY;
+    tY = pressY; tAcc = 0; tScrolling = false;
+    pressTimer = setTimeout(function () {
+      longPressed = true;
+      tY = null;
+      showMenu(pressX, pressY, TOUCH_MENU);
+    }, LONG_PRESS_MS);
   }, { capture: true, passive: true });
 
   termEl.addEventListener('touchmove', function (e) {
@@ -297,6 +679,7 @@ body { position: fixed; inset: 0; }
     var y = e.touches[0].clientY, dy = tY - y;
     if (!tScrolling && Math.abs(dy) < 8) return;       // let short taps be taps
     tScrolling = true;
+    clearTimeout(pressTimer);
     e.preventDefault();
     e.stopPropagation();
     tY = y;
@@ -307,11 +690,19 @@ body { position: fixed; inset: 0; }
   }, { capture: true, passive: false });
 
   function endTouch(e) {
-    if (tScrolling) e.stopPropagation();
+    clearTimeout(pressTimer);
+    if (longPressed) {
+      // No synthetic click afterwards: it would focus xterm and pop the keyboard.
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      longPressed = false;
+    } else if (tScrolling) {
+      e.stopPropagation();
+    }
     tY = null; tScrolling = false;
   }
-  termEl.addEventListener('touchend', endTouch, { capture: true, passive: true });
-  termEl.addEventListener('touchcancel', endTouch, { capture: true, passive: true });
+  termEl.addEventListener('touchend', endTouch, { capture: true, passive: false });
+  termEl.addEventListener('touchcancel', endTouch, { capture: true, passive: false });
 
   // --------------------------------------------------------------- actions
   function key(seq) { send(applyMods(seq)); }
@@ -362,9 +753,17 @@ body { position: fixed; inset: 0; }
     { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
     { l: 'Alt',  t: 'Alt (applies to the next key)',  mod: 'alt',  go: function () { setMod('alt', !mods.alt); } },
     { l: '^C',   t: 'Ctrl+C',       go: function () { clearMods(); send('\x03'); } },
+    // Claude Code's Esc Esc (rewind / clear input) needs two separate
+    // presses; two taps on a phone are easy to miss or mistime. Sent as two
+    // messages so tmux can't merge them into one Meta+Esc.
+    { l: 'Esc²', t: 'Esc twice (rewind / clear input)', go: function () {
+        clearMods(); send('\x1b'); setTimeout(function () { send('\x1b'); }, 120);
+      } },
     { l: '⌫', t: 'Backspace', rep: true, go: function () { key('\x7f'); } },
     { l: '⇱', t: 'Home',       go: function () { key('\x1b[H'); } },
     { l: '⇲', t: 'End',        go: function () { key('\x1b[F'); } },
+    { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', go: openSelect },
+    { l: '📋', t: 'Paste',     go: pasteText },
     { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
     { l: 'A+',   t: 'Larger text',  go: function () { setFont(1); } },
     { l: '⌨', t: 'Show / hide the keyboard', go: toggleKeyboard }
@@ -472,8 +871,10 @@ body { position: fixed; inset: 0; }
     app.style.transform = top ? 'translateY(' + top + 'px)' : '';
     // Drop the home-indicator gutter while the keyboard is covering it anyway.
     var keyboardUp = (maxH - h) > 120;
-    document.documentElement.style.setProperty(
-      '--safe-b', keyboardUp ? '0px' : 'env(safe-area-inset-bottom, 0px)');
+    // On touchscreens keep at least half a key (17px) clear of the screen's
+    // rounded corners; the safe-area inset is 0 inside the HA app and iframes.
+    document.documentElement.style.setProperty('--safe-b',
+      keyboardUp ? '0px' : touch ? 'max(env(safe-area-inset-bottom, 0px), 17px)' : 'env(safe-area-inset-bottom, 0px)');
     scheduleFit();
   }
 
