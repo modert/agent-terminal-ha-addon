@@ -15,6 +15,15 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const options = readFileSync('/data/options.json');
   const run = (command, args) => execFileSync(command, args, { encoding: 'utf8' }).trim();
   const tmux = (...args) => run('tmux', args);
+  function panePid(session) {
+    // display-message's target-pane lookup can resolve only the session and
+    // leave pane formats empty. Enumerate panes and match the exact session.
+    const pane = tmux('list-panes', '-a', '-F', '#{session_name}\t#{pane_pid}')
+      .split('\n').map(line => line.split('\t')).find(([name]) => name === session);
+    assert.ok(pane, 'missing pane for ' + session);
+    assert.match(pane[1], /^\d+$/, 'missing process ID for ' + session);
+    return pane[1];
+  }
   const sockets = [];
   let service;
   t.after(() => {
@@ -69,7 +78,7 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const claude = await connect('claude', 'web-test');
   await until(() => claude.screen().includes('TEST-AGENT:claude:web-test:'), 'Claude session did not start');
   const target = '=agent-web-test-claude';
-  const pid = tmux('display-message', '-p', '-t', target, '#{pane_pid}');
+  const pid = panePid('agent-web-test-claude');
   // Check cwd from inside the actual login shell, after /etc/profile executes.
   claude.socket.send('0printf "%s" "$PWD" > ' + join(root, 'cwd') + '\r');
   await until(() => existsSync(join(root, 'cwd')), 'shell did not receive input');
@@ -80,14 +89,16 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   claude.socket.close();
   const codex = await connect('codex', 'web-test');
   await until(() => codex.screen().includes('TEST-AGENT:codex:web-test:'), 'Codex session did not start');
-  assert.notEqual(tmux('display-message', '-p', '-t', '=agent-web-test-codex', '#{pane_pid}'), pid);
+  assert.notEqual(panePid('agent-web-test-codex'), pid);
   assert.equal(tmux('show-environment', '-t', '=agent-web-test-codex', 'AGENT'), 'AGENT=codex');
   const again = await connect('claude', 'web-test');
   await until(() => again.screen().includes('TEST-AGENT:claude:web-test:'), 'Claude did not reattach');
-  assert.equal(tmux('display-message', '-p', '-t', target, '#{pane_pid}'), pid, 'reattaching must preserve the live process');
+  assert.equal(panePid('agent-web-test-claude'), pid, 'reattaching must preserve the live process');
+  run('agent-session', ['--agent', 'claude', '--workspace', 'web-test']);
+  assert.equal(panePid('agent-web-test-claude'), pid, 'SSH command must attach the same session');
   const second = await connect('claude', 'second-test');
   await until(() => second.screen().includes('TEST-AGENT:claude:second-test:'), 'second workspace did not start');
-  assert.notEqual(tmux('display-message', '-p', '-t', '=agent-second-test-claude', '#{pane_pid}'), pid);
+  assert.notEqual(panePid('agent-second-test-claude'), pid);
   const shell = await connect('shell', 'web-test');
   await until(() => spawnSync('tmux', ['has-session', '-t', '=agent-web-test-shell']).status === 0, 'shell did not start');
   const custom = await connect();
