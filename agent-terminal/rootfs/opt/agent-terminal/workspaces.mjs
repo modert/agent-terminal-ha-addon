@@ -36,7 +36,18 @@ export function createWorkspaceStore({
   }
   function list() {
     const files = existsSync(registry) ? readdirSync(registry).filter(name => name.endsWith('.json')).sort() : [];
-    return [home, ...files.map(name => get(name.slice(0, -5))).filter(w => w.id !== home.id)];
+    const workspaces = [home];
+    for (const name of files) {
+      try {
+        const workspace = get(name.slice(0, -5));
+        if (workspace.id !== home.id) workspaces.push(workspace);
+      } catch (error) {
+        // One damaged record must not prevent boot or access to the Shell
+        // button needed to repair it. Keep the original file for recovery.
+        console.error(`agent-workspace: skipping ${name}: ${error.message}`);
+      }
+    }
+    return workspaces;
   }
   function create(id, name = id, directory = join(workspaceRoot, id)) {
     const workspace = validate({ id, name, directory });

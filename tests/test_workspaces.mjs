@@ -70,3 +70,15 @@ test('runtime UI safely serializes only public session metadata', t => {
   store.refreshUI();
   assert.match(readFileSync(paths.outputPath, 'utf8'), /"id":"later"/);
 });
+
+test('a damaged workspace record does not prevent startup or overwrite recovery data', t => {
+  const { paths, store } = fixture(t);
+  store.create('working');
+  const broken = join(paths.stateDir, 'workspaces/broken.json');
+  writeFileSync(broken, '{"id":"broken",');
+  const config = store.refreshUI();
+  assert.deepEqual(config.workspaces.map(w => w.id), ['homeassistant', 'working']);
+  assert.throws(() => store.get('broken'));
+  assert.equal(readFileSync(broken, 'utf8'), '{"id":"broken",');
+  assert.match(readFileSync(paths.outputPath, 'utf8'), /"id":"shell"/);
+});
