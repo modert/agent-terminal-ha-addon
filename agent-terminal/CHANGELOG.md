@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- Add visible Answer (Shift+Left) and Enter buttons for Codex questions, plus
+  a sticky Shift modifier, Ctrl+J newline, and a tmux prefix button.
+- Add a Write draft box for phone input. Autocorrect edits stay in the box;
+  Insert sends the final text once, after composition finishes. The original
+  direct terminal keyboard is available under More.
+- Preserve Claude's Shift+Tab, Esc², Ctrl+C, navigation, and clipboard controls.
+  Extra keys wrap and remain accessible under More.
+- Add keyboard activation and modifier state labels for assistive technology,
+  plus automated checks for key sequences and phone draft input.
+
 ## 2.4.0
 - Switch Claude, ChatGPT, and Shell with panel buttons or Ctrl+Shift+1 / 2 / 3,
   without changing add-on options or restarting. Each workspace/agent pair
