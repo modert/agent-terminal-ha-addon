@@ -61,7 +61,19 @@ chmod 700 /root/.ssh
 # Persistent agent config (this is where the agent's login lives).
 # Everything under /data survives add-on restarts AND updates.
 # ---------------------------------------------------------------------------
-agent_init
+for adapter in /opt/agents/*.sh; do
+    (
+        # Both CLIs are ready before the first live switch, including MCP.
+        # shellcheck source=/dev/null
+        . "${adapter}"
+        agent_init
+        if agent_register_mcp homeassistant node /opt/ha-mcp/server.mjs; then
+            echo "[agent-terminal] ${AGENT_TITLE}: homeassistant MCP ready"
+        else
+            echo "[agent-terminal] WARNING: ${AGENT_TITLE} MCP registration failed; config left untouched"
+        fi
+    )
+done
 
 # Convenience: keep the familiar /config path pointing at the HA config dir.
 if [ -d /homeassistant ] && [ ! -e /config ]; then
@@ -139,22 +151,12 @@ if command -v gh >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# Register the built-in Home Assistant MCP server with the agent (idempotent;
-# adapters never clobber a config file they can't parse).
-# ---------------------------------------------------------------------------
-if agent_register_mcp homeassistant node /opt/ha-mcp/server.mjs; then
-    echo "[agent-terminal] registered 'homeassistant' MCP server"
-else
-    echo "[agent-terminal] WARNING: MCP registration failed; agent config left untouched"
-fi
-
-# ---------------------------------------------------------------------------
 # Login environment for interactive shells (SSH + ttyd)
 # ---------------------------------------------------------------------------
 {
     echo "# Generated at boot by the add-on; edits are lost on restart."
-    echo "export AGENT=${AGENT}"
-    agent_env | sed 's/^/export /'
+    printf 'export AGENT="${AGENT:-%s}"\n' "${AGENT}"
+    agent_all_env | sed 's/^/export /'
     cat <<'PROFILE'
 export EDITOR="${EDITOR:-nano}"
 # Supervisor token -> lets `ha` and `curl http://supervisor/core/api/...` work.
@@ -164,14 +166,14 @@ fi
 alias hass-api='curl -s -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/core/api'
 if [ -n "${PS1:-}" ]; then
     alias ll='ls -la'
-    [ -d /homeassistant ] && cd /homeassistant
+    [ -d "${AGENT_WORKSPACE_DIR:-/homeassistant}" ] && cd "${AGENT_WORKSPACE_DIR:-/homeassistant}"
 fi
 PROFILE
 } > /etc/profile.d/agent.sh
 # Expose the same to non-login sessions (bare `ssh host <cmd>`, VS Code Remote).
 {
     echo "AGENT=${AGENT}"
-    agent_env
+    agent_all_env
     if [ -r /run/s6/container_environment/SUPERVISOR_TOKEN ]; then
         echo "SUPERVISOR_TOKEN=$(cat /run/s6/container_environment/SUPERVISOR_TOKEN)"
     fi
@@ -189,12 +191,17 @@ chmod 600 /root/.ssh/environment
    Supervisor   : the `ha` CLI works here (ha core restart, ...)
    MCP          : 'homeassistant' server auto-registered
                   (ha_list_entities, ha_call_service, ha_render_template, ...)
-   Session      : `agent-session` attaches the shared tmux session
-                  (web panel + SSH share it; survives disconnects)
+   Sessions     : switch Claude / ChatGPT / Shell in the panel
+                  `agent-session --agent codex --workspace homeassistant`
+                  (one live tmux session per workspace and agent)
+   Workspaces   : `agent-workspace create ID "Task name"`
+                  reload the panel to choose the new workspace
 
 MOTD
     agent_login_help
     echo
 } > /etc/motd
+
+agent-workspace refresh-ui
 
 echo "[agent-terminal] init complete (ssh port ${SSH_PORT})"

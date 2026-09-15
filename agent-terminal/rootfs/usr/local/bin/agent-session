@@ -1,12 +1,34 @@
 #!/usr/bin/env bash
-# Attach to the shared persistent tmux session "agent", creating it first if
-# needed. The session is created *detached* so it exists independently of any
-# client - it survives browser refresh, SSH disconnect and network drops.
-# (A full add-on restart still starts fresh; the agent's *login* persists.)
-#
-# Usage: agent-session [command]   (default: the configured agent's CLI)
-# `claude-session` is kept as an alias for existing habits and scripts.
-set -uo pipefail
+# Each workspace/agent pair has its own persistent tmux session. Switching
+# disconnects only a client; the agent's live process keeps running.
+# Usage: agent-session [--agent claude|codex|shell] [--workspace ID] [command]
+# ttyd uses --web followed by at most two URL arguments: agent and workspace.
+set -euo pipefail
+
+MODE=""; WORKSPACE="homeassistant"; START_CMD=""; WEB=false
+if [ "${1:-}" = "--web" ]; then
+    WEB=true; shift
+    [ "$#" -le 2 ] || { echo 'Too many terminal arguments' >&2; exit 2; }
+    MODE="${1:-}"; WORKSPACE="${2:-homeassistant}"
+else
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --agent|--workspace)
+                [ "$#" -ge 2 ] || { echo "Missing value for $1" >&2; exit 2; }
+                if [ "$1" = --agent ]; then MODE="$2"; else WORKSPACE="$2"; fi
+                shift 2 ;;
+            --help)
+                echo 'Usage: agent-session [--agent claude|codex|shell] [--workspace ID] [command]'; exit 0 ;;
+            --*) echo "Unknown option: $1" >&2; exit 2 ;;
+            *) [ "$#" -eq 1 ] || { echo 'Quote a custom command as one argument' >&2; exit 2; }; START_CMD="$1"; shift ;;
+        esac
+    done
+fi
+
+if [ -n "${MODE}" ]; then
+    case "${MODE}" in claude|codex|shell|custom) ;; *) echo 'Unknown agent' >&2; exit 2 ;; esac
+fi
+if [ "${MODE}" = claude ] || [ "${MODE}" = codex ]; then export AGENT="${MODE}"; fi
 
 # shellcheck source=/usr/local/lib/agent.sh
 . /usr/local/lib/agent.sh
@@ -15,17 +37,40 @@ if [ -z "${SUPERVISOR_TOKEN:-}" ] && [ -r /run/s6/container_environment/SUPERVIS
     export SUPERVISOR_TOKEN
 fi
 
-SESSION="agent"
-START_CMD="${1:-${AGENT_COMMAND}}"
+if [ -z "${MODE}" ]; then
+    MODE="${AGENT}"
+    if "${WEB}" && [ -n "$(jq -r '.web_command // empty' /data/options.json)" ]; then MODE=custom; fi
+fi
+if [ -n "${START_CMD}" ]; then
+    MODE=custom
+else
+    case "${MODE}" in
+        shell) START_CMD='bash -l' ;;
+        custom) START_CMD="$(jq -r '.web_command // empty' /data/options.json)"
+                [ -n "${START_CMD}" ] || { echo 'No custom command configured' >&2; exit 2; } ;;
+        *) START_CMD="${AGENT_COMMAND}" ;;
+    esac
+fi
+# No URL argument is ever interpreted as a command or a filesystem path.
+WORKSPACE_JSON="$(agent-workspace get "${WORKSPACE}")"
+WORKSPACE_DIR="$(jq -r '.directory' <<< "${WORKSPACE_JSON}")"
+[ -d "${WORKSPACE_DIR}" ] || { echo "Workspace directory is missing: ${WORKSPACE_DIR}" >&2; exit 1; }
+SESSION="agent-${WORKSPACE}-${MODE}"
 
-if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
-    cd /homeassistant 2>/dev/null || cd /root
-    tmux new-session -d -s "${SESSION}" "${START_CMD}"
+TMUX_ENV=(-e "AGENT=${AGENT}" -e "AGENT_WORKSPACE=${WORKSPACE}" -e "AGENT_WORKSPACE_DIR=${WORKSPACE_DIR}")
+while IFS= read -r kv; do
+    [ -z "${kv}" ] || TMUX_ENV+=(-e "${kv}")
+done < <(agent_all_env)
+
+if ! tmux has-session -t "=${SESSION}" 2>/dev/null; then
+    # Another client may create the same session between has-session and new.
+    tmux new-session -d -s "${SESSION}" -c "${WORKSPACE_DIR}" "${TMUX_ENV[@]}" "${START_CMD}" \
+        || tmux has-session -t "=${SESSION}"
 fi
 
 # Attach if we have a terminal; otherwise the detached session just keeps running.
 if [ -t 1 ]; then
-    exec tmux attach-session -t "${SESSION}"
+    exec tmux attach-session -t "=${SESSION}"
 fi
 echo "agent-session: '${SESSION}' is running detached (no TTY here to attach to)." >&2
 echo "Open the sidebar panel, or 'ssh -t ... agent-session', to attach." >&2
