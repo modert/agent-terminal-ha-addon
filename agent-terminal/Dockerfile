@@ -9,7 +9,7 @@ ENV LANG=C.UTF-8 \
     npm_config_update_notifier=false
 
 # Agent CLIs baked into the image: space-separated adapter names from
-# rootfs/opt/agents. The add-on's `agent` option picks one at runtime.
+# rootfs/opt/agents. The add-on's `agent` option picks the initial agent.
 ARG AGENTS="claude codex"
 
 # System deps: node/npm for the agent CLIs, openssh for VS Code Remote-SSH,
@@ -80,6 +80,8 @@ RUN cd /opt/webui \
     && test -s index.html
 
 RUN chmod +x /usr/local/bin/agent-session /usr/local/bin/agent-install \
+    /opt/agent-terminal/workspaces.mjs \
+    && ln -sfn /opt/agent-terminal/workspaces.mjs /usr/local/bin/agent-workspace \
     && ln -sfn agent-session /usr/local/bin/claude-session \
     && find /etc/cont-init.d /etc/services.d -type f -exec chmod a+x {} \;
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0
+- Switch Claude, ChatGPT, and Shell with panel buttons or Ctrl+Shift+1 / 2 / 3,
+  without changing add-on options or restarting. Each workspace/agent pair
+  keeps its own live tmux session when you switch away or disconnect.
+- Workspace selector and `agent-workspace create ID "Name" [DIRECTORY]`.
+  New folders get shared `AGENTS.md` instructions, a Claude import, and linked
+  skill directories. Existing project folders are registered without edits.
+- Both agents' persistent environments and HA MCP tools initialize at boot.
+  Existing Claude MCP entries are now preserved, like Codex's.
+- Keep `web_command` as a separate Custom session; `agent` is the initial
+  choice. Remember the selected workspace and agent in the browser.
+- Validate session IDs, isolate per-session working directories, and discard
+  stale connections, clipboard reads, and delayed keys after switching.
+
 ## 2.3.0
 - Copy works in the web terminal. Selecting text with the mouse in Claude Code
   now lands in your browser clipboard. tmux passes OSC 52 copies through

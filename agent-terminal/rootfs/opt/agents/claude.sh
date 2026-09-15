@@ -39,6 +39,11 @@ agent_register_mcp() {
     local name="$1" cmd="$2"; shift 2
     local cc_json="${AGENT_DATA}/.claude/.claude.json" args tmp
     jq -e . "${cc_json}" >/dev/null 2>&1 || return 1
+    # Boot initializes both agents. Preserve an existing server, including
+    # a user's custom command or restrictions, even when Claude isn't selected.
+    if jq -e --arg n "${name}" '(.mcpServers // {}) | has($n)' "${cc_json}" >/dev/null 2>&1; then
+        return 0
+    fi
     args="$(jq -cn '$ARGS.positional' --args "$@")"
     tmp="$(mktemp)"
     if jq --arg n "${name}" --arg c "${cmd}" --argjson a "${args}" \
