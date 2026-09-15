@@ -27,7 +27,7 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
 
 ## Setup
 
-1. **Configuration tab**: choose `agent: claude` or `agent: codex`. Add your SSH
+1. **Configuration tab**: choose the initial agent, `agent: claude` or `agent: codex`. Add your SSH
    public key(s) to `authorized_keys` if you want SSH access, or leave it empty
    to use the web panel only. Leave `web_command` empty to launch the selected
    agent.
@@ -52,8 +52,8 @@ add-on restarts and updates.
 
 ### ChatGPT (OpenAI Codex)
 
-1. Set `agent: codex`, clear any existing `web_command` override, then **save
-   and restart** the add-on. Open the sidebar panel; it launches Codex.
+1. Open the sidebar panel and click **ChatGPT** (or press **Ctrl+Shift+2**).
+   It launches Codex without restarting the add-on.
 2. Enable **device code login** in your ChatGPT security settings. For a
    managed workspace, an admin may need to enable it.
 3. Choose **Sign in with Device Code** in Codex. Open the displayed URL on
@@ -63,7 +63,7 @@ add-on restarts and updates.
    to check the `homeassistant` tools and `/model` to choose among the models
    your account can use.
 
-From an SSH shell (or temporarily set `web_command: "bash -l"`), the equivalent
+From an SSH shell or the panel's **Shell** button, the equivalent
 commands are:
 
 ```sh
@@ -87,12 +87,11 @@ printf '%s' "$codex_api_key" | codex login --with-api-key
 unset codex_api_key
 ```
 
-The selected adapter sets `CODEX_HOME=/data/codex`. Credentials (`auth.json`),
+Every terminal sets `CODEX_HOME=/data/codex`. Credentials (`auth.json`),
 settings (`config.toml`), and saved sessions stay there across updates. A new
 config uses file-based credential storage; existing settings are preserved.
-Run `codex resume` to reopen a saved conversation after restarting. Changing
-back to `agent: claude` and restarting restores the Claude terminal with its
-own login intact.
+Run `codex resume` to reopen a saved conversation after restarting. Click
+**Claude** to return to Claude's live session with its own login intact.
 
 The built-in MCP server uses the add-on's Supervisor token at runtime; no HA
 token or API key needs to be copied into Codex's config. An existing
@@ -107,7 +106,8 @@ tools."
 - **Persistent login** - stored under `/data`, survives restarts/updates.
 - **Two ways in** - the sidebar Ingress panel, and SSH (for VS Code Remote-SSH,
   full IDE experience against `/homeassistant`).
-- **Shared tmux session** - the panel and SSH attach to the same session, so a
+- **Live agent switching and task workspaces** - each workspace/agent pair has
+  a separate tmux session. The panel and SSH can attach to the same pair, so a
   long-running task keeps going if you close the browser tab or your SSH
   connection drops.
 - **Built-in `homeassistant` MCP server** - gives the agent structured tools
@@ -118,6 +118,90 @@ tools."
 - **GitHub CLI (`gh`)** - run `gh auth login` once; the login is kept in
   `/data/gh`, and git uses it for HTTPS pushes/pulls to GitHub.
 - **`ha` CLI** on PATH for Supervisor-level operations (`ha core restart`, etc.).
+
+## Switching agents and workspaces
+
+The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
+or **Shell**; keyboard shortcuts are **Ctrl+Shift+1**, **Ctrl+Shift+2**, and
+**Ctrl+Shift+3** respectively. Use the buttons if your browser or OS reserves
+a shortcut. The workspace selector chooses the task folder.
+
+Switching detaches the current terminal and attaches the selected session.
+An agent keeps working while you are viewing another one. Returning to the
+same workspace and agent reconnects to that live process, including its
+conversation. Conversations are separate; switching does not transfer chat
+history between providers. Sign in to each provider once.
+
+The browser remembers your selection. The `agent` option supplies the first
+choice in a new browser. An existing `web_command` adds a **Custom** button
+and supplies the initial choice; the Claude, ChatGPT, and Shell buttons still
+launch their own commands. With `mobile_ui: false`, the stock ttyd client has
+no selector and starts the configured default.
+
+SSH can attach to the same sessions:
+
+```sh
+agent-session --agent codex --workspace homeassistant
+agent-session --agent shell --workspace automations
+```
+
+Closing the page or switching away only detaches. Exiting the CLI ends its
+process; an open panel reconnects and starts a fresh one. To stop a session
+without relaunching it, switch to Shell, then use `tmux kill-session -t
+=agent-WORKSPACE-AGENT` with the relevant IDs. A full add-on restart stops all
+live sessions.
+
+### Task workspaces and skills
+
+Click **Shell**, then create a workspace:
+
+```sh
+agent-workspace create automations "HA automations"
+agent-workspace create dashboards "Dashboard work"
+agent-workspace list
+```
+
+Reload the panel to see new workspaces in its selector. The existing sessions
+stay alive. These examples create persistent folders under
+`/share/agent-terminal/workspaces/`. Workspace registrations live under
+`/data/agent-terminal/workspaces/` and survive updates.
+
+Each newly created folder contains:
+
+| Path | Purpose |
+|---|---|
+| `AGENTS.md` | Shared task goals, coding conventions, relevant paths, and checks. Edit this to describe the workspace's job. Codex reads it directly. |
+| `CLAUDE.md` | Imports `AGENTS.md` so Claude reads the same instructions. |
+| `.agents/skills/` | Add a folder per skill with its own `SKILL.md`. Codex discovers these project skills. |
+| `.claude/skills` | Links to the same skill directory for Claude. |
+
+For example, a skill file at `.agents/skills/check-automations/SKILL.md` needs
+YAML frontmatter with `name: check-automations` and a `description` saying when
+to use it, followed by its instructions. Use the common skill format for
+shared skills; provider-specific options may behave differently. Restart the
+CLI in that workspace after changing instructions or skills so it reloads them.
+See [Codex skills](https://developers.openai.com/codex/skills/),
+[Claude skills](https://code.claude.com/docs/en/skills), and
+[Claude's AGENTS.md import](https://code.claude.com/docs/en/memory).
+
+To register an existing project, supply an absolute path:
+
+```sh
+agent-workspace create my-addon "My add-on" /addons/my-addon
+```
+
+Existing folders are left untouched, so keep or add the project's own
+instructions and skills there. Registering a workspace does not clone a
+repository or install dependencies. Agents and shells start in the selected
+folder; commands such as `npm install` can set up that project's dependencies.
+The built-in **Home Assistant** workspace continues to use `/homeassistant`.
+
+Workspaces organize files, instructions, and conversations within the **same
+container**. They share provider logins, installed tools, mounted files, and
+Supervisor access. They are **not security sandboxes**, and `AGENTS.md` is
+guidance, not a permissions boundary. An agent working on a separate project
+can still access HA. Concurrent agents can edit the same files; use separate
+project folders or Git worktrees when tasks need independent changes.
 
 ## Copy and paste (sidebar panel)
 
@@ -147,9 +231,9 @@ tools."
 |---|---|---|
 | `authorized_keys` | `[]` | SSH public keys allowed to log in. Empty = SSH effectively unusable (no keys accepted). |
 | `ssh_port` | `2202` | Port sshd listens on. Also update the add-on's `ports` mapping if you change this. |
-| `agent` | `claude` | Agent CLI to run: `claude` (Claude Code) or `codex` (ChatGPT via OpenAI Codex). Save and restart to switch. |
-| `web_command` | *(agent's CLI)* | Command the sidebar panel / tmux session launches. Leave empty for the agent's own CLI; use `bash -l` for a plain shell. |
-| `mobile_ui` | `true` | Serve the touch-friendly terminal page in the sidebar panel. Set `false` to use ttyd’s stock client. |
+| `agent` | `claude` | Initial choice: `claude` (Claude Code) or `codex` (ChatGPT via OpenAI Codex). Switch live with the panel buttons. |
+| `web_command` | *(empty)* | Optional trusted shell command for the separate Custom session and initial web selection. Use the Shell button for a plain shell. |
+| `mobile_ui` | `true` | Serve the terminal with agent/workspace controls and touch support. Set `false` for ttyd's stock client without these controls. |
 | `git_user_name` / `git_user_email` | `""` | Optional system-wide git identity for commits made from this add-on. |
 
 ## Using it from a phone
@@ -200,6 +284,9 @@ that file through this contract:
 2. Add the name to `ARG AGENTS` in the Dockerfile (or pass it via
    `build.yaml` args) so the CLI is installed.
 3. Add it to the `agent` schema in `config.yaml`: `list(claude|<agent>)`.
+4. Add its ID to `agent-session`'s validated mode list and the agent metadata
+   in `workspaces.mjs` (and the fallback in `index.template.html`). The first
+   three toolbar entries have Ctrl+Shift+1 / 2 / 3 shortcuts.
 
 Switching `agent` keeps each agent's data in its own `AGENT_DATA`, so logins
 survive switching back and forth.
@@ -212,6 +299,7 @@ PATH, install the MCP server's dependencies and run from the repository root:
 ```sh
 npm install --prefix agent-terminal/rootfs/opt/ha-mcp --no-package-lock
 python3 -m unittest discover -s tests -v
+node --test tests/test_*.mjs
 ```
 
 These checks use the real CLI to register and inspect MCP servers in temporary
@@ -224,6 +312,11 @@ The `Validate add-on` GitHub Actions workflow builds complete images on native
 AMD64 and ARM64 runners and runs the checks inside each image. It also tests
 first-boot option import, SSH/login environments, tmux, agent switching, and
 the Supervisor token-file fallback against a local mock HA API.
+Node tests cover workspace validation and persistence, safe HTML metadata,
+out-of-order browser connections and clipboard input, and real ttyd WebSocket
+sessions with stub provider commands. They verify that switching preserves
+processes, separates workspaces, keeps login-shell working directories, and
+serves newly created workspaces without restarting ttyd.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.

@@ -41,6 +41,33 @@ body { position: fixed; inset: 0; }
   position: fixed; left: 0; top: 0; width: 100%; height: 100%;
   display: flex; flex-direction: column;
 }
+#session-bar {
+  position: relative; z-index: 6; flex: 0 0 auto;
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  background: var(--bar); border-bottom: 1px solid var(--line);
+}
+#workspace-label { color: #aeb4bf; font-size: 12px; }
+#workspace {
+  min-width: 0; max-width: 280px; flex: 1; height: 36px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--key); color: var(--fg); font: inherit; font-size: 16px;
+}
+#agents { display: flex; gap: 4px; }
+.agent-button {
+  min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--key); color: var(--fg); font: inherit; font-size: 13px;
+  cursor: pointer; touch-action: manipulation;
+}
+.agent-button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.agent-button:hover { background: var(--key-down); }
+#workspace:focus-visible, .agent-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 560px) {
+  #session-bar { flex-wrap: wrap; gap: 6px; }
+  #workspace { max-width: none; }
+  #agents { flex-basis: 100%; }
+  .agent-button { flex: 1; min-height: 42px; }
+}
+@media (pointer: coarse) { #workspace, .agent-button { min-height: 44px; } }
 #term { flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; touch-action: none; -webkit-touch-callout: none; }
 .xterm { height: 100%; }
 /* iOS zooms the page when focusing an input under 16px. xterm's hidden input
@@ -129,6 +156,11 @@ body { position: fixed; inset: 0; }
 </head>
 <body>
 <div id="app">
+  <div id="session-bar" aria-label="Terminal session">
+    <label id="workspace-label" for="workspace">Workspace</label>
+    <select id="workspace" title="Task folder and instructions"></select>
+    <div id="agents" role="group" aria-label="Agent"></div>
+  </div>
   <div id="term"></div>
   <div id="bar" hidden>
     <div class="row" id="row1"></div>
@@ -170,8 +202,13 @@ body { position: fixed; inset: 0; }
   'use strict';
 
   var base     = location.pathname.replace(/\/+$/, '');
-  var wsUrl    = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + base + '/ws' + location.search;
   var tokenUrl = location.protocol + '//' + location.host + base + '/token';
+  // Replaced at boot, and whenever agent-workspace creates a workspace.
+  var sessionConfig = /*{{SESSION_CONFIG}}*/ null || {
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+    workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
+    defaultAgent: 'claude'
+  };
 
   var OUTPUT = '0', TITLE = '1', PREFS = '2';
   var INPUT  = '0', RESIZE = '1';
@@ -193,6 +230,75 @@ body { position: fixed; inset: 0; }
   function lsSet(k, v) { try { localStorage.setItem(LS + k, v); } catch (e) {} }
 
   var userFont = parseInt(lsGet('font', ''), 10) || 0;
+
+  // ------------------------------------------------------ session controls
+  var workspaceEl = document.getElementById('workspace');
+  var agentsEl = document.getElementById('agents');
+  var sessionKey = 'session:' + base;
+  var savedSession = {};
+  try { savedSession = JSON.parse(lsGet(sessionKey, '{}')) || {}; } catch (e) {}
+  var queryArgs = new URLSearchParams(location.search).getAll('arg');
+  function hasAgent(id) { return sessionConfig.agents.some(function (a) { return a.id === id; }); }
+  function hasWorkspace(id) { return sessionConfig.workspaces.some(function (w) { return w.id === id; }); }
+  var selectedAgent = queryArgs[0] || savedSession.agent || sessionConfig.defaultAgent;
+  if (!hasAgent(selectedAgent)) selectedAgent = sessionConfig.defaultAgent;
+  if (!hasAgent(selectedAgent)) selectedAgent = sessionConfig.agents[0].id;
+  var selectedWorkspace = queryArgs[1] || savedSession.workspace || 'homeassistant';
+  if (!hasWorkspace(selectedWorkspace)) selectedWorkspace = 'homeassistant';
+
+  function sessionQuery() {
+    var query = new URLSearchParams(location.search);
+    query.delete('arg');
+    query.append('arg', selectedAgent);
+    query.append('arg', selectedWorkspace);
+    return '?' + query.toString();
+  }
+  function updateSessionControls() {
+    workspaceEl.value = selectedWorkspace;
+    Array.prototype.forEach.call(agentsEl.children, function (button) {
+      button.setAttribute('aria-pressed', String(button.dataset.agent === selectedAgent));
+    });
+    var agent = sessionConfig.agents.find(function (a) { return a.id === selectedAgent; });
+    var workspace = sessionConfig.workspaces.find(function (w) { return w.id === selectedWorkspace; });
+    workspaceEl.title = workspace.directory;
+    document.title = agent.name + ' · ' + workspace.name + ' · Agent Terminal';
+    lsSet(sessionKey, JSON.stringify({ agent: selectedAgent, workspace: selectedWorkspace }));
+  }
+  function switchSession(agent, workspace) {
+    if (!hasAgent(agent) || !hasWorkspace(workspace)) return;
+    if (agent === selectedAgent && workspace === selectedWorkspace) { term.focus(); return; }
+    selectedAgent = agent;
+    selectedWorkspace = workspace;
+    hideMenu(); closePaste(); closeSelect(); clearMods();
+    term.clearSelection();
+    updateSessionControls();
+    // Preserve keys/debug parameters; explicit session URLs survive reloads.
+    try { history.replaceState(null, '', location.pathname + sessionQuery() + location.hash); } catch (e) {}
+    retry = 500;
+    connect();
+  }
+  sessionConfig.workspaces.forEach(function (workspace) {
+    var option = document.createElement('option');
+    option.value = workspace.id;
+    option.textContent = workspace.name;
+    workspaceEl.appendChild(option);
+  });
+  sessionConfig.agents.forEach(function (agent, i) {
+    var button = document.createElement('button');
+    button.type = 'button'; button.className = 'agent-button';
+    button.dataset.agent = agent.id; button.textContent = agent.name;
+    button.title = 'Switch to ' + agent.name + (i < 3 ? ' (Ctrl+Shift+' + (i + 1) + ')' : '');
+    if (i < 3) button.setAttribute('aria-keyshortcuts', 'Control+Shift+' + (i + 1));
+    button.addEventListener('click', function () { switchSession(agent.id, selectedWorkspace); });
+    agentsEl.appendChild(button);
+  });
+  workspaceEl.addEventListener('change', function () { switchSession(selectedAgent, workspaceEl.value); });
+  window.addEventListener('keydown', function (e) {
+    if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !/^Digit[123]$/.test(e.code)) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    switchSession(sessionConfig.agents[Number(e.code.slice(-1)) - 1].id, selectedWorkspace);
+  }, true);
+  updateSessionControls();
 
   // --------------------------------------------------------------- terminal
   var term = new Terminal({
@@ -217,50 +323,64 @@ body { position: fixed; inset: 0; }
   function hideOverlay() { overlay.hidden = true; }
 
   // ------------------------------------------------------------- websocket
-  var sock = null, opened = false, retry = 500;
+  var sock = null, opened = false, retry = 500, retryTimer = null, connectionId = 0;
 
   function connect() {
+    var id = ++connectionId;
+    clearTimeout(retryTimer); retryTimer = null;
+    // The tmux session continues running when this websocket detaches.
+    var previous = sock; sock = null;
+    if (previous) previous.close();
     showOverlay('Connecting…');
-    fetch(tokenUrl, { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
+    // Drain queued output with input disconnected before reusing the terminal.
+    // Escape-sequence replies from the old session cannot reach the new one.
+    new Promise(function (resolve) { term.write('', resolve); })
+      .then(function () {
+        if (id !== connectionId) return {};
+        return fetch(tokenUrl, { cache: 'no-store' }).then(function (r) { return r.json(); });
+      })
       .catch(function () { return { token: '' }; })
-      .then(function (j) { openSocket((j && j.token) || ''); })
-      .catch(function () { scheduleReconnect(); });
+      .then(function (j) { if (id === connectionId) openSocket((j && j.token) || '', id); })
+      .catch(function () { scheduleReconnect(id); });
   }
 
-  function scheduleReconnect() {
+  function scheduleReconnect(id) {
+    if (id !== connectionId || retryTimer !== null) return;
     showOverlay('Disconnected — reconnecting…');
-    setTimeout(connect, retry);
+    retryTimer = setTimeout(function () { if (id === connectionId) connect(); }, retry);
     retry = Math.min(retry * 2, 8000);
   }
 
-  function openSocket(token) {
+  function openSocket(token, id) {
     var s;
-    try { s = new WebSocket(wsUrl, ['tty']); } catch (e) { scheduleReconnect(); return; }
+    var wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + base + '/ws' + sessionQuery();
+    try { s = new WebSocket(wsUrl, ['tty']); } catch (e) { scheduleReconnect(id); return; }
     sock = s;
     s.binaryType = 'arraybuffer';
 
     s.onopen = function () {
+      if (id !== connectionId || sock !== s) { s.close(); return; }
       retry = 500;
       hideOverlay();
-      s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
       if (opened) { term.reset(); }
       opened = true;
+      s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
       doFit();
       term.focus();
     };
 
     s.onmessage = function (ev) {
+      if (id !== connectionId || sock !== s) return;
       var buf = typeof ev.data === 'string' ? enc.encode(ev.data) : new Uint8Array(ev.data);
       if (!buf.length) return;
       var cmd = String.fromCharCode(buf[0]);
       var body = buf.subarray(1);
       if (cmd === OUTPUT) term.write(body);
-      else if (cmd === TITLE) document.title = dec.decode(body);
+      else if (cmd === TITLE) updateSessionControls();
       else if (cmd === PREFS) applyPrefs(dec.decode(body));
     };
 
-    s.onclose = function () { if (sock === s) { sock = null; scheduleReconnect(); } };
+    s.onclose = function () { if (sock === s) { sock = null; scheduleReconnect(id); } };
     s.onerror = function () {};
   }
 
@@ -336,10 +456,11 @@ body { position: fixed; inset: 0; }
   // clipboard first and fall back to the box.
   var clipReadOK = true;
   function pasteText() {
+    var id = connectionId;
     if (touch || !clipReadOK || !navigator.clipboard || !navigator.clipboard.readText) { openPaste(); return; }
     navigator.clipboard.readText().then(
-      function (t) { if (t) term.paste(t); },
-      function () { clipReadOK = false; openPaste(); });
+      function (t) { if (t && id === connectionId) term.paste(t); },
+      function () { if (id === connectionId) { clipReadOK = false; openPaste(); } });
   }
 
   // OSC 52 is "52;<selection>;<base64>". A "?" payload asks to *read* the
@@ -757,7 +878,9 @@ body { position: fixed; inset: 0; }
     // presses; two taps on a phone are easy to miss or mistime. Sent as two
     // messages so tmux can't merge them into one Meta+Esc.
     { l: 'Esc²', t: 'Esc twice (rewind / clear input)', go: function () {
-        clearMods(); send('\x1b'); setTimeout(function () { send('\x1b'); }, 120);
+        var id = connectionId;
+        clearMods(); send('\x1b');
+        setTimeout(function () { if (id === connectionId) send('\x1b'); }, 120);
       } },
     { l: '⌫', t: 'Backspace', rep: true, go: function () { key('\x7f'); } },
     { l: '⇱', t: 'Home',       go: function () { key('\x1b[H'); } },
@@ -791,8 +914,9 @@ body { position: fixed; inset: 0; }
       try { b.setPointerCapture(e.pointerId); } catch (err) {}
       spec.go();
       if (spec.rep) {
+        var id = connectionId;
         holdTimer = setTimeout(function () {
-          repeatTimer = setInterval(spec.go, 55);
+          repeatTimer = setInterval(function () { if (id === connectionId) spec.go(); else stop(); }, 55);
         }, 380);
       }
     });

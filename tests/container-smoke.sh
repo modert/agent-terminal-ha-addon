@@ -26,16 +26,20 @@ unset -f curl
 test -f /data/.imported
 test ! -e /share/agent-terminal/import
 test -s /data/codex/config.toml
+test -s /data/claude/.claude/.claude.json
+test -s /run/agent-terminal/index.html
 test "$(bash -lc 'printf %s "$AGENT"')" = codex
 test "$(bash -lc 'printf %s "$CODEX_HOME"')" = /data/codex
 grep -qx 'CODEX_HOME=/data/codex' /root/.ssh/environment
+grep -qx 'CLAUDE_CONFIG_DIR=/data/claude/.claude' /root/.ssh/environment
 bash -lc 'codex mcp get homeassistant --json' | jq -e '.transport.command == "node"' >/dev/null
 sshd -t
 
 # The terminal and SSH share the selected agent's persistent environment.
-agent-session 'bash -l'
-tmux has-session -t agent
-test "$(tmux show-environment -g CODEX_HOME)" = CODEX_HOME=/data/codex
+agent-session --agent shell
+tmux has-session -t '=agent-homeassistant-shell'
+test "$(tmux show-environment -t '=agent-homeassistant-shell' CODEX_HOME)" = CODEX_HOME=/data/codex
+test "$(tmux show-environment -t '=agent-homeassistant-shell' CLAUDE_CONFIG_DIR)" = CLAUDE_CONFIG_DIR=/data/claude/.claude
 tmux kill-server
 
 # Switch to Claude and back, as a container restart would do. Verify Codex's
@@ -47,6 +51,11 @@ cat >> /data/codex/config.toml <<'TOML'
 disabled_tools = ["ha_call_service"]
 TOML
 codex_config_before="$(sha256sum /data/codex/config.toml)"
+# Both adapters must preserve the user's MCP configuration on every boot.
+jq '.mcpServers.homeassistant = {type:"stdio",command:"custom-ha-server",args:["--read-only"],env:{}}' \
+    /data/claude/.claude/.claude.json > /tmp/claude-config-test.json
+mv /tmp/claude-config-test.json /data/claude/.claude/.claude.json
+claude_config_before="$(sha256sum /data/claude/.claude/.claude.json)"
 sed -i 's/"agent": "codex"/"agent": "claude"/' /data/options.json
 bash /etc/cont-init.d/10-init.sh
 test "$(bash -lc 'printf %s "$AGENT"')" = claude
@@ -55,6 +64,7 @@ sed -i 's/"agent": "claude"/"agent": "codex"/' /data/options.json
 bash /etc/cont-init.d/10-init.sh
 test "$(bash -lc 'printf %s "$AGENT"')" = codex
 test "$(sha256sum /data/codex/config.toml)" = "${codex_config_before}"
+test "$(sha256sum /data/claude/.claude/.claude.json)" = "${claude_config_before}"
 test "$(cat /data/codex/auth.json)" = '{"test_credentials":"unchanged"}'
 test "$(cat /data/codex/sessions/test.jsonl)" = 'saved session'
 echo 'Container smoke checks passed: imported agent, login environments, tmux, switching, and persistence.'
