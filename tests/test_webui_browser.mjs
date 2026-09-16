@@ -31,7 +31,8 @@ test('phone taps and composition with real browser events and xterm', {
       close() { this.readyState = 3; if (this.onclose) this.onclose(); }
     };
   </script>`;
-  const html = readFileSync(bundle, 'utf8').replace('<head>', '<head>' + mock);
+  const html = readFileSync(bundle, 'utf8').replace('<head>', '<head>' + mock)
+    .replace('term.open(termEl);', 'term.open(termEl); window.testTerminal = term;');
   assert.ok(!html.includes('/*{{XTERM_JS}}*/'), 'build the web UI before running the browser test');
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -108,6 +109,12 @@ test('phone taps and composition with real browser events and xterm', {
     await touch('touchStart', rect.x, rect.y);
     await touch('touchEnd');
   }
+  async function enter(modifiers = 0) {
+    await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter',
+      text: '\r', windowsVirtualKeyCode: 13, modifiers });
+    await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter',
+      windowsVirtualKeyCode: 13, modifiers });
+  }
   const button = label => `[...document.querySelectorAll('#bar button')].find(b => b.textContent === ${JSON.stringify(label)})`;
   const target = await command('Target.createTarget', { url: 'about:blank' });
   session = (await command('Target.attachToTarget', { targetId: target.targetId, flatten: true })).sessionId;
@@ -135,6 +142,25 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate("window.testFocus.find(f => f.id === 'paste-text').active"), true,
     'keyboard focus must occur during a browser-authorized touch gesture');
   assert.equal(await evaluate("Math.min(...[...document.querySelectorAll('#row1 button, #row-mods button')].map(b => b.getBoundingClientRect().height)) >= 44"), true);
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 440, deviceScaleFactor: 1, mobile: true });
+  await until('window.innerHeight === 440');
+  await delay(100);
+  assert.equal(await evaluate(`(() => {
+    const terminal = document.getElementById('term').getBoundingClientRect();
+    const draft = document.getElementById('paste').getBoundingClientRect();
+    return terminal.height > 100 && terminal.bottom <= draft.top && draft.height <= 80 &&
+      document.elementFromPoint(terminal.x + 30, terminal.y + 30).closest('#term') !== null;
+  })()`), true, 'the draft must leave terminal output visible above the phone keyboard');
+  await evaluate(`testSocket.onmessage({ data: new TextEncoder().encode('0' +
+    Array.from({ length: 100 }, (_, i) => 'Response line ' + (i + 1) + '\\r\\n').join('')).buffer })`);
+  await until('testTerminal.buffer.active.baseY > 50');
+  const scroll = await evaluate(`({ y: testTerminal.buffer.active.viewportY,
+    top: document.getElementById('term').getBoundingClientRect().top })`);
+  await touch('touchStart', 100, scroll.top + 20);
+  await touch('touchMove', 100, scroll.top + 80);
+  await touch('touchEnd');
+  await until('testTerminal.buffer.active.viewportY < ' + scroll.y);
+  assert.equal(await evaluate("document.activeElement.id === 'paste-text'"), true, 'scrolling must keep the editor and keyboard focused');
 
   // Use Chromium's IME API, then select and replace the corrected word twice.
   await command('Input.imeSetComposition', { text: 'teh', selectionStart: 3, selectionEnd: 3 });
@@ -146,9 +172,13 @@ test('phone taps and composition with real browser events and xterm', {
   }
   assert.equal(await evaluate("document.getElementById('paste-text').value"), 'the hello hello');
   assert.deepEqual(await packets(), [], 'correction edits must not reach the terminal');
+  if (process.env.WEBUI_SCREENSHOT) {
+    const screenshot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-response.png'), Buffer.from(screenshot.data, 'base64'));
+  }
   await tap("document.getElementById('paste-send')");
   await until("document.getElementById('paste').hidden");
-  assert.deepEqual(await packets(), ['\x1b[200~the hello hello\x1b[201~'], 'insert only the final draft once');
+  assert.deepEqual(await packets(), ['\x1b[200~the hello hello\x1b[201~', '\r'], 'send only the final draft once, then submit');
   await evaluate("window.previousEditor = document.getElementById('paste-text')");
   await tap(button('Write'));
   assert.equal(await evaluate("previousEditor !== document.getElementById('paste-text')"), true);
@@ -159,7 +189,7 @@ test('phone taps and composition with real browser events and xterm', {
   await command('Input.insertText', { text: 'second draft' });
   await tap("document.getElementById('paste-send')");
   await until("document.getElementById('paste').hidden");
-  assert.deepEqual(await packets(), ['\x1b[200~the hello hello\x1b[201~', '\x1b[200~second draft\x1b[201~']);
+  assert.deepEqual(await packets(), ['\x1b[200~the hello hello\x1b[201~', '\r', '\x1b[200~second draft\x1b[201~', '\r']);
 
   await load(); // A fresh document has no previous user activation to mask tap bugs.
   await tap("document.getElementById('term')");
@@ -168,7 +198,35 @@ test('phone taps and composition with real browser events and xterm', {
   await command('Input.imeSetComposition', { text: '한글', selectionStart: 2, selectionEnd: 2 });
   await tap("document.getElementById('paste-send')");
   await until("document.getElementById('paste').hidden");
-  assert.deepEqual(await packets(), ['\x1b[200~한글\x1b[201~'], 'commit an active composition before reading its value');
+  assert.deepEqual(await packets(), ['\x1b[200~한글\x1b[201~', '\r'], 'commit an active composition before reading its value');
+
+  await load();
+  await tap(button('Write'));
+  await command('Input.insertText', { text: 'first' });
+  await enter(8); // Shift+Enter edits a line without submitting.
+  await command('Input.insertText', { text: 'second' });
+  await tap(button('↵'));
+  await command('Input.insertText', { text: 'third' });
+  assert.equal(await evaluate("document.getElementById('paste-text').value"), 'first\nsecond\nthird');
+  assert.deepEqual(await packets(), []);
+  if (process.env.WEBUI_SCREENSHOT) {
+    const screenshot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-composer.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  await enter();
+  await until("document.getElementById('paste').hidden");
+  assert.deepEqual(await packets(), ['\x1b[200~first\rsecond\rthird\x1b[201~', '\r']);
+
+  await load();
+  await tap(button('Write'));
+  await command('Input.imeSetComposition', { text: '한글', selectionStart: 2, selectionEnd: 2 });
+  await tap(button('↵'));
+  assert.equal(await evaluate("document.getElementById('paste-text').value"), '한글\n');
+  assert.deepEqual(await packets(), [], 'newline edits must not send a partially composed word');
+  await command('Input.insertText', { text: 'next' });
+  await tap(button('Enter'));
+  await until("document.getElementById('paste').hidden");
+  assert.deepEqual(await packets(), ['\x1b[200~한글\rnext\x1b[201~', '\r']);
 
   await load();
   await touch('touchStart', 100, 220);

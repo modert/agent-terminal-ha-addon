@@ -4,8 +4,11 @@
 - Add visible Answer (Shift+Left) and Enter buttons for Codex questions, plus
   a sticky Shift modifier, Ctrl+J newline, and a tmux prefix button.
 - Add a Write draft box for phone input. Autocorrect edits stay in the box;
-  Insert sends the final text once, after composition finishes. The original
+  Send submits the final text once, after composition finishes. The original
   direct terminal keyboard is available under More > Keys.
+- Keep Write in a compact input area below the terminal so responses remain
+  visible and scrollable. Enter/Send submits; Shift+Enter and ↵ add a line.
+  Handle Android Enter events without rewriting the active editor's value.
 - Open the native draft from a terminal tap, Write, or the keyboard icon.
   Wait for completed taps before focusing the editor, enlarge phone keys to
   44 pixels high, and avoid opening the keyboard after scroll/cancel gestures.

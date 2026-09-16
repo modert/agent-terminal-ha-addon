@@ -132,6 +132,20 @@ body { position: fixed; inset: 0; }
   background: var(--bg); color: var(--fg);
   font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;   /* 16px: no iOS zoom */
 }
+/* Write stays below the terminal, leaving output visible and scrollable. */
+#paste.compose {
+  position: relative; inset: auto; z-index: 1; flex: 0 0 auto; flex-direction: row;
+  align-items: center; gap: 6px; padding: 6px;
+  border-top: 1px solid var(--line); background: var(--bar);
+}
+#paste.compose #paste-text {
+  flex: 1 1 auto; width: 0; height: 60px; line-height: 22px;
+  padding: 7px; border: 1px solid var(--line); border-radius: 7px;
+}
+#paste.compose .sheet-hint { display: none; }
+#paste.compose .sheet-bar { padding: 0; gap: 4px; }
+#paste.compose .sheet-bar .k { flex: 0 0 auto; width: 44px; }
+#paste.compose #paste-send { width: 56px; }
 /* Sheet buttons sit at the bottom, in thumb reach, primary action on the right. */
 .sheet-hint {
   flex: 0 0 auto; padding: 6px 10px; text-align: center; font-size: 13px; color: #8b919c;
@@ -166,13 +180,6 @@ body { position: fixed; inset: 0; }
     <div id="agents" role="group" aria-label="Agent"></div>
   </div>
   <div id="term"></div>
-  <div id="bar" hidden>
-    <div class="row" id="row1"></div>
-    <div class="row" id="row-mods"></div>
-    <div class="row extra" id="row2" hidden></div>
-  </div>
-  <div id="overlay" hidden><div id="overlay-msg"></div></div>
-  <div id="menu" role="menu" hidden></div>
   <div id="paste" class="sheet" hidden>
     <textarea id="paste-text" placeholder="Long-press here and choose Paste (or tap your keyboard's clipboard suggestion). Pasted text goes straight to the terminal."
               autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
@@ -182,6 +189,13 @@ body { position: fixed; inset: 0; }
       <button type="button" class="k primary" id="paste-send">Send</button>
     </div>
   </div>
+  <div id="bar" hidden>
+    <div class="row" id="row1"></div>
+    <div class="row" id="row-mods"></div>
+    <div class="row extra" id="row2" hidden></div>
+  </div>
+  <div id="overlay" hidden><div id="overlay-msg"></div></div>
+  <div id="menu" role="menu" hidden></div>
   <div id="sel" class="sheet" hidden>
     <pre id="sel-text"></pre>
     <div class="sheet-hint">Select with your phone's handles, then tap Copy</div>
@@ -672,6 +686,7 @@ body { position: fixed; inset: 0; }
   var pasteEl = document.getElementById('paste');
   var pasteBox = document.getElementById('paste-text');
   var pasteAutoSend = true, pasteComposing = false, pasteSending = false;
+  var draftLineBreak = null, addingDraftLine = false;
 
   function openPaste(autoSend) {
     hideMenu();
@@ -680,12 +695,15 @@ body { position: fixed; inset: 0; }
     if (!pasteEl.hidden) { pasteBox.focus(); return; }
     pasteAutoSend = autoSend !== false;
     pasteComposing = pasteSending = false;
+    draftLineBreak = null;
+    pasteEl.classList.toggle('compose', !pasteAutoSend);
     // Give each draft its own native editing context. Gboard can deliver late
     // composition events after blur; those must stay with the previous draft.
     var box = document.createElement('textarea');
     box.id = 'paste-text';
     box.setAttribute('aria-label', pasteAutoSend ? 'Paste text' : 'Write a prompt');
     box.setAttribute('inputmode', 'text');
+    box.setAttribute('enterkeyhint', pasteAutoSend ? 'enter' : 'send');
     box.setAttribute('autocapitalize', 'off');
     box.setAttribute('autocomplete', 'off');
     box.setAttribute('autocorrect', pasteAutoSend ? 'off' : 'on');
@@ -695,12 +713,16 @@ body { position: fixed; inset: 0; }
     bindPasteBox(box);
     pasteBox.placeholder = pasteAutoSend
       ? 'Long-press here to paste, or type text and tap Send.'
-      : 'Write your prompt here. Tap Insert when ready, then Enter in the terminal to submit.';
+      : 'Message · Enter sends';
     document.getElementById('paste-hint').textContent = pasteAutoSend
       ? 'Pastes go straight in · typed text needs Send'
-      : 'Edit here · Insert puts text in the terminal · Enter submits';
-    document.getElementById('paste-send').textContent = pasteAutoSend ? 'Send' : 'Insert';
+      : 'Enter sends · Shift+Enter or ↵ adds a line';
+    document.getElementById('paste-send').textContent = 'Send';
+    document.getElementById('paste-send').title = pasteAutoSend ? 'Insert text into terminal' : 'Send message (Enter)';
+    document.getElementById('paste-cancel').textContent = pasteAutoSend ? 'Cancel' : '×';
+    document.getElementById('paste-cancel').setAttribute('aria-label', 'Close draft');
     pasteEl.hidden = false;
+    doFit();
     pasteBox.focus();
   }
   function closePaste() {
@@ -708,18 +730,28 @@ body { position: fixed; inset: 0; }
     // End editing before hiding the element, so the IME can finish its edit.
     pasteBox.blur();
     pasteEl.hidden = true;
+    scheduleFit();
   }
   function finishPaste() {
     if (pasteEl.hidden || !pasteSending || pasteComposing) return;
     if (!sock || sock.readyState !== WebSocket.OPEN) {
       pasteSending = false;
-      toast('Disconnected — draft kept. Insert after reconnecting.');
+      toast('Disconnected — draft kept. Send after reconnecting.');
       return;
     }
     var t = pasteBox.value;
+    // Some Android keyboards only report Enter after inserting a newline.
+    // Remove exactly that edit from the submitted copy, never from the live
+    // editor while the keyboard owns its composing range.
+    if (draftLineBreak && t === draftLineBreak.value) {
+      t = t.slice(0, draftLineBreak.at) + t.slice(draftLineBreak.at + 1);
+    }
+    var submit = !pasteAutoSend;
     closePaste();
     pasteBox.value = '';
+    clearMods();
     if (t) term.paste(t);
+    if (submit) send('\r');
     term.focus();
   }
   function sendPaste() {
@@ -736,7 +768,33 @@ body { position: fixed; inset: 0; }
     else pasteBox.focus();
   }
 
+  function draftOpen() { return !pasteEl.hidden && !pasteAutoSend; }
+  function newDraftLine() {
+    if (!draftOpen() || pasteSending) return;
+    clearMods();
+    // Finish the current word before inserting outside its composing range.
+    // Keep blur/focus inside the tap so the phone keyboard can stay open.
+    pasteBox.blur();
+    pasteBox.focus();
+    // Let the browser perform this edit so its undo and IME state stay in sync.
+    addingDraftLine = true;
+    try {
+      if (!document.execCommand('insertText', false, '\n')) toast('Use Shift+Enter to add a line');
+    } finally { addingDraftLine = false; }
+  }
+  function enterKey() {
+    if (!draftOpen()) { key('\r'); return; }
+    if (mods.shift) newDraftLine();
+    else sendPaste();
+  }
+  function newlineKey() {
+    if (draftOpen()) newDraftLine();
+    else fixedKey('\n');
+  }
+
   function bindPasteBox(box) {
+    var allowLineBreak = false;
+    function lineBreak(e) { return e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph'; }
     function current() { return box === pasteBox && !pasteEl.hidden; }
     box.addEventListener('compositionstart', function () {
       if (current()) pasteComposing = true;
@@ -757,8 +815,39 @@ body { position: fixed; inset: 0; }
       toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
     });
     box.addEventListener('keydown', function (e) {
-      if (!current() || e.isComposing || pasteComposing || e.keyCode === 229) return;
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPaste(); }
+      if (!current()) return;
+      allowLineBreak = false;
+      if (e.isComposing || pasteComposing || e.keyCode === 229) return;
+      if (e.key !== 'Enter') return;
+      if (pasteAutoSend) {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); sendPaste(); }
+      } else if (e.shiftKey || mods.shift) {
+        allowLineBreak = true;
+        clearMods();
+      } else {
+        e.preventDefault(); sendPaste();
+      }
+    });
+    box.addEventListener('beforeinput', function (e) {
+      if (!current() || pasteAutoSend || !lineBreak(e)) return;
+      if (addingDraftLine || allowLineBreak || mods.shift) {
+        allowLineBreak = true; clearMods(); return;
+      }
+      if (e.isComposing || pasteComposing || !e.cancelable) return;
+      e.preventDefault(); sendPaste();
+    });
+    box.addEventListener('input', function (e) {
+      if (!current() || pasteAutoSend) return;
+      if (lineBreak(e) && mods.shift) { clearMods(); allowLineBreak = false; return; }
+      if (lineBreak(e) && !addingDraftLine && !allowLineBreak && !e.isComposing && !pasteComposing) {
+        // Fallback when a phone omits keydown/beforeinput or cannot cancel it.
+        var at = box.selectionStart - 1;
+        if (at >= 0 && box.value.charAt(at) === '\n') {
+          draftLineBreak = { value: box.value, at: at };
+          sendPaste();
+        }
+      }
+      allowLineBreak = false;
     });
   }
 
@@ -931,6 +1020,7 @@ body { position: fixed; inset: 0; }
 
   var directKeyboard = false;
   function toggleDirectKeyboard() {
+    if (draftOpen()) closePaste();
     var ta = term.textarea;
     if (ta && document.activeElement === ta && (!touch || directKeyboard)) ta.blur();
     else {
@@ -961,8 +1051,8 @@ body { position: fixed; inset: 0; }
     { l: '⇥', t: 'Tab',               go: function () { key('\t'); } },
     { l: 'Answer', t: 'Open Codex questions (Shift+Left)', wide: true,
       go: function () { fixedKey('\x1b[1;2D'); } },
-    { l: 'Enter', t: 'Enter / confirm', wide: true, primary: true,
-      go: function () { key('\r'); } },
+    { l: 'Enter', t: 'Enter / confirm', wide: true, primary: true, click: true,
+      go: enterKey },
     { l: '←', t: 'Left',  rep: true,  go: function () { arrow('D'); } },
     { l: '↑', t: 'Up',    rep: true,  go: function () { arrow('A'); } },
     { l: '↓', t: 'Down',  rep: true,  go: function () { arrow('B'); } },
@@ -975,7 +1065,7 @@ body { position: fixed; inset: 0; }
     { l: 'Shift', t: 'Shift (applies to the next key)', mod: 'shift', go: function () { setMod('shift', !mods.shift); } },
     { l: '⇧⇥', t: 'Shift+Tab', go: function () { fixedKey('\x1b[Z'); } },
     { l: '^C', t: 'Ctrl+C / interrupt', go: function () { fixedKey('\x03'); } },
-    { l: '↵', t: 'Newline in Codex (Ctrl+J)', go: function () { fixedKey('\n'); } },
+    { l: '↵', t: 'New line in draft / Ctrl+J in terminal', click: true, go: newlineKey },
     { l: 'Write', t: 'Open keyboard and write a prompt', click: true, go: openCompose },
     { l: '⋯', t: 'More keys', id: 'more-keys', go: toggleRow2 }
   ];

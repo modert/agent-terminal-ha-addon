@@ -16,7 +16,8 @@ async function page({ touch = true, search = '' } = {}) {
   function element() {
     const handlers = new Map(), classes = new Set();
     return {
-      children: [], attributes: {}, dataset: {}, hidden: false, style: { setProperty() {} },
+      children: [], attributes: {}, dataset: {}, hidden: false, value: '', selectionStart: 0,
+      selectionEnd: 0, style: { setProperty() {} },
       classList: {
         add: c => classes.add(c), remove: c => classes.delete(c),
         toggle: (c, on) => on ? classes.add(c) : classes.delete(c),
@@ -50,6 +51,15 @@ async function page({ touch = true, search = '' } = {}) {
       return ids.get(id);
     },
     createElement: element, addEventListener() {}, documentElement: element(),
+    execCommand(command, _ui, text) {
+      assert.equal(command, 'insertText');
+      const box = document.activeElement;
+      const at = box.selectionStart;
+      box.value = box.value.slice(0, at) + text + box.value.slice(box.selectionEnd);
+      box.selectionStart = box.selectionEnd = at + text.length;
+      box.fire('input', { inputType: 'insertText', data: text });
+      return true;
+    },
   };
   class Terminal {
     constructor(options) {
@@ -183,7 +193,7 @@ test('touch clicks with detail zero do not repeat keys or toggle modifiers twice
   p.button('Enter').fire('pointercancel');
   p.button('Enter').fire('keydown', { key: 'Enter' });
   p.button('Enter').fire('click', { detail: 0 });
-  assert.deepEqual(p.input(), ['\r', '\r'], 'keyboard activation also works after a cancelled pointer');
+  assert.deepEqual(p.input(), ['\r'], 'keyboard activation works after a cancelled Enter tap');
 });
 
 test('double Escape is timed and repeat stops on pointer release', async () => {
@@ -222,6 +232,7 @@ test('mobile autocorrect replacements stay in the draft and are inserted once', 
   box.fire('input', { inputType: 'insertText', data: '.' });
   p.flush(); insert.fire('click'); p.flush();
   assert.deepEqual(p.terminal.pastes, ['the same text.']);
+  assert.deepEqual(p.input(), ['\r'], 'send the final draft and submit exactly once');
   assert.equal(p.ids.get('paste').hidden, true);
 });
 
@@ -270,11 +281,68 @@ test('Write keeps pasted text for editing; the original Paste action still inser
   p.advance(500);
   p.ids.get('paste-send').fire('click'); p.flush();
   assert.deepEqual(p.terminal.pastes, ['hello hello']);
+  assert.deepEqual(p.input(), ['\r']);
   p.tap('📋');
   const pasteBox = p.ids.get('paste-text');
   pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
   pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
   assert.deepEqual(p.terminal.pastes, ['hello hello', '/help']);
+  assert.deepEqual(p.input(), [], 'the separate Paste action must not execute text');
+});
+
+test('Enter submits a draft and Shift+Enter or the newline key keeps editing', async () => {
+  const p = await page();
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  assert.equal(box.getAttribute('enterkeyhint'), 'send');
+  box.value = 'first'; box.selectionStart = box.selectionEnd = 5;
+  p.tap('↵');
+  assert.equal(box.value, 'first\n');
+  assert.deepEqual(p.input(), []);
+  box.fire('keydown', { key: 'Enter', shiftKey: true });
+  box.value += '\n'; box.selectionStart = box.selectionEnd = box.value.length;
+  box.fire('input', { inputType: 'insertLineBreak' });
+  p.flush();
+  assert.deepEqual(p.terminal.pastes, []);
+  box.value += 'last';
+  box.fire('keydown', { key: 'Enter' }); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['first\n\nlast']);
+  assert.deepEqual(p.input(), ['\r']);
+});
+
+test('Android Enter submits through beforeinput or its non-cancellable input fallback', async () => {
+  for (const cancelable of [true, false]) {
+    const p = await page();
+    p.tap('Write');
+    const box = p.ids.get('paste-text');
+    box.value = 'corrected words';
+    box.selectionStart = box.selectionEnd = box.value.length;
+    box.fire('keydown', { key: 'Unidentified', keyCode: 229 });
+    let prevented = false;
+    box.fire('beforeinput', { inputType: 'insertLineBreak', cancelable,
+      preventDefault() { prevented = true; } });
+    assert.equal(prevented, cancelable);
+    if (!cancelable) {
+      box.value += '\n'; box.selectionStart = box.selectionEnd = box.value.length;
+      box.fire('input', { inputType: 'insertLineBreak' });
+      assert.equal(box.value, 'corrected words\n', 'do not rewrite the active native editor');
+    }
+    p.flush();
+    assert.deepEqual(p.terminal.pastes, ['corrected words']);
+    assert.deepEqual(p.input(), ['\r']);
+  }
+});
+
+test('the toolbar Enter submits an open draft; pending composition still waits', async () => {
+  const p = await page();
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  box.value = 'teh'; box.fire('compositionstart');
+  p.tap('Enter'); p.flush();
+  assert.deepEqual(p.input(), []);
+  box.value = 'the'; box.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['the']);
+  assert.deepEqual(p.input(), ['\r']);
 });
 
 test('each draft gets a fresh editor and ignores composition from a previous draft', async () => {

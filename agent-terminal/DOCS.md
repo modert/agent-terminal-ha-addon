@@ -249,19 +249,20 @@ usable from the Home Assistant companion app:
 - **Answer Codex questions:** tap **Answer** (Shift+Left), use the arrows to
   choose an option, then **Enter** to confirm. Tab moves between fields.
 - **Write a prompt:** tap the terminal, **Write**, or **⌨** to open the phone
-  keyboard and draft box. Type or paste your prompt, then
-  tap **Insert**. Review the text in the terminal and tap **Enter** to submit.
+  keyboard and a compact draft below the terminal. The response stays visible
+  and you can scroll it while typing. Press **Enter** or tap **Send** to submit;
+  **Shift+Enter** or **↵** adds a new line instead. The toolbar's Enter button
+  also submits the open draft. Tap **×** to close it without sending.
   Phone autocorrect and composition edits stay in the draft; only the finished
-  value is pasted into Codex or Claude. Insert waits for composition to finish
-  and does not automatically submit the prompt. Ordinary Enter in the draft
-  adds a line; Ctrl+Enter inserts the draft when composition is finished.
+  value is pasted into Codex or Claude, followed by Enter. Send waits for
+  composition to finish. Enter used to accept an IME candidate does not submit.
   Each draft starts with a fresh editor; reopening an active draft preserves
   its text and composition. Write supports native autocorrect, while the
   separate Paste action keeps correction disabled for literal pasted text.
 - **Essential keys stay visible:** `Esc`, `Tab`, `Answer`, `Enter`, arrows,
   `Ctrl`, `Alt`, `Shift`, `Shift+Tab`, `Ctrl+C`, and `↵` (Ctrl+J for a newline
   in Codex). Sticky modifiers apply to the next key: `Shift` then `←` also
-  opens Codex questions; `Ctrl` then `r` sends Ctrl+R.
+  opens Codex questions; in direct input, `Ctrl` then `r` sends Ctrl+R.
 - **More keys:** tap **⋯** for `Esc²`, `Backspace`, `Home`/`End`, page scrolling,
   the `tmux` prefix (Ctrl+B), Copy/Paste, text size, and the original direct
   terminal keyboard (**Keys**). Arrows, scrolling, and backspace repeat when held.
