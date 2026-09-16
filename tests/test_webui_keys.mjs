@@ -1,0 +1,489 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import test from 'node:test';
+import vm from 'node:vm';
+
+// Exercise the page's real event handlers and ttyd input packets without a
+// browser or a connection to the user's tmux session.
+const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
+  import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
+const script = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
+
+async function page({ touch = true, search = '', saved = [] } = {}) {
+  const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
+  let timerId = 0, terminal, socket, now = 1000;
+  function element() {
+    const handlers = new Map(), classes = new Set();
+    return {
+      children: [], attributes: {}, dataset: {}, hidden: false, value: '', selectionStart: 0,
+      selectionEnd: 0, style: { setProperty() {} },
+      classList: {
+        add: c => classes.add(c), remove: c => classes.delete(c),
+        toggle: (c, on) => on ? classes.add(c) : classes.delete(c),
+      },
+      set id(v) { ids.set(v, this); },
+      appendChild(child) { this.children.push(child); },
+      replaceWith() {},
+      setAttribute(k, v) { this.attributes[k] = v; },
+      getAttribute(k) { return this.attributes[k]; },
+      querySelector() { return terminal.textarea; },
+      focus() { document.activeElement = this; },
+      blur() { if (document.activeElement === this) document.activeElement = null; this.fire('blur'); },
+      addEventListener(k, fn) {
+        if (!handlers.has(k)) handlers.set(k, []);
+        handlers.get(k).push(fn);
+      },
+      fire(k, props = {}) {
+        const event = { type: k, preventDefault() {}, stopPropagation() {}, pointerId: 1, ...props };
+        for (const fn of handlers.get(k) || []) fn(event);
+      },
+      setPointerCapture() {},
+    };
+  }
+  const document = {
+    getElementById(id) {
+      if (!ids.has(id)) {
+        const el = element();
+        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast'].includes(id);
+        ids.set(id, el);
+      }
+      return ids.get(id);
+    },
+    createElement: element, addEventListener() {}, documentElement: element(),
+    execCommand(command, _ui, text) {
+      assert.equal(command, 'insertText');
+      const box = document.activeElement;
+      const at = box.selectionStart;
+      box.value = box.value.slice(0, at) + text + box.value.slice(box.selectionEnd);
+      box.selectionStart = box.selectionEnd = at + text.length;
+      box.fire('input', { inputType: 'insertText', data: text });
+      return true;
+    },
+  };
+  class Terminal {
+    constructor(options) {
+      terminal = this; this.options = options; this.cols = 50; this.rows = 26;
+      this.textarea = element(); this.pastes = [];
+    }
+    parser = { registerOscHandler() {} };
+    loadAddon() {} open() {} onResize() {} onBinary() {}
+    focus() { this.textarea.focus(); }
+    clearSelection() {} reset() {}
+    write(data, callback) { if (callback) queueMicrotask(callback); }
+    paste(text) { this.pastes.push(text); }
+    onData(fn) { this.type = fn; }
+    attachCustomKeyEventHandler() {}
+  }
+  class WebSocket {
+    static OPEN = 1;
+    readyState = 1;
+    constructor() { socket = this; }
+    send(data) { packets.push(new TextDecoder().decode(data)); }
+    close() { this.readyState = 3; if (this.onclose) this.onclose(); }
+  }
+  const window = Object.assign(element(), { innerHeight: 700, matchMedia: () => ({ matches: touch }) });
+  window.top = window;
+  window.getSelection = () => ({ removeAllRanges() {} });
+  vm.runInNewContext(script, {
+    Terminal, WebSocket, document, window, navigator: { platform: 'Linux' },
+    FitAddon: { FitAddon: class { fit() {} } },
+    location: { pathname: '/terminal', protocol: 'https:', host: 'example.test', search },
+    TextEncoder, TextDecoder, Uint8Array, URLSearchParams,
+    Date: class extends Date { static now() { return now; } },
+    fetch: async () => ({ json: async () => ({ token: '' }) }),
+    localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
+    setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
+    clearTimeout: id => timers.delete(id),
+    setInterval: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
+    clearInterval: id => timers.delete(id),
+  });
+  await new Promise(setImmediate);
+  assert.ok(socket, 'page creates its ttyd connection');
+  socket.onopen();
+  packets.length = 0;
+  const buttons = ['key-rail', 'row1', 'row-nav', 'row-mods', 'row-edit', 'row2'].flatMap(id => ids.get(id).children);
+  const button = label => {
+    const b = buttons.find(b => b.dataset.key === label);
+    assert.ok(b, `button ${label} exists`);
+    return b;
+  };
+  function tap(label) {
+    const b = button(label);
+    b.fire('pointerdown'); b.fire('pointerup'); b.fire('click', { detail: 1 });
+  }
+  function input() {
+    return packets.splice(0).filter(p => p.startsWith('0')).map(p => p.slice(1));
+  }
+  function flush() {
+    for (const [id, timer] of [...timers]) {
+      if (timer.ms === 0) { timers.delete(id); timer.fn(); }
+    }
+  }
+  return { ids, window, button, tap, input, terminal, timers, flush, advance: ms => { now += ms; },
+    socket: () => socket, activeElement: () => document.activeElement };
+}
+
+test('common keys answer a Codex question without opening More', async () => {
+  const p = await page();
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  p.tap('Keys');
+  assert.equal(p.ids.get('keys-more').hidden, true);
+  assert.equal(p.ids.get('keys-main').hidden, false);
+  p.tap('Answer'); p.tap('↓'); p.tap('Enter');
+  assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[B', '\r']);
+});
+
+test('Shift reaches tmux arrow keys and clears after one press', async () => {
+  const p = await page();
+  p.tap('Shift');
+  assert.equal(p.button('Shift').attributes['aria-pressed'], 'true');
+  p.tap('←'); p.tap('←');
+  assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[D']);
+  assert.equal(p.button('Shift').attributes['aria-pressed'], 'false');
+  p.tap('Shift'); p.tap('Ctrl'); p.tap('Alt'); p.tap('→');
+  assert.deepEqual(p.input(), ['\x1b[1;8C']);
+});
+
+test('fixed actions clear pending modifiers; Enter and newline are distinct', async () => {
+  const p = await page();
+  for (const [label, seq] of [['Answer', '\x1b[1;2D'], ['Mode', '\x1b[Z'],
+    ['Ctrl+C', '\x03'], ['New line', '\n'], ['tmux', '\x02']]) {
+    p.tap('Ctrl'); p.tap('Alt'); p.tap('Shift'); p.tap(label); p.tap('Enter');
+    assert.deepEqual(p.input(), [seq, '\r']);
+  }
+  p.tap('Shift'); p.tap('Enter'); p.tap('Enter');
+  assert.deepEqual(p.input(), ['\n', '\r']);
+  p.tap('Space');
+  assert.deepEqual(p.input(), [' ']);
+});
+
+test('typed text supports modifiers, and paste is kept intact', async () => {
+  const p = await page();
+  p.tap('Shift'); p.terminal.type('a');
+  p.tap('Shift'); p.terminal.type(',');
+  p.tap('Shift'); p.terminal.type('.');
+  p.tap('Ctrl'); p.terminal.type('b');
+  p.tap('Alt'); p.terminal.type('x');
+  p.tap('Shift'); p.tap('Tab');
+  p.tap('Ctrl'); p.terminal.type('\x1b[200~two words\x1b[201~'); p.terminal.type('c');
+  assert.deepEqual(p.input(), ['A', '<', '>', '\x02', '\x1bx', '\x1b[Z',
+    '\x1b[200~two words\x1b[201~', '\x03']);
+});
+
+test('helpers start collapsed, including with a saved expanded toolbar preference', async () => {
+  const p = await page({ saved: [['cc-mobile:extraKeys', '1']] });
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  assert.equal(p.button('Keys').attributes['aria-expanded'], 'false');
+  p.window.innerHeight = 380; p.window.fire('resize');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  p.tap('Keys');
+  assert.equal(p.ids.get('key-panel').hidden, false);
+  p.window.innerHeight = 370; p.window.fire('resize');
+  assert.equal(p.ids.get('key-panel').hidden, false, 'resizing never undoes an explicit expansion');
+  p.tap('More');
+  assert.equal(p.ids.get('keys-main').hidden, true);
+  assert.equal(p.ids.get('keys-more').hidden, false, 'More replaces, rather than stacks on, common keys');
+  p.tap('Ctrl'); p.tap('Back');
+  assert.equal(p.ids.get('keys-main').hidden, false);
+  assert.equal(p.ids.get('key-modifiers').textContent, 'Ctrl', 'hidden modifier remains visible on the rail');
+  p.tap('←');
+  assert.deepEqual(p.input(), ['\x1b[1;5D']);
+  assert.equal(p.ids.get('key-modifiers').textContent, '');
+  p.tap('More'); p.tap('Shift'); p.tap('Keys');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  assert.equal(p.button('Shift').attributes['aria-pressed'], 'false');
+  p.tap('Keys');
+  assert.equal(p.ids.get('keys-more').hidden, true, 'reopening always starts with common keys');
+  p.button('Answer').fire('click', { detail: 0 }); p.tap('Enter');
+  assert.deepEqual(p.input(), ['\x1b[1;2D', '\r']);
+});
+
+test('starting a draft minimizes helpers; explicit expansion keeps the same editor', async () => {
+  const p = await page();
+  p.tap('Keys'); p.tap('More'); p.tap('Ctrl'); p.tap('Write');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  const box = p.ids.get('paste-text');
+  box.value = 'the same draft'; box.fire('compositionstart');
+  p.tap('Keys'); p.tap('More'); p.tap('Back');
+  assert.equal(p.ids.get('paste-text'), box);
+  assert.equal(box.value, 'the same draft');
+  p.window.innerHeight = 380; p.window.fire('resize');
+  assert.equal(p.ids.get('key-panel').hidden, false);
+  assert.equal(p.button('Ctrl').attributes['aria-pressed'], 'false');
+  assert.deepEqual(p.input(), []);
+});
+
+test('keyboard navigation follows the More and Back controls', async () => {
+  const p = await page();
+  p.tap('Keys');
+  p.button('More').focus(); p.button('More').fire('click', { detail: 0 });
+  assert.equal(p.activeElement(), p.button('Back'));
+  // Firing another keyboard click on Back exercises the inverse path too.
+  p.button('Back').fire('click', { detail: 0 });
+  assert.equal(p.activeElement(), p.button('More'));
+  assert.equal(p.ids.get('keys-main').hidden, false);
+  assert.equal(p.button('More').attributes['aria-expanded'], 'false');
+});
+
+test('touch clicks with detail zero do not repeat keys or toggle modifiers twice', async () => {
+  const p = await page();
+  for (const label of ['Ctrl', 'Answer', 'Enter']) {
+    p.button(label).fire('pointerdown');
+    p.button(label).fire('pointerup');
+    p.button(label).fire('click', { detail: 0, pointerType: 'touch' });
+    if (label === 'Ctrl') assert.equal(p.button('Ctrl').attributes['aria-pressed'], 'true');
+  }
+  assert.deepEqual(p.input(), ['\x1b[1;2D', '\r']);
+  p.button('Enter').fire('pointerdown');
+  p.button('Enter').fire('pointercancel');
+  p.button('Enter').fire('keydown', { key: 'Enter' });
+  p.button('Enter').fire('click', { detail: 0 });
+  assert.deepEqual(p.input(), ['\r'], 'keyboard activation works after a cancelled Enter tap');
+});
+
+test('double Escape is timed and repeat stops on pointer release', async () => {
+  const p = await page();
+  p.tap('Esc²');
+  assert.deepEqual(p.input(), ['\x1b']);
+  [...p.timers.values()].find(t => t.ms === 120).fn();
+  assert.deepEqual(p.input(), ['\x1b']);
+  p.button('←').fire('pointerdown');
+  [...p.timers.values()].find(t => t.ms === 380).fn();
+  [...p.timers.values()].find(t => t.ms === 55).fn();
+  p.button('←').fire('pointerup');
+  assert.equal([...p.timers.values()].some(t => t.ms === 55), false);
+  assert.deepEqual(p.input(), ['\x1b[D', '\x1b[D']);
+});
+
+test('hiding helper keys stops an active or pending key repeat', async () => {
+  const p = await page();
+  p.tap('Keys');
+  p.button('←').fire('pointerdown');
+  [...p.timers.values()].find(t => t.ms === 380).fn();
+  p.tap('More');
+  assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
+  p.button('Bksp').fire('pointerdown');
+  p.tap('Keys');
+  assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
+  assert.deepEqual(p.input(), ['\x1b[D', '\x7f']);
+});
+
+test('mobile autocorrect replacements stay in the draft and are inserted once', async () => {
+  const p = await page();
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'none');
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  box.value = 'teh same text';
+  box.fire('input', { inputType: 'insertText', data: 'teh same text' });
+  box.fire('compositionstart');
+  box.value = 'the same text';
+  box.fire('input', { inputType: 'insertReplacementText', data: 'the same text' });
+  box.fire('input', { inputType: 'insertReplacementText', data: 'the same text' });
+  assert.deepEqual(p.input(), []);
+  assert.deepEqual(p.terminal.pastes, []);
+  p.advance(500);
+  const insert = p.ids.get('paste-send');
+  insert.fire('click'); insert.fire('click');
+  assert.deepEqual(p.terminal.pastes, []);
+  box.fire('compositionend');
+  box.value = 'the same text.'; // final input event after compositionend
+  box.fire('input', { inputType: 'insertText', data: '.' });
+  p.flush(); insert.fire('click'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['the same text.']);
+  assert.deepEqual(p.input(), ['\r'], 'send the final draft and submit exactly once');
+  assert.equal(p.ids.get('paste').hidden, true);
+});
+
+test('keyboard-opening buttons wait for a completed tap and preserve an open draft', async () => {
+  const p = await page();
+  p.button('Write').fire('pointerdown');
+  assert.equal(p.ids.get('paste').hidden, true);
+  p.button('Write').fire('pointercancel');
+  assert.equal(p.ids.get('paste').hidden, true);
+  p.tap('Write');
+  assert.equal(p.ids.get('paste').hidden, false);
+  p.ids.get('paste-text').value = 'keep this draft';
+  p.tap('Write');
+  assert.equal(p.ids.get('paste-text').value, 'keep this draft');
+  assert.deepEqual(p.input(), []);
+});
+
+test('terminal taps open the native draft; scrolling and cancelled gestures do not', async () => {
+  const p = await page();
+  const el = p.ids.get('term');
+  const start = (x = 40, y = 40) => el.fire('touchstart', { touches: [{ clientX: x, clientY: y }] });
+  const end = () => el.fire('touchend', { touches: [] });
+  start();
+  el.fire('touchcancel', { touches: [] });
+  assert.equal(p.ids.get('paste').hidden, true);
+  start();
+  el.fire('touchmove', { touches: [{ clientX: 60, clientY: 40 }] });
+  end();
+  assert.equal(p.ids.get('paste').hidden, true);
+  start();
+  el.fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }, { clientX: 60, clientY: 40 }] });
+  end();
+  assert.equal(p.ids.get('paste').hidden, true);
+  start(); end();
+  assert.equal(p.ids.get('paste').hidden, false);
+  assert.deepEqual(p.input(), []);
+});
+
+test('Write keeps pasted text for editing; the original Paste action still inserts directly', async () => {
+  const p = await page();
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  box.fire('paste', { clipboardData: { getData: () => 'hello hello' } });
+  assert.deepEqual(p.terminal.pastes, []);
+  box.value = 'hello hello';
+  p.advance(500);
+  p.ids.get('paste-send').fire('click'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['hello hello']);
+  assert.deepEqual(p.input(), ['\r']);
+  p.tap('Paste');
+  const pasteBox = p.ids.get('paste-text');
+  pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
+  pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
+  assert.deepEqual(p.terminal.pastes, ['hello hello', '/help']);
+  assert.deepEqual(p.input(), [], 'the separate Paste action must not execute text');
+});
+
+test('Enter submits a draft and Shift+Enter or the newline key keeps editing', async () => {
+  const p = await page();
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  assert.equal(box.getAttribute('enterkeyhint'), 'send');
+  box.value = 'first'; box.selectionStart = box.selectionEnd = 5;
+  p.tap('New line');
+  assert.equal(box.value, 'first\n');
+  assert.deepEqual(p.input(), []);
+  box.fire('keydown', { key: 'Enter', shiftKey: true });
+  box.value += '\n'; box.selectionStart = box.selectionEnd = box.value.length;
+  box.fire('input', { inputType: 'insertLineBreak' });
+  p.flush();
+  assert.deepEqual(p.terminal.pastes, []);
+  box.value += 'last';
+  box.fire('keydown', { key: 'Enter' }); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['first\n\nlast']);
+  assert.deepEqual(p.input(), ['\r']);
+});
+
+test('Android Enter submits through beforeinput or its non-cancellable input fallback', async () => {
+  for (const cancelable of [true, false]) {
+    const p = await page();
+    p.tap('Write');
+    const box = p.ids.get('paste-text');
+    box.value = 'corrected words';
+    box.selectionStart = box.selectionEnd = box.value.length;
+    box.fire('keydown', { key: 'Unidentified', keyCode: 229 });
+    let prevented = false;
+    box.fire('beforeinput', { inputType: 'insertLineBreak', cancelable,
+      preventDefault() { prevented = true; } });
+    assert.equal(prevented, cancelable);
+    if (!cancelable) {
+      box.value += '\n'; box.selectionStart = box.selectionEnd = box.value.length;
+      box.fire('input', { inputType: 'insertLineBreak' });
+      assert.equal(box.value, 'corrected words\n', 'do not rewrite the active native editor');
+    }
+    p.flush();
+    assert.deepEqual(p.terminal.pastes, ['corrected words']);
+    assert.deepEqual(p.input(), ['\r']);
+  }
+});
+
+test('the toolbar Enter submits an open draft; pending composition still waits', async () => {
+  const p = await page();
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  box.value = 'teh'; box.fire('compositionstart');
+  p.tap('Enter'); p.flush();
+  assert.deepEqual(p.input(), []);
+  box.value = 'the'; box.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['the']);
+  assert.deepEqual(p.input(), ['\r']);
+});
+
+test('each draft gets a fresh editor and ignores composition from a previous draft', async () => {
+  const p = await page();
+  p.tap('Write');
+  const old = p.ids.get('paste-text');
+  old.value = 'old draft';
+  old.fire('compositionstart');
+  p.ids.get('paste-cancel').fire('click');
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  assert.notEqual(old, box);
+  assert.equal(box.getAttribute('autocorrect'), 'on');
+  assert.equal(box.getAttribute('spellcheck'), 'true');
+  box.value = 'new draft';
+  box.fire('compositionstart');
+  p.tap('Write'); // duplicate activation cannot reset an active editor
+  assert.equal(p.ids.get('paste-text'), box);
+  assert.equal(box.value, 'new draft');
+  p.ids.get('paste-send').fire('click');
+  old.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, [], 'stale events cannot finish the current composition');
+  box.value = 'new corrected draft';
+  box.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['new corrected draft']);
+});
+
+test('IME Enter is not submitted early, Cancel sends nothing, and live typing stays available', async () => {
+  const p = await page();
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  box.value = 'draft';
+  box.fire('keydown', { key: 'Enter', ctrlKey: true, isComposing: true });
+  p.flush();
+  assert.deepEqual(p.terminal.pastes, []);
+  p.advance(500);
+  p.ids.get('paste-cancel').fire('click');
+  assert.deepEqual(p.terminal.pastes, []);
+  p.tap('Keys'); p.tap('More'); p.tap('Direct');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'text');
+  p.ids.get('term').fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
+  p.ids.get('term').fire('touchend', { touches: [] });
+  assert.equal(p.ids.get('paste').hidden, true, 'explicit direct entry stays available');
+  p.terminal.type('/help');
+  assert.deepEqual(p.input(), ['/help']);
+  p.terminal.textarea.blur();
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'none');
+  for (const label of ['Esc', 'Tab', 'Mode', '←', '↑', '↓', '→', 'PgUp', 'PgDn', 'More',
+    'Ctrl', 'Alt', 'Ctrl+C', 'Esc²', 'Bksp', 'Home', 'End', 'Copy', 'Paste', 'A−', 'A+', 'Write']) p.button(label);
+});
+
+test('disconnecting preserves a draft instead of dropping its text', async () => {
+  const p = await page();
+  p.tap('Write');
+  p.ids.get('paste-text').value = 'keep this draft';
+  p.socket().readyState = 3;
+  p.advance(500);
+  p.ids.get('paste-send').fire('click'); p.flush();
+  assert.equal(p.ids.get('paste').hidden, false);
+  assert.equal(p.ids.get('paste-text').value, 'keep this draft');
+  assert.deepEqual(p.terminal.pastes, []);
+});
+
+test('desktop and phones with the toolbar hidden retain their original keyboard', async () => {
+  for (const options of [{ touch: false }, { touch: true, search: '?keys=0' }]) {
+    const p = await page(options);
+    assert.equal(p.ids.get('bar').hidden, true);
+    assert.equal(p.terminal.textarea.getAttribute('inputmode'), undefined);
+  }
+});
+
+test('switching agents cancels insertion while a phone composition is pending', async t => {
+  const p = await page();
+  if (!p.ids.has('agents')) return t.skip('installed version has no live session switching');
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  box.value = 'belongs to the original session'; box.fire('compositionstart');
+  p.advance(500); p.ids.get('paste-send').fire('click');
+  p.ids.get('agents').children.find(b => b.dataset.agent === 'shell').fire('click');
+  await new Promise(setImmediate);
+  p.socket().onopen();
+  box.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, []);
+});

@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+- Start phone helper keys minimized with a small Write / New line / Keys row.
+  Opening a new draft or switching sessions minimizes them; explicit expansion
+  survives keyboard resizing. More replaces common controls with a compact
+  tools page, and collapsing clears armed modifiers.
+- Consolidate shared Claude/Codex actions: Enter, Esc, Tab, Mode (Shift+Tab),
+  Esc², arrows, Space, and newline. Keep Codex Answer (Shift+Left) alongside
+  them and preserve Ctrl/Alt/Shift, Ctrl+C, clipboard, navigation, text size,
+  tmux prefix, and direct keyboard access under More.
+- Combine the duplicate phone keyboard buttons into Write. Keep its native
+  draft below the terminal so output remains visible and scrollable. Enter or
+  Send submits; Shift+Enter and New line add a line. Use a compact session
+  header when the keyboard leaves little vertical space.
+- Keep autocorrect and composition within a fresh native editor per draft;
+  submit the final value once after composition commits. Ignore late events
+  from previous drafts and preserve active drafts on duplicate open attempts.
+- Open the keyboard on completed taps, preserve it while navigating helper
+  pages, and avoid opening it after scroll/cancel gestures. Prevent touch
+  clicks from sending keys twice. Use 44-pixel phone targets and font-independent
+  navigation arrows, accessible expansion state and visible armed modifiers.
+- Add isolated event and Chromium tests for helper state, touch activation,
+  narrow-phone layout, shared terminal sequences, word replacement, composition,
+  Enter submission, and scrolling while composing.
+
 ## 2.4.0
 - Switch Claude, ChatGPT, and Shell with panel buttons or Ctrl+Shift+1 / 2 / 3,
   without changing add-on options or restarting. Each workspace/agent pair

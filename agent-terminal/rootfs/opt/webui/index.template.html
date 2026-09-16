@@ -68,6 +68,15 @@ body { position: fixed; inset: 0; }
   .agent-button { flex: 1; min-height: 42px; }
 }
 @media (pointer: coarse) { #workspace, .agent-button { min-height: 44px; } }
+@media (pointer: coarse) {
+  /* Keep session selection within one row when the phone keyboard is up.
+     Use the measured frame height: an HA iframe's media queries may not shrink. */
+  #app.compact-height #session-bar { flex-wrap: nowrap; gap: 4px; }
+  #app.compact-height #workspace-label { display: none; }
+  #app.compact-height #workspace { max-width: none; }
+  #app.compact-height #agents { flex-basis: auto; }
+  #app.compact-height .agent-button { padding: 0 7px; }
+}
 #term { flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; touch-action: none; -webkit-touch-callout: none; }
 .xterm { height: 100%; }
 /* iOS zooms the page when focusing an input under 16px. xterm's hidden input
@@ -82,6 +91,16 @@ body { position: fixed; inset: 0; }
 #bar[hidden] { display: none; }
 .row { display: flex; gap: 4px; padding: 4px; }
 .row[hidden] { display: none; }
+#key-panel[hidden], #keys-main[hidden], #keys-more[hidden] { display: none; }
+#key-panel { border-bottom: 1px solid var(--line); }
+#key-rail { padding: 5px; gap: 6px; }
+#key-rail .k { background: transparent; border: 1px solid var(--line); }
+#key-rail .k.on { background: var(--key-down); border-color: var(--accent); }
+#key-toggle { position: relative; gap: 6px; }
+#key-toggle::after { content: '+'; color: var(--accent); font-size: 17px; }
+#key-toggle[aria-expanded="true"]::after { content: '−'; }
+#key-modifiers { position: absolute; bottom: 2px; font-size: 10px; color: var(--accent); }
+.k:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .k {
   flex: 1 1 0; min-width: 0; height: 34px; padding: 0;
   border: 0; border-radius: 7px; background: var(--key); color: var(--fg);
@@ -89,7 +108,19 @@ body { position: fixed; inset: 0; }
   display: flex; align-items: center; justify-content: center;
   touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
+@media (pointer: coarse) { .k { min-height: 44px; } }
 .k:active, .k.down { background: var(--key-down); }
+.k.wide { flex-grow: 1.5; }
+/* Draw arrows without relying on the phone's symbol font. */
+.k[data-arrow] { font-size: 0; }
+.k[data-arrow]::before {
+  content: ''; width: 9px; height: 9px;
+  border-top: 2px solid currentColor; border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+.k[data-arrow="←"]::before { transform: rotate(-135deg); }
+.k[data-arrow="↑"]::before { transform: rotate(-45deg); }
+.k[data-arrow="↓"]::before { transform: rotate(135deg); }
 .k.on { background: var(--key-down); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 #overlay {
@@ -128,6 +159,20 @@ body { position: fixed; inset: 0; }
   background: var(--bg); color: var(--fg);
   font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;   /* 16px: no iOS zoom */
 }
+/* Write stays below the terminal, leaving output visible and scrollable. */
+#paste.compose {
+  position: relative; inset: auto; z-index: 1; flex: 0 0 auto; flex-direction: row;
+  align-items: center; gap: 6px; padding: 6px;
+  border-top: 1px solid var(--line); background: var(--bar);
+}
+#paste.compose #paste-text {
+  flex: 1 1 auto; width: 0; height: 60px; line-height: 22px;
+  padding: 7px; border: 1px solid var(--line); border-radius: 7px;
+}
+#paste.compose .sheet-hint { display: none; }
+#paste.compose .sheet-bar { padding: 0; gap: 4px; }
+#paste.compose .sheet-bar .k { flex: 0 0 auto; width: 44px; }
+#paste.compose #paste-send { width: 56px; }
 /* Sheet buttons sit at the bottom, in thumb reach, primary action on the right. */
 .sheet-hint {
   flex: 0 0 auto; padding: 6px 10px; text-align: center; font-size: 13px; color: #8b919c;
@@ -162,21 +207,31 @@ body { position: fixed; inset: 0; }
     <div id="agents" role="group" aria-label="Agent"></div>
   </div>
   <div id="term"></div>
-  <div id="bar" hidden>
-    <div class="row" id="row1"></div>
-    <div class="row" id="row2"></div>
-  </div>
-  <div id="overlay" hidden><div id="overlay-msg"></div></div>
-  <div id="menu" role="menu" hidden></div>
   <div id="paste" class="sheet" hidden>
     <textarea id="paste-text" placeholder="Long-press here and choose Paste (or tap your keyboard's clipboard suggestion). Pasted text goes straight to the terminal."
               autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
-    <div class="sheet-hint">Pastes go straight in · typed text needs Send</div>
+    <div class="sheet-hint" id="paste-hint">Pastes go straight in · typed text needs Send</div>
     <div class="sheet-bar">
       <button type="button" class="k" id="paste-cancel">Cancel</button>
       <button type="button" class="k primary" id="paste-send">Send</button>
     </div>
   </div>
+  <div id="bar" hidden>
+    <div id="key-panel" role="group" aria-label="Terminal helper keys" hidden>
+      <div id="keys-main">
+        <div class="row" id="row1"></div>
+        <div class="row" id="row-nav"></div>
+      </div>
+      <div id="keys-more" hidden>
+        <div class="row" id="row-mods"></div>
+        <div class="row" id="row-edit"></div>
+        <div class="row" id="row2"></div>
+      </div>
+    </div>
+    <div class="row" id="key-rail"></div>
+  </div>
+  <div id="overlay" hidden><div id="overlay-msg"></div></div>
+  <div id="menu" role="menu" hidden></div>
   <div id="sel" class="sheet" hidden>
     <pre id="sel-text"></pre>
     <div class="sheet-hint">Select with your phone's handles, then tap Copy</div>
@@ -219,7 +274,11 @@ body { position: fixed; inset: 0; }
   var app     = document.getElementById('app');
   var termEl  = document.getElementById('term');
   var bar     = document.getElementById('bar');
+  var keyPanel = document.getElementById('key-panel');
+  var keysMain = document.getElementById('keys-main');
+  var keysMore = document.getElementById('keys-more');
   var row1El  = document.getElementById('row1');
+  var rowModsEl = document.getElementById('row-mods');
   var row2El  = document.getElementById('row2');
   var overlay = document.getElementById('overlay');
   var overlayMsg = document.getElementById('overlay-msg');
@@ -269,7 +328,7 @@ body { position: fixed; inset: 0; }
     if (agent === selectedAgent && workspace === selectedWorkspace) { term.focus(); return; }
     selectedAgent = agent;
     selectedWorkspace = workspace;
-    hideMenu(); closePaste(); closeSelect(); clearMods();
+    hideMenu(); closePaste(); closeSelect(); setKeysOpen(false);
     term.clearSelection();
     updateSessionControls();
     // Preserve keys/debug parameters; explicit session URLs survive reloads.
@@ -631,7 +690,6 @@ body { position: fixed; inset: 0; }
     selText.style.fontSize = term.options.fontSize + 'px';
     selText.textContent = screenText();
     lastSel = '';
-    sheetOpenedAt = Date.now();
     selEl.hidden = false;
     selText.scrollTop = selText.scrollHeight;
   }
@@ -649,13 +707,12 @@ body { position: fixed; inset: 0; }
     if (s && s.rangeCount && selText.contains(s.anchorNode) && String(s)) lastSel = String(s);
   });
 
-  // A sheet opened from a key-bar tap covers that key, and the tap's trailing
-  // click would land on whichever sheet button is now under the finger.
-  var sheetOpenedAt = 0;
+  // Sheets open on completed taps, so there is no trailing opening click to
+  // suppress. Keep selection/input focus until the action's click handler.
   function selButton(id, go) {
     var b = document.getElementById(id);
     b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-    b.addEventListener('click', function () { if (Date.now() - sheetOpenedAt > 400) go(); });
+    b.addEventListener('click', go);
   }
   selButton('sel-copy', function () {
     if (lastSel) copyText(lastSel);
@@ -667,39 +724,175 @@ body { position: fixed; inset: 0; }
   // -------------------------------------------------------------- paste box
   var pasteEl = document.getElementById('paste');
   var pasteBox = document.getElementById('paste-text');
+  var pasteAutoSend = true, pasteComposing = false, pasteSending = false;
+  var draftLineBreak = null, addingDraftLine = false;
 
-  function openPaste() {
+  function openPaste(autoSend) {
     hideMenu();
-    pasteBox.value = '';
-    sheetOpenedAt = Date.now();
+    // Never reset the value or the keyboard's composing range in an open
+    // editor, including a second activation from the same touch gesture.
+    if (!pasteEl.hidden) { pasteBox.focus(); return; }
+    setKeysOpen(false);
+    pasteAutoSend = autoSend !== false;
+    pasteComposing = pasteSending = false;
+    draftLineBreak = null;
+    pasteEl.classList.toggle('compose', !pasteAutoSend);
+    // Give each draft its own native editing context. Gboard can deliver late
+    // composition events after blur; those must stay with the previous draft.
+    var box = document.createElement('textarea');
+    box.id = 'paste-text';
+    box.setAttribute('aria-label', pasteAutoSend ? 'Paste text' : 'Write a prompt');
+    box.setAttribute('inputmode', 'text');
+    box.setAttribute('enterkeyhint', pasteAutoSend ? 'enter' : 'send');
+    box.setAttribute('autocapitalize', 'off');
+    box.setAttribute('autocomplete', 'off');
+    box.setAttribute('autocorrect', pasteAutoSend ? 'off' : 'on');
+    box.setAttribute('spellcheck', pasteAutoSend ? 'false' : 'true');
+    pasteBox.replaceWith(box);
+    pasteBox = box;
+    bindPasteBox(box);
+    pasteBox.placeholder = pasteAutoSend
+      ? 'Long-press here to paste, or type text and tap Send.'
+      : 'Message · Enter sends';
+    document.getElementById('paste-hint').textContent = pasteAutoSend
+      ? 'Pastes go straight in · typed text needs Send'
+      : 'Enter sends · Shift+Enter or New line adds a line';
+    document.getElementById('paste-send').textContent = 'Send';
+    document.getElementById('paste-send').title = pasteAutoSend ? 'Insert text into terminal' : 'Send message (Enter)';
+    document.getElementById('paste-cancel').textContent = pasteAutoSend ? 'Cancel' : '×';
+    document.getElementById('paste-cancel').setAttribute('aria-label', 'Close draft');
     pasteEl.hidden = false;
+    doFit();
     pasteBox.focus();
   }
   function closePaste() {
-    pasteEl.hidden = true;
+    pasteSending = false;
+    // End editing before hiding the element, so the IME can finish its edit.
     pasteBox.blur();
+    pasteEl.hidden = true;
+    scheduleFit();
+  }
+  function finishPaste() {
+    if (pasteEl.hidden || !pasteSending || pasteComposing) return;
+    if (!sock || sock.readyState !== WebSocket.OPEN) {
+      pasteSending = false;
+      toast('Disconnected — draft kept. Send after reconnecting.');
+      return;
+    }
+    var t = pasteBox.value;
+    // Some Android keyboards only report Enter after inserting a newline.
+    // Remove exactly that edit from the submitted copy, never from the live
+    // editor while the keyboard owns its composing range.
+    if (draftLineBreak && t === draftLineBreak.value) {
+      t = t.slice(0, draftLineBreak.at) + t.slice(draftLineBreak.at + 1);
+    }
+    var submit = !pasteAutoSend;
+    closePaste();
+    pasteBox.value = '';
+    clearMods();
+    if (t) term.paste(t);
+    if (submit) send('\r');
+    term.focus();
   }
   function sendPaste() {
-    var t = pasteBox.value;
-    closePaste();
-    if (t) term.paste(t);
-    term.focus();
+    if (pasteEl.hidden || pasteSending) return;
+    pasteSending = true;
+    // Blurring commits the phone's pending IME/autocorrect edit. Read the
+    // final value after its compositionend/input events, and insert once.
+    pasteBox.blur();
+    if (!pasteComposing) setTimeout(finishPaste, 0);
+  }
+  function openCompose() {
+    // A second keyboard tap must not discard a draft already being edited.
+    if (pasteEl.hidden) openPaste(false);
+    else pasteBox.focus();
+  }
+
+  function draftOpen() { return !pasteEl.hidden && !pasteAutoSend; }
+  function newDraftLine() {
+    if (!draftOpen() || pasteSending) return;
+    clearMods();
+    // Finish the current word before inserting outside its composing range.
+    // Keep blur/focus inside the tap so the phone keyboard can stay open.
+    pasteBox.blur();
+    pasteBox.focus();
+    // Let the browser perform this edit so its undo and IME state stay in sync.
+    addingDraftLine = true;
+    try {
+      if (!document.execCommand('insertText', false, '\n')) toast('Use Shift+Enter to add a line');
+    } finally { addingDraftLine = false; }
+  }
+  function enterKey() {
+    if (!draftOpen()) { key('\r'); return; }
+    if (mods.shift) newDraftLine();
+    else sendPaste();
+  }
+  function newlineKey() {
+    if (draftOpen()) newDraftLine();
+    else fixedKey('\n');
+  }
+
+  function bindPasteBox(box) {
+    var allowLineBreak = false;
+    function lineBreak(e) { return e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph'; }
+    function current() { return box === pasteBox && !pasteEl.hidden; }
+    box.addEventListener('compositionstart', function () {
+      if (current()) pasteComposing = true;
+    });
+    box.addEventListener('compositionend', function () {
+      if (!current()) return;
+      pasteComposing = false;
+      if (pasteSending) setTimeout(finishPaste, 0);
+    });
+    // Plain native editing owns all input/replacement events. Do not write
+    // values back while Gboard is correcting or composing a word.
+    box.addEventListener('paste', function (e) {
+      var t = e.clipboardData && e.clipboardData.getData('text');
+      if (!current() || !pasteAutoSend || !t || box.value) return;
+      e.preventDefault();
+      closePaste();
+      term.paste(t);
+      toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
+    });
+    box.addEventListener('keydown', function (e) {
+      if (!current()) return;
+      allowLineBreak = false;
+      if (e.isComposing || pasteComposing || e.keyCode === 229) return;
+      if (e.key !== 'Enter') return;
+      if (pasteAutoSend) {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); sendPaste(); }
+      } else if (e.shiftKey || mods.shift) {
+        allowLineBreak = true;
+        clearMods();
+      } else {
+        e.preventDefault(); sendPaste();
+      }
+    });
+    box.addEventListener('beforeinput', function (e) {
+      if (!current() || pasteAutoSend || !lineBreak(e)) return;
+      if (addingDraftLine || allowLineBreak || mods.shift) {
+        allowLineBreak = true; clearMods(); return;
+      }
+      if (e.isComposing || pasteComposing || !e.cancelable) return;
+      e.preventDefault(); sendPaste();
+    });
+    box.addEventListener('input', function (e) {
+      if (!current() || pasteAutoSend) return;
+      if (lineBreak(e) && mods.shift) { clearMods(); allowLineBreak = false; return; }
+      if (lineBreak(e) && !addingDraftLine && !allowLineBreak && !e.isComposing && !pasteComposing) {
+        // Fallback when a phone omits keydown/beforeinput or cannot cancel it.
+        var at = box.selectionStart - 1;
+        if (at >= 0 && box.value.charAt(at) === '\n') {
+          draftLineBreak = { value: box.value, at: at };
+          sendPaste();
+        }
+      }
+      allowLineBreak = false;
+    });
   }
 
   selButton('paste-send', sendPaste);
   selButton('paste-cancel', closePaste);
-  // A paste into the empty box goes straight to the terminal - no Send needed.
-  pasteBox.addEventListener('paste', function (e) {
-    var t = e.clipboardData && e.clipboardData.getData('text');
-    if (!t || pasteBox.value) return;          // no data, or adding to typed text
-    e.preventDefault();
-    closePaste();
-    term.paste(t);
-    toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
-  });
-  pasteBox.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPaste(); }
-  });
 
   // ttyd pushes --client-option values here. Only options xterm actually
   // understands are applied, and a font size the user picked on this device wins.
@@ -718,25 +911,40 @@ body { position: fixed; inset: 0; }
   }
 
   // ------------------------------------------------------- sticky modifiers
-  var mods = { ctrl: false, alt: false };
+  var mods = { ctrl: false, alt: false, shift: false };
   var modBtns = {};
 
   function setMod(name, on) {
     mods[name] = on;
-    if (modBtns[name]) modBtns[name].classList.toggle('on', on);
+    if (modBtns[name]) {
+      modBtns[name].classList.toggle('on', on);
+      modBtns[name].setAttribute('aria-pressed', String(on));
+    }
+    if (keyModifiers) keyModifiers.textContent = ['ctrl', 'alt', 'shift'].filter(function (k) {
+      return mods[k];
+    }).map(function (k) { return k.charAt(0).toUpperCase() + k.slice(1); }).join('+');
   }
-  function clearMods() { setMod('ctrl', false); setMod('alt', false); }
+  function clearMods() { setMod('ctrl', false); setMod('alt', false); setMod('shift', false); }
 
   function applyMods(d) {
     // Anything longer than one character is an escape sequence or a mouse
     // report, not a keystroke: pass it through, leave the modifier armed.
-    if ((!mods.ctrl && !mods.alt) || d.length !== 1) return d;
+    if ((!mods.ctrl && !mods.alt && !mods.shift) || d.length !== 1) return d;
     var out = d;
+    if (mods.shift) {
+      var plain = '`1234567890-=[]\\;\',./';
+      var shifted = '~!@#$%^&*()_+{}|:"<>?';
+      var i = plain.indexOf(d);
+      if (d === '\t') out = '\x1b[Z';
+      // Ctrl+J is a newline in Codex, including through legacy terminals.
+      else if (d === '\r') out = '\n';
+      else out = i < 0 ? d.toUpperCase() : shifted.charAt(i);
+    }
     if (mods.ctrl) {
-      var c = d.toUpperCase().charCodeAt(0);
+      var c = out.toUpperCase().charCodeAt(0);
       if (c >= 64 && c <= 95) out = String.fromCharCode(c - 64);   // @ A-Z [ \ ] ^ _
       else if (c === 32) out = '\x00';
-      else if (d === '?') out = '\x7f';
+      else if (out === '?') out = '\x7f';
     }
     if (mods.alt) out = '\x1b' + out;
     clearMods();
@@ -777,9 +985,9 @@ body { position: fixed; inset: 0; }
 
   // Drag anywhere on the terminal to scroll. Listeners are in the capture
   // phase so a real scroll gesture never reaches xterm's own touch handling,
-  // while a tap still falls through to it and opens the keyboard.
+  // while a short tap opens the native draft on phones.
   // Holding still for LONG_PRESS_MS opens the touch menu.
-  var tY = null, tAcc = 0, tScrolling = false;
+  var tX = null, tY = null, tAcc = 0, tScrolling = false;
   var LONG_PRESS_MS = 500, pressTimer = null, longPressed = false;
 
   termEl.addEventListener('touchstart', function (e) {
@@ -787,7 +995,7 @@ body { position: fixed; inset: 0; }
     longPressed = false;
     if (e.touches.length !== 1) { tY = null; return; }
     var pressX = e.touches[0].clientX, pressY = e.touches[0].clientY;
-    tY = pressY; tAcc = 0; tScrolling = false;
+    tX = pressX; tY = pressY; tAcc = 0; tScrolling = false;
     pressTimer = setTimeout(function () {
       longPressed = true;
       tY = null;
@@ -796,9 +1004,10 @@ body { position: fixed; inset: 0; }
   }, { capture: true, passive: true });
 
   termEl.addEventListener('touchmove', function (e) {
-    if (tY === null || e.touches.length !== 1) return;
+    if (e.touches.length !== 1) { clearTimeout(pressTimer); tY = null; return; }
+    if (tY === null) return;
     var y = e.touches[0].clientY, dy = tY - y;
-    if (!tScrolling && Math.abs(dy) < 8) return;       // let short taps be taps
+    if (!tScrolling && Math.abs(dy) < 8 && Math.abs(e.touches[0].clientX - tX) < 8) return;
     tScrolling = true;
     clearTimeout(pressTimer);
     e.preventDefault();
@@ -818,7 +1027,15 @@ body { position: fixed; inset: 0; }
       e.stopPropagation();
       longPressed = false;
     } else if (tScrolling) {
+      if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+    } else if (e.type === 'touchend' && tY !== null && e.touches.length === 0 &&
+               touch && !bar.hidden && !directKeyboard) {
+      // touchend has user activation on iOS/Android; touch-down does not.
+      // Suppress the synthetic click so xterm cannot steal focus afterwards.
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      openCompose();
     }
     tY = null; tScrolling = false;
   }
@@ -827,9 +1044,10 @@ body { position: fixed; inset: 0; }
 
   // --------------------------------------------------------------- actions
   function key(seq) { send(applyMods(seq)); }
+  function fixedKey(seq) { clearMods(); send(seq); }
 
   function arrow(letter) {
-    var m = 1 + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
+    var m = 1 + (mods.shift ? 1 : 0) + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
     var seq = m === 1 ? '\x1b[' + letter : '\x1b[1;' + m + letter;
     clearMods();
     send(seq);
@@ -843,74 +1061,133 @@ body { position: fixed; inset: 0; }
     doFit();
   }
 
-  function toggleKeyboard() {
-    var ta = termEl.querySelector('.xterm-helper-textarea');
-    if (ta && document.activeElement === ta) ta.blur();
-    else term.focus();
+  var directKeyboard = false;
+  function toggleDirectKeyboard() {
+    if (draftOpen()) closePaste();
+    var ta = term.textarea;
+    if (ta && document.activeElement === ta && (!touch || directKeyboard)) ta.blur();
+    else {
+      if (ta && touch) {
+        ta.blur();
+        directKeyboard = true;
+        ta.setAttribute('inputmode', 'text');
+      }
+      setKeysOpen(false);
+      term.focus();
+    }
   }
-
-  function toggleRow2() {
-    var hide = !row2El.hidden;
-    row2El.hidden = hide;
-    lsSet('row2', hide ? '0' : '1');
+  function setKeysOpen(open) {
+    stopKeyHolds.forEach(function (stop) { stop(); });
+    keyPanel.hidden = !open;
+    // Every opening starts with common controls. Never restore an expanded
+    // toolbar from storage or expand it in response to keyboard resizing.
+    keysMain.hidden = false;
+    keysMore.hidden = true;
+    if (!open) clearMods();
+    var toggle = document.getElementById('key-toggle');
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.title = open ? 'Hide helper keys' : 'Show helper keys';
+    toggle.setAttribute('aria-label', toggle.title);
+    toggle.classList.toggle('on', open);
+    document.getElementById('more-keys').setAttribute('aria-expanded', 'false');
+    layout();
+  }
+  function showMoreKeys(more) {
+    stopKeyHolds.forEach(function (stop) { stop(); });
+    keysMain.hidden = more;
+    keysMore.hidden = !more;
+    var from = document.getElementById(more ? 'more-keys' : 'back-keys');
+    var to = document.getElementById(more ? 'back-keys' : 'more-keys');
+    document.getElementById('more-keys').setAttribute('aria-expanded', String(more));
+    // Keyboard navigation must not strand focus in the page just hidden.
+    if (document.activeElement === from) to.focus();
     layout();
   }
 
   // ------------------------------------------------------------- on-screen keys
-  var ROW1 = [
-    { l: 'Esc',  t: 'Escape',              go: function () { key('\x1b'); } },
-    { l: '⇥', t: 'Tab',               go: function () { key('\t'); } },
-    { l: '⇧⇥', t: 'Shift+Tab',   go: function () { key('\x1b[Z'); } },
-    { l: '←', t: 'Left',  rep: true,  go: function () { arrow('D'); } },
-    { l: '↑', t: 'Up',    rep: true,  go: function () { arrow('A'); } },
-    { l: '↓', t: 'Down',  rep: true,  go: function () { arrow('B'); } },
-    { l: '→', t: 'Right', rep: true,  go: function () { arrow('C'); } },
-    { l: '⇞', t: 'Scroll up a page',   rep: true, go: function () { scrollLines(-page()); } },
-    { l: '⇟', t: 'Scroll down a page', rep: true, go: function () { scrollLines(page()); } },
-    { l: '⋯', t: 'More keys',         go: toggleRow2 }
+  var RAIL = [
+    { l: 'Write', t: 'Open keyboard and write a prompt', click: true, go: openCompose },
+    { l: 'New line', t: 'New line in draft / Ctrl+J in terminal', click: true, go: newlineKey },
+    { l: 'Keys', t: 'Show helper keys', id: 'key-toggle', click: true,
+      go: function () { setKeysOpen(keyPanel.hidden); } }
   ];
-
-  var ROW2 = [
-    { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
-    { l: 'Alt',  t: 'Alt (applies to the next key)',  mod: 'alt',  go: function () { setMod('alt', !mods.alt); } },
-    { l: '^C',   t: 'Ctrl+C',       go: function () { clearMods(); send('\x03'); } },
-    // Claude Code's Esc Esc (rewind / clear input) needs two separate
-    // presses; two taps on a phone are easy to miss or mistime. Sent as two
-    // messages so tmux can't merge them into one Meta+Esc.
-    { l: 'Esc²', t: 'Esc twice (rewind / clear input)', go: function () {
+  var ROW1 = [
+    { l: 'Esc', t: 'Escape / cancel in terminal', go: function () { key('\x1b'); } },
+    { l: 'Tab', t: 'Tab / next field / complete', go: function () { key('\t'); } },
+    { l: 'Mode', t: 'Shift+Tab — Claude permissions / Codex plan mode',
+      go: function () { fixedKey('\x1b[Z'); } },
+    { l: 'Answer', t: 'Open Codex questions (Shift+Left)',
+      go: function () { fixedKey('\x1b[1;2D'); } },
+    // Keep double Escape as two presses across tmux's escape timeout.
+    { l: 'Esc²', t: 'Esc twice — Claude rewind / Codex edit previous (empty prompt)', go: function () {
         var id = connectionId;
         clearMods(); send('\x1b');
         setTimeout(function () { if (id === connectionId) send('\x1b'); }, 120);
       } },
-    { l: '⌫', t: 'Backspace', rep: true, go: function () { key('\x7f'); } },
-    { l: '⇱', t: 'Home',       go: function () { key('\x1b[H'); } },
-    { l: '⇲', t: 'End',        go: function () { key('\x1b[F'); } },
-    { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', go: openSelect },
-    { l: '📋', t: 'Paste',     go: pasteText },
+    { l: 'Enter', t: 'Send open draft / Enter to confirm in terminal', primary: true, click: true, go: enterKey }
+  ];
+  var ROW_NAV = [
+    { l: '←', t: 'Left', rep: true, go: function () { arrow('D'); } },
+    { l: '↑', t: 'Up', rep: true, go: function () { arrow('A'); } },
+    { l: '↓', t: 'Down', rep: true, go: function () { arrow('B'); } },
+    { l: '→', t: 'Right', rep: true, go: function () { arrow('C'); } },
+    { l: 'Space', t: 'Space / toggle a choice in terminal', go: function () { key(' '); } },
+    { l: 'More', t: 'Editing, clipboard and tmux keys', id: 'more-keys', click: true,
+      go: function () { showMoreKeys(true); } }
+  ];
+  var ROW_MODS = [
+    { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
+    { l: 'Alt', t: 'Alt (applies to the next key)', mod: 'alt', go: function () { setMod('alt', !mods.alt); } },
+    { l: 'Shift', t: 'Shift (applies to the next key)', mod: 'shift', go: function () { setMod('shift', !mods.shift); } },
+    { l: 'Ctrl+C', t: 'Ctrl+C / interrupt or exit, depending on the running program', go: function () { fixedKey('\x03'); } },
+    { l: 'Back', t: 'Back to common keys', id: 'back-keys', click: true,
+      go: function () { showMoreKeys(false); } }
+  ];
+  var ROW_EDIT = [
+    { l: 'Bksp', t: 'Backspace in terminal', rep: true, go: function () { key('\x7f'); } },
+    { l: 'Home', t: 'Home in terminal', go: function () { arrow('H'); } },
+    { l: 'End', t: 'End in terminal', go: function () { arrow('F'); } },
+    { l: 'PgUp', t: 'Scroll up a page', rep: true, go: function () { scrollLines(-page()); } },
+    { l: 'PgDn', t: 'Scroll down a page', rep: true, go: function () { scrollLines(page()); } }
+  ];
+  var ROW2 = [
+    { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } },
+    { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', click: true, go: openSelect },
+    { l: 'Paste', t: 'Paste literal text into terminal', click: true, go: pasteText },
+    { l: 'Direct', t: 'Direct terminal keyboard for shortcuts (disable phone autocorrect)', click: true, go: toggleDirectKeyboard },
     { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
-    { l: 'A+',   t: 'Larger text',  go: function () { setFont(1); } },
-    { l: '⌨', t: 'Show / hide the keyboard', go: toggleKeyboard }
+    { l: 'A+', t: 'Larger text', go: function () { setFont(1); } }
   ];
 
+  var stopKeyHolds = [];
   function buildKey(spec, parent) {
     var b = document.createElement('button');
     b.type = 'button';
-    b.className = 'k';
+    b.className = 'k' + (spec.wide ? ' wide' : '') + (spec.primary ? ' primary' : '');
+    if (spec.id) b.id = spec.id;
     b.textContent = spec.l;
+    b.dataset.key = spec.l;
+    if (['←', '↑', '↓', '→'].indexOf(spec.l) !== -1) b.setAttribute('data-arrow', spec.l);
     b.title = spec.t;
     b.setAttribute('aria-label', spec.t);
+    if (spec.mod) b.setAttribute('aria-pressed', 'false');
 
-    var holdTimer = null, repeatTimer = null;
+    var holdTimer = null, repeatTimer = null, pointerHandled = false;
 
     function stop() {
       clearTimeout(holdTimer); clearInterval(repeatTimer);
       holdTimer = repeatTimer = null;
       b.classList.remove('down');
     }
+    stopKeyHolds.push(stop);
 
     b.addEventListener('pointerdown', function (e) {
-      e.preventDefault();               // never move focus - keeps the keyboard up
+      // Keep the current input focused. Actions that open a keyboard
+      // run on click, after a completed touch grants browser user activation.
+      e.preventDefault();
       b.classList.add('down');
+      if (spec.click) return;
+      pointerHandled = true;
       try { b.setPointerCapture(e.pointerId); } catch (err) {}
       spec.go();
       if (spec.rep) {
@@ -923,20 +1200,56 @@ body { position: fixed; inset: 0; }
     ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'].forEach(function (ev) {
       b.addEventListener(ev, stop);
     });
+    // A touch click can have detail=0 too. Track whether pointerdown already
+    // sent the key, rather than treating detail=0 as a second keyboard press.
+    b.addEventListener('pointercancel', function () { pointerHandled = false; });
+    b.addEventListener('keydown', function () { pointerHandled = false; });
+    b.addEventListener('click', function (e) {
+      var handled = pointerHandled;
+      pointerHandled = false;
+      if (spec.click || !handled) { e.preventDefault(); spec.go(); }
+    });
 
     if (spec.mod) modBtns[spec.mod] = b;
     parent.appendChild(b);
   }
 
+  RAIL.forEach(function (s) { buildKey(s, document.getElementById('key-rail')); });
   ROW1.forEach(function (s) { buildKey(s, row1El); });
+  ROW_NAV.forEach(function (s) { buildKey(s, document.getElementById('row-nav')); });
+  ROW_EDIT.forEach(function (s) { buildKey(s, document.getElementById('row-edit')); });
+  ROW_MODS.forEach(function (s) { buildKey(s, rowModsEl); });
   ROW2.forEach(function (s) { buildKey(s, row2El); });
-  row2El.hidden = lsGet('row2', '1') !== '1';
+  keyPanel.hidden = true;
+  keysMain.hidden = false;
+  keysMore.hidden = true;
+  document.getElementById('key-toggle').setAttribute('aria-controls', 'key-panel');
+  document.getElementById('key-toggle').setAttribute('aria-expanded', 'false');
+  document.getElementById('more-keys').setAttribute('aria-controls', 'keys-more');
+  document.getElementById('more-keys').setAttribute('aria-expanded', 'false');
+  var keyModifiers = document.createElement('span');
+  keyModifiers.id = 'key-modifiers';
+  keyModifiers.setAttribute('aria-live', 'polite');
+  document.getElementById('key-toggle').appendChild(keyModifiers);
 
   // The bar only earns its screen space on touch devices; a desktop keyboard
   // already has every key on it.
   var touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   var force = /[?&]keys=(\d)/.exec(location.search);
   bar.hidden = force ? force[1] === '0' : !touch;
+
+  // Mobile IMEs can replay xterm's accumulated hidden textarea as fresh input.
+  // Taps and Write use a native draft box instead. Keep physical keyboards
+  // untouched; Keys > More > Direct enables live input for terminal shortcuts.
+  // With the key bar forced off, keep direct typing available as before.
+  var terminalInput = term.textarea;
+  if (touch && !bar.hidden && terminalInput) {
+    terminalInput.setAttribute('inputmode', 'none');
+    terminalInput.addEventListener('blur', function () {
+      directKeyboard = false;
+      terminalInput.setAttribute('inputmode', 'none');
+    });
+  }
 
   // ---------------------------------------------------------------- layout
   var vv = window.visualViewport;
@@ -992,6 +1305,7 @@ body { position: fixed; inset: 0; }
     if (debug) debug.textContent = 'inner ' + window.innerHeight + ' vv ' + (vv ? Math.round(vv.height) : '-') +
       ' host ' + (host ? Math.round(host.height) + '@' + Math.round(host.top) : '-') + ' -> ' + Math.round(h);
     app.style.height = h + 'px';
+    app.classList.toggle('compact-height', h < 520);
     app.style.transform = top ? 'translateY(' + top + 'px)' : '';
     // Drop the home-indicator gutter while the keyboard is covering it anyway.
     var keyboardUp = (maxH - h) > 120;
@@ -1017,8 +1331,8 @@ body { position: fixed; inset: 0; }
     } catch (e) {}
   }
   // Some WebViews report the keyboard late; re-measure around focus changes.
-  termEl.addEventListener('focusin', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
-  termEl.addEventListener('focusout', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
+  app.addEventListener('focusin', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
+  app.addEventListener('focusout', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
   window.addEventListener('resize', layout);
   window.addEventListener('orientationchange', function () {
     maxH = 0;

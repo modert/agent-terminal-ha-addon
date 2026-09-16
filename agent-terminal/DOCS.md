@@ -213,7 +213,7 @@ project folders or Git worktrees when tasks need independent changes.
   On a phone, tap 📋 (or long-press → Paste): a paste box opens with the
   keyboard. Long-press in it and choose Paste (or tap the keyboard's clipboard
   suggestion) and it goes straight to the terminal. Typed text needs **Send**.
-- **Esc twice on a phone:** the **Esc²** key on the second row.
+- **Esc twice on a phone:** tap **Keys**, then **Esc²**.
 - **On a phone, long-press the terminal** for a menu: Select text…, Copy
   screen, Paste.
 - **Copy on a phone:** scroll to what you want, then long-press → **Select
@@ -238,28 +238,73 @@ project folders or Git worktrees when tasks need independent changes.
 
 ## Using it from a phone
 
-The sidebar panel serves a terminal page built for touch, so the add-on is
-usable from the Home Assistant companion app:
+The sidebar panel serves a terminal page built for touch, including the Home
+Assistant companion app.
 
-- **Drag anywhere on the terminal to scroll.** Claude Code (like most TUI agents) asks the terminal for
-  mouse tracking and scrolls on wheel events; a touchscreen never produces one,
-  which is why long output used to be unreachable. Drags are translated into
-  wheel events, so scrolling also works in `less`, in shell scrollback, and in
-  anything else running here.
-- **A key bar** supplies what mobile keyboards leave out: `Esc`, `Tab`,
-  `Shift+Tab`, arrows and page up/down, and - behind the `...` key - `Home`/`End`,
-  `Backspace`, `Ctrl+C`, sticky `Ctrl`/`Alt`, text size, and a key that shows or
-  hides the on-screen keyboard. Arrows, page up/down and backspace repeat if you
-  hold them. Sticky `Ctrl`/`Alt` apply to the next key pressed, including keys
-  typed on the real keyboard - so `Ctrl` then `r` sends Ctrl+R.
-- **The keyboard no longer shoves the prompt off-screen.** The page sizes itself
-  to the visible viewport, so the terminal shrinks to fit above the keyboard
-  instead of the whole page scrolling.
-- Text size is remembered per device. The key bar is hidden on desktop, where
-  the keyboard already has these keys; append `?keys=1` to the panel URL to
-  force it on (or `?keys=0` off).
+- **Helpers start minimized.** Only **Write**, **New line**, and **Keys** stay
+  visible. Tap **Keys** to open or close the helpers. Reloading, switching an
+  agent/workspace, or starting a new draft starts minimized; an old saved
+  expanded-toolbar preference is ignored. You can reopen Keys while typing:
+  keyboard resizing leaves your choice alone.
+- **Common controls:** Keys shows Esc, Tab, Mode, Answer, Esc², Enter, arrows,
+  and Space. **More** switches to editing, clipboard, text size, and tmux
+  controls; **Back** returns to common keys. These pages replace each other
+  so extra controls do not stack over the conversation.
+- **Answer Codex questions:** **Keys → Answer**, choose with the arrows, then
+  **Enter**. Tab moves between fields; Space toggles a choice where supported.
+- **Write a prompt:** tap the terminal or **Write** to open a compact draft
+  and the phone keyboard. The response stays visible and scrollable. **Enter**
+  or **Send** submits; **Shift+Enter** or **New line** adds a line. The helper
+  Enter button also submits an open draft. Tap **×** to close without sending.
+  Autocorrect and composition edits stay in the native draft; Send pastes the
+  final value once and submits after composition finishes. Enter used to accept
+  an IME candidate does not submit. Reopening an active draft preserves its
+  editor and text. Paste keeps autocorrect off for literal pasted content.
+- **Drag on the terminal to scroll**, even while a draft is open. Drags send
+  wheel events to programs that request mouse tracking, and otherwise scroll
+  terminal history. Long-press opens the selection/copy/paste menu.
+- **Modifiers and direct input:** **Keys → More** contains Ctrl, Alt, and
+  Shift. Each applies to the next terminal key; armed modifiers are shown on
+  the Keys button even after returning with Back. Collapsing helpers clears
+  them. **Direct** opens the original terminal keyboard for single letters or
+  shortcuts: for example, reopen Keys → More and tap Ctrl, then type r for
+  Ctrl+R. Disable phone autocorrect in Direct mode: xterm's live IME can replay
+  text ([upstream report](https://github.com/xtermjs/xterm.js/issues/6078)).
+  Physical keyboards work normally; `?keys=0` preserves direct phone input.
+- **tmux:** Keys → More → tmux sends the default Ctrl+B prefix. In Direct
+  mode, follow with `[` to scroll or `d` to detach. Tap tmux twice to pass
+  Ctrl+B through to Claude's background-task control.
+- **Touch targets are at least 44 × 44 pixels** on phones 320 pixels wide or
+  larger. Keyboard actions run on a completed tap. Scrolling, long-press menus,
+  and cancelled touches do not open the draft. The page fits above the keyboard;
+  the session selector uses one row when the available height is small.
+- Text size is remembered per device. The bar is hidden on desktop; append
+  `?keys=1` to force it on, or `?keys=0` to hide it. Set `mobile_ui: false`
+  to use ttyd's stock client.
 
-Set `mobile_ui: false` to go back to ttyd's stock client.
+### Shared shortcut map
+
+The helper buttons send the same terminal keys for either agent. The running
+program and its keybindings decide the action; these are the default meanings.
+Navigation and shortcut keys act on the terminal even while an unsent native
+draft is open. New line edits that draft and Enter submits it.
+
+| Button | Keys sent | Claude | Codex |
+|---|---|---|---|
+| Enter | Enter | Submit / confirm | Submit / confirm |
+| Esc | Escape | Interrupt / close a dialog | Cancel / close a dialog |
+| Tab | Tab | Complete / next field | Complete / next field; queue while working |
+| Mode | Shift+Tab | Cycle permission modes, including Plan | Toggle Plan mode |
+| Answer | Shift+Left | Ordinary Shift+Left | Open pending questions |
+| Esc² | Escape twice, spaced apart | Rewind with an empty prompt; clear nonempty input | Edit previous message with an empty prompt |
+| New line | Native draft newline, otherwise Ctrl+J | Newline | Newline |
+| Ctrl+C (More) | Ctrl+C | Interrupt / clear / exit, depending on state | Interrupt / exit, depending on state |
+
+Arrows and Space keep their normal navigation/selection behavior. More also
+retains Backspace (Bksp), Home/End, page scrolling, Copy/Paste, and A−/A+.
+See [Claude's shortcut reference](https://code.claude.com/docs/en/interactive-mode),
+[Codex's interactive commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli#interactive-shortcuts),
+and [Codex Plan mode](https://learn.chatgpt.com/guides/best-practices#plan-first-for-difficult-tasks).
 
 ## Adding an agent
 
@@ -320,6 +365,35 @@ serves newly created workspaces without restarting ttyd.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.
+
+### Checking the terminal controls
+
+With Node 22+, run from the repository root:
+
+```sh
+node tests/test_webui_keys.mjs
+```
+
+These checks execute the page's handlers with a simulated DOM, xterm API, and
+WebSocket. They cover the question-answer sequence, modifiers, Claude controls,
+pointer repeat, keyboard activation, minimized helper state, modifier cleanup,
+and draft composition/paste handling.
+They make no model requests and do not send keys to a live session.
+
+For browser regression coverage, build the web UI with its normal build script,
+then point the test at Chromium and the resulting bundle:
+
+```sh
+CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_webui_browser.mjs
+```
+
+The browser test uses real touch activation and composition events with the
+bundled xterm, including repeated word replacement, Korean composition, and
+live Ctrl/Answer/arrow/Enter controls. It checks minimized defaults, expansion
+while typing, terminal visibility, and 44-pixel touch targets on a 320px phone.
+Its WebSocket is replaced before page
+code runs, so all input stays inside the test. The test skips unless
+`CHROMIUM_BIN` is set. Actual phone keyboard behavior still needs a device check.
 
 ## Known limitations
 
