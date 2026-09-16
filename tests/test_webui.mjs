@@ -91,7 +91,7 @@ test('latest selection wins while token requests and old sockets complete out of
 
 test('shortcuts change agents and delayed clipboard input stays with its original session', async () => {
   const c = client(); await tick(); await c.connect();
-  c.elements.row2.children.find(b => b.textContent === '📋').emit('click', { detail: 1 });
+  c.elements.row2.children.find(b => b.textContent === 'Paste').emit('click', { detail: 1 });
   let prevented = false, stopped = false;
   c.window.emit('keydown', { code: 'Digit2', key: '@', ctrlKey: true, shiftKey: true,
     preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } });

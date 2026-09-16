@@ -10,8 +10,8 @@ const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
   import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
 const script = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
-async function page({ touch = true, search = '' } = {}) {
-  const ids = new Map(), packets = [], timers = new Map(), storage = new Map();
+async function page({ touch = true, search = '', saved = [] } = {}) {
+  const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
   let timerId = 0, terminal, socket, now = 1000;
   function element() {
     const handlers = new Map(), classes = new Set();
@@ -82,7 +82,7 @@ async function page({ touch = true, search = '' } = {}) {
     send(data) { packets.push(new TextDecoder().decode(data)); }
     close() { this.readyState = 3; if (this.onclose) this.onclose(); }
   }
-  const window = { innerHeight: 700, matchMedia: () => ({ matches: touch }), addEventListener() {} };
+  const window = Object.assign(element(), { innerHeight: 700, matchMedia: () => ({ matches: touch }) });
   window.top = window;
   window.getSelection = () => ({ removeAllRanges() {} });
   vm.runInNewContext(script, {
@@ -102,9 +102,9 @@ async function page({ touch = true, search = '' } = {}) {
   assert.ok(socket, 'page creates its ttyd connection');
   socket.onopen();
   packets.length = 0;
-  const buttons = ['row1', 'row-mods', 'row2'].flatMap(id => ids.get(id).children);
+  const buttons = ['key-rail', 'row1', 'row-nav', 'row-mods', 'row-edit', 'row2'].flatMap(id => ids.get(id).children);
   const button = label => {
-    const b = buttons.find(b => b.textContent === label);
+    const b = buttons.find(b => b.dataset.key === label);
     assert.ok(b, `button ${label} exists`);
     return b;
   };
@@ -120,14 +120,16 @@ async function page({ touch = true, search = '' } = {}) {
       if (timer.ms === 0) { timers.delete(id); timer.fn(); }
     }
   }
-  return { ids, button, tap, input, terminal, timers, flush, advance: ms => { now += ms; },
-    socket: () => socket };
+  return { ids, window, button, tap, input, terminal, timers, flush, advance: ms => { now += ms; },
+    socket: () => socket, activeElement: () => document.activeElement };
 }
 
-test('answering a Codex question is possible with the extra keys closed', async () => {
+test('common keys answer a Codex question without opening More', async () => {
   const p = await page();
-  assert.equal(p.ids.get('row2').hidden, true);
-  assert.equal(p.ids.get('row1').hidden, false);
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  p.tap('Keys');
+  assert.equal(p.ids.get('keys-more').hidden, true);
+  assert.equal(p.ids.get('keys-main').hidden, false);
   p.tap('Answer'); p.tap('↓'); p.tap('Enter');
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[B', '\r']);
 });
@@ -145,13 +147,15 @@ test('Shift reaches tmux arrow keys and clears after one press', async () => {
 
 test('fixed actions clear pending modifiers; Enter and newline are distinct', async () => {
   const p = await page();
-  for (const [label, seq] of [['Answer', '\x1b[1;2D'], ['⇧⇥', '\x1b[Z'],
-    ['^C', '\x03'], ['↵', '\n'], ['tmux', '\x02']]) {
+  for (const [label, seq] of [['Answer', '\x1b[1;2D'], ['Mode', '\x1b[Z'],
+    ['Ctrl+C', '\x03'], ['New line', '\n'], ['tmux', '\x02']]) {
     p.tap('Ctrl'); p.tap('Alt'); p.tap('Shift'); p.tap(label); p.tap('Enter');
     assert.deepEqual(p.input(), [seq, '\r']);
   }
   p.tap('Shift'); p.tap('Enter'); p.tap('Enter');
   assert.deepEqual(p.input(), ['\n', '\r']);
+  p.tap('Space');
+  assert.deepEqual(p.input(), [' ']);
 });
 
 test('typed text supports modifiers, and paste is kept intact', async () => {
@@ -161,23 +165,65 @@ test('typed text supports modifiers, and paste is kept intact', async () => {
   p.tap('Shift'); p.terminal.type('.');
   p.tap('Ctrl'); p.terminal.type('b');
   p.tap('Alt'); p.terminal.type('x');
-  p.tap('Shift'); p.tap('⇥');
+  p.tap('Shift'); p.tap('Tab');
   p.tap('Ctrl'); p.terminal.type('\x1b[200~two words\x1b[201~'); p.terminal.type('c');
   assert.deepEqual(p.input(), ['A', '<', '>', '\x02', '\x1bx', '\x1b[Z',
     '\x1b[200~two words\x1b[201~', '\x03']);
 });
 
-test('More keeps Answer visible, and keyboard clicks activate only once', async () => {
-  const p = await page();
-  p.tap('⋯');
-  assert.equal(p.ids.get('row2').hidden, false);
-  assert.equal(p.button('⋯').attributes['aria-expanded'], 'true');
-  p.tap('⋯');
-  assert.equal(p.ids.get('row2').hidden, true);
-  assert.equal(p.ids.get('row1').hidden, false);
-  p.button('Answer').fire('click', { detail: 0 });
-  p.tap('Enter');
+test('helpers start collapsed, including with a saved expanded toolbar preference', async () => {
+  const p = await page({ saved: [['cc-mobile:extraKeys', '1']] });
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  assert.equal(p.button('Keys').attributes['aria-expanded'], 'false');
+  p.window.innerHeight = 380; p.window.fire('resize');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  p.tap('Keys');
+  assert.equal(p.ids.get('key-panel').hidden, false);
+  p.window.innerHeight = 370; p.window.fire('resize');
+  assert.equal(p.ids.get('key-panel').hidden, false, 'resizing never undoes an explicit expansion');
+  p.tap('More');
+  assert.equal(p.ids.get('keys-main').hidden, true);
+  assert.equal(p.ids.get('keys-more').hidden, false, 'More replaces, rather than stacks on, common keys');
+  p.tap('Ctrl'); p.tap('Back');
+  assert.equal(p.ids.get('keys-main').hidden, false);
+  assert.equal(p.ids.get('key-modifiers').textContent, 'Ctrl', 'hidden modifier remains visible on the rail');
+  p.tap('←');
+  assert.deepEqual(p.input(), ['\x1b[1;5D']);
+  assert.equal(p.ids.get('key-modifiers').textContent, '');
+  p.tap('More'); p.tap('Shift'); p.tap('Keys');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  assert.equal(p.button('Shift').attributes['aria-pressed'], 'false');
+  p.tap('Keys');
+  assert.equal(p.ids.get('keys-more').hidden, true, 'reopening always starts with common keys');
+  p.button('Answer').fire('click', { detail: 0 }); p.tap('Enter');
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\r']);
+});
+
+test('starting a draft minimizes helpers; explicit expansion keeps the same editor', async () => {
+  const p = await page();
+  p.tap('Keys'); p.tap('More'); p.tap('Ctrl'); p.tap('Write');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  const box = p.ids.get('paste-text');
+  box.value = 'the same draft'; box.fire('compositionstart');
+  p.tap('Keys'); p.tap('More'); p.tap('Back');
+  assert.equal(p.ids.get('paste-text'), box);
+  assert.equal(box.value, 'the same draft');
+  p.window.innerHeight = 380; p.window.fire('resize');
+  assert.equal(p.ids.get('key-panel').hidden, false);
+  assert.equal(p.button('Ctrl').attributes['aria-pressed'], 'false');
+  assert.deepEqual(p.input(), []);
+});
+
+test('keyboard navigation follows the More and Back controls', async () => {
+  const p = await page();
+  p.tap('Keys');
+  p.button('More').focus(); p.button('More').fire('click', { detail: 0 });
+  assert.equal(p.activeElement(), p.button('Back'));
+  // Firing another keyboard click on Back exercises the inverse path too.
+  p.button('Back').fire('click', { detail: 0 });
+  assert.equal(p.activeElement(), p.button('More'));
+  assert.equal(p.ids.get('keys-main').hidden, false);
+  assert.equal(p.button('More').attributes['aria-expanded'], 'false');
 });
 
 test('touch clicks with detail zero do not repeat keys or toggle modifiers twice', async () => {
@@ -208,6 +254,19 @@ test('double Escape is timed and repeat stops on pointer release', async () => {
   p.button('←').fire('pointerup');
   assert.equal([...p.timers.values()].some(t => t.ms === 55), false);
   assert.deepEqual(p.input(), ['\x1b[D', '\x1b[D']);
+});
+
+test('hiding helper keys stops an active or pending key repeat', async () => {
+  const p = await page();
+  p.tap('Keys');
+  p.button('←').fire('pointerdown');
+  [...p.timers.values()].find(t => t.ms === 380).fn();
+  p.tap('More');
+  assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
+  p.button('Bksp').fire('pointerdown');
+  p.tap('Keys');
+  assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
+  assert.deepEqual(p.input(), ['\x1b[D', '\x7f']);
 });
 
 test('mobile autocorrect replacements stay in the draft and are inserted once', async () => {
@@ -245,7 +304,7 @@ test('keyboard-opening buttons wait for a completed tap and preserve an open dra
   p.tap('Write');
   assert.equal(p.ids.get('paste').hidden, false);
   p.ids.get('paste-text').value = 'keep this draft';
-  p.tap('⌨');
+  p.tap('Write');
   assert.equal(p.ids.get('paste-text').value, 'keep this draft');
   assert.deepEqual(p.input(), []);
 });
@@ -282,7 +341,7 @@ test('Write keeps pasted text for editing; the original Paste action still inser
   p.ids.get('paste-send').fire('click'); p.flush();
   assert.deepEqual(p.terminal.pastes, ['hello hello']);
   assert.deepEqual(p.input(), ['\r']);
-  p.tap('📋');
+  p.tap('Paste');
   const pasteBox = p.ids.get('paste-text');
   pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
   pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
@@ -296,7 +355,7 @@ test('Enter submits a draft and Shift+Enter or the newline key keeps editing', a
   const box = p.ids.get('paste-text');
   assert.equal(box.getAttribute('enterkeyhint'), 'send');
   box.value = 'first'; box.selectionStart = box.selectionEnd = 5;
-  p.tap('↵');
+  p.tap('New line');
   assert.equal(box.value, 'first\n');
   assert.deepEqual(p.input(), []);
   box.fire('keydown', { key: 'Enter', shiftKey: true });
@@ -381,7 +440,8 @@ test('IME Enter is not submitted early, Cancel sends nothing, and live typing st
   p.advance(500);
   p.ids.get('paste-cancel').fire('click');
   assert.deepEqual(p.terminal.pastes, []);
-  p.tap('Keys');
+  p.tap('Keys'); p.tap('More'); p.tap('Direct');
+  assert.equal(p.ids.get('key-panel').hidden, true);
   assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'text');
   p.ids.get('term').fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
   p.ids.get('term').fire('touchend', { touches: [] });
@@ -390,8 +450,8 @@ test('IME Enter is not submitted early, Cancel sends nothing, and live typing st
   assert.deepEqual(p.input(), ['/help']);
   p.terminal.textarea.blur();
   assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'none');
-  for (const label of ['Esc', '⇥', '⇧⇥', '←', '↑', '↓', '→', '⇞', '⇟', '⋯',
-    'Ctrl', 'Alt', '^C', 'Esc²', '⌫', '⇱', '⇲', 'Copy', '📋', 'A−', 'A+', '⌨']) p.button(label);
+  for (const label of ['Esc', 'Tab', 'Mode', '←', '↑', '↓', '→', 'PgUp', 'PgDn', 'More',
+    'Ctrl', 'Alt', 'Ctrl+C', 'Esc²', 'Bksp', 'Home', 'End', 'Copy', 'Paste', 'A−', 'A+', 'Write']) p.button(label);
 });
 
 test('disconnecting preserves a draft instead of dropping its text', async () => {

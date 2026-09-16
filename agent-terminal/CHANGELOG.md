@@ -1,29 +1,28 @@
 # Changelog
 
 ## Unreleased
-- Add visible Answer (Shift+Left) and Enter buttons for Codex questions, plus
-  a sticky Shift modifier, Ctrl+J newline, and a tmux prefix button.
-- Add a Write draft box for phone input. Autocorrect edits stay in the box;
-  Send submits the final text once, after composition finishes. The original
-  direct terminal keyboard is available under More > Keys.
-- Keep Write in a compact input area below the terminal so responses remain
-  visible and scrollable. Enter/Send submits; Shift+Enter and ↵ add a line.
-  Handle Android Enter events without rewriting the active editor's value.
-- Open the native draft from a terminal tap, Write, or the keyboard icon.
-  Wait for completed taps before focusing the editor, enlarge phone keys to
-  44 pixels high, and avoid opening the keyboard after scroll/cancel gestures.
-  Keep live terminal shortcuts available through the explicit Keys action.
-- Prevent touch-generated clicks from sending a toolbar key twice or toggling
-  a sticky modifier back off.
-- Give each Write draft a fresh native editor with autocorrect enabled. Ignore
-  late composition events from closed drafts and prevent duplicate openings
-  from resetting the value or composing range while the user is editing.
-- Cover browser touch activation, repeated word replacement, and composition
-  commits with an optional Chromium test using the real bundled xterm.
-- Preserve Claude's Shift+Tab, Esc², Ctrl+C, navigation, and clipboard controls.
-  Extra keys wrap and remain accessible under More.
-- Add keyboard activation and modifier state labels for assistive technology,
-  plus automated checks for key sequences and phone draft input.
+- Start phone helper keys minimized with a small Write / New line / Keys row.
+  Opening a new draft or switching sessions minimizes them; explicit expansion
+  survives keyboard resizing. More replaces common controls with a compact
+  tools page, and collapsing clears armed modifiers.
+- Consolidate shared Claude/Codex actions: Enter, Esc, Tab, Mode (Shift+Tab),
+  Esc², arrows, Space, and newline. Keep Codex Answer (Shift+Left) alongside
+  them and preserve Ctrl/Alt/Shift, Ctrl+C, clipboard, navigation, text size,
+  tmux prefix, and direct keyboard access under More.
+- Combine the duplicate phone keyboard buttons into Write. Keep its native
+  draft below the terminal so output remains visible and scrollable. Enter or
+  Send submits; Shift+Enter and New line add a line. Use a compact session
+  header when the keyboard leaves little vertical space.
+- Keep autocorrect and composition within a fresh native editor per draft;
+  submit the final value once after composition commits. Ignore late events
+  from previous drafts and preserve active drafts on duplicate open attempts.
+- Open the keyboard on completed taps, preserve it while navigating helper
+  pages, and avoid opening it after scroll/cancel gestures. Prevent touch
+  clicks from sending keys twice. Use 44-pixel phone targets and font-independent
+  navigation arrows, accessible expansion state and visible armed modifiers.
+- Add isolated event and Chromium tests for helper state, touch activation,
+  narrow-phone layout, shared terminal sequences, word replacement, composition,
+  Enter submission, and scrolling while composing.
 
 ## 2.4.0
 - Switch Claude, ChatGPT, and Shell with panel buttons or Ctrl+Shift+1 / 2 / 3,
