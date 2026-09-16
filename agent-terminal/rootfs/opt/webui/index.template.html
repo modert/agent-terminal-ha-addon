@@ -91,6 +91,7 @@ body { position: fixed; inset: 0; }
   display: flex; align-items: center; justify-content: center;
   touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
+@media (pointer: coarse) { .k { min-height: 44px; } }
 .k:active, .k.down { background: var(--key-down); }
 .k.wide { flex-grow: 1.5; }
 .k.on { background: var(--key-down); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -636,7 +637,6 @@ body { position: fixed; inset: 0; }
     selText.style.fontSize = term.options.fontSize + 'px';
     selText.textContent = screenText();
     lastSel = '';
-    sheetOpenedAt = Date.now();
     selEl.hidden = false;
     selText.scrollTop = selText.scrollHeight;
   }
@@ -654,13 +654,12 @@ body { position: fixed; inset: 0; }
     if (s && s.rangeCount && selText.contains(s.anchorNode) && String(s)) lastSel = String(s);
   });
 
-  // A sheet opened from a key-bar tap covers that key, and the tap's trailing
-  // click would land on whichever sheet button is now under the finger.
-  var sheetOpenedAt = 0;
+  // Sheets open on completed taps, so there is no trailing opening click to
+  // suppress. Keep selection/input focus until the action's click handler.
   function selButton(id, go) {
     var b = document.getElementById(id);
     b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
-    b.addEventListener('click', function () { if (Date.now() - sheetOpenedAt > 400) go(); });
+    b.addEventListener('click', go);
   }
   selButton('sel-copy', function () {
     if (lastSel) copyText(lastSel);
@@ -676,9 +675,24 @@ body { position: fixed; inset: 0; }
 
   function openPaste(autoSend) {
     hideMenu();
+    // Never reset the value or the keyboard's composing range in an open
+    // editor, including a second activation from the same touch gesture.
+    if (!pasteEl.hidden) { pasteBox.focus(); return; }
     pasteAutoSend = autoSend !== false;
     pasteComposing = pasteSending = false;
-    pasteBox.value = '';
+    // Give each draft its own native editing context. Gboard can deliver late
+    // composition events after blur; those must stay with the previous draft.
+    var box = document.createElement('textarea');
+    box.id = 'paste-text';
+    box.setAttribute('aria-label', pasteAutoSend ? 'Paste text' : 'Write a prompt');
+    box.setAttribute('inputmode', 'text');
+    box.setAttribute('autocapitalize', 'off');
+    box.setAttribute('autocomplete', 'off');
+    box.setAttribute('autocorrect', pasteAutoSend ? 'off' : 'on');
+    box.setAttribute('spellcheck', pasteAutoSend ? 'false' : 'true');
+    pasteBox.replaceWith(box);
+    pasteBox = box;
+    bindPasteBox(box);
     pasteBox.placeholder = pasteAutoSend
       ? 'Long-press here to paste, or type text and tap Send.'
       : 'Write your prompt here. Tap Insert when ready, then Enter in the terminal to submit.';
@@ -686,14 +700,14 @@ body { position: fixed; inset: 0; }
       ? 'Pastes go straight in · typed text needs Send'
       : 'Edit here · Insert puts text in the terminal · Enter submits';
     document.getElementById('paste-send').textContent = pasteAutoSend ? 'Send' : 'Insert';
-    sheetOpenedAt = Date.now();
     pasteEl.hidden = false;
     pasteBox.focus();
   }
   function closePaste() {
-    pasteEl.hidden = true;
     pasteSending = false;
+    // End editing before hiding the element, so the IME can finish its edit.
     pasteBox.blur();
+    pasteEl.hidden = true;
   }
   function finishPaste() {
     if (pasteEl.hidden || !pasteSending || pasteComposing) return;
@@ -703,8 +717,8 @@ body { position: fixed; inset: 0; }
       return;
     }
     var t = pasteBox.value;
-    pasteBox.value = '';
     closePaste();
+    pasteBox.value = '';
     if (t) term.paste(t);
     term.focus();
   }
@@ -716,29 +730,40 @@ body { position: fixed; inset: 0; }
     pasteBox.blur();
     if (!pasteComposing) setTimeout(finishPaste, 0);
   }
-  function openCompose() { openPaste(false); }
+  function openCompose() {
+    // A second keyboard tap must not discard a draft already being edited.
+    if (pasteEl.hidden) openPaste(false);
+    else pasteBox.focus();
+  }
 
-  pasteBox.addEventListener('compositionstart', function () { pasteComposing = true; });
-  pasteBox.addEventListener('compositionend', function () {
-    pasteComposing = false;
-    if (pasteSending) setTimeout(finishPaste, 0);
-  });
+  function bindPasteBox(box) {
+    function current() { return box === pasteBox && !pasteEl.hidden; }
+    box.addEventListener('compositionstart', function () {
+      if (current()) pasteComposing = true;
+    });
+    box.addEventListener('compositionend', function () {
+      if (!current()) return;
+      pasteComposing = false;
+      if (pasteSending) setTimeout(finishPaste, 0);
+    });
+    // Plain native editing owns all input/replacement events. Do not write
+    // values back while Gboard is correcting or composing a word.
+    box.addEventListener('paste', function (e) {
+      var t = e.clipboardData && e.clipboardData.getData('text');
+      if (!current() || !pasteAutoSend || !t || box.value) return;
+      e.preventDefault();
+      closePaste();
+      term.paste(t);
+      toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
+    });
+    box.addEventListener('keydown', function (e) {
+      if (!current() || e.isComposing || pasteComposing || e.keyCode === 229) return;
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPaste(); }
+    });
+  }
 
   selButton('paste-send', sendPaste);
   selButton('paste-cancel', closePaste);
-  // A paste into the empty box goes straight to the terminal - no Send needed.
-  pasteBox.addEventListener('paste', function (e) {
-    var t = e.clipboardData && e.clipboardData.getData('text');
-    if (pasteEl.hidden || !pasteAutoSend || !t || pasteBox.value) return;
-    e.preventDefault();
-    closePaste();
-    term.paste(t);
-    toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
-  });
-  pasteBox.addEventListener('keydown', function (e) {
-    if (e.isComposing || pasteComposing || e.keyCode === 229) return;
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendPaste(); }
-  });
 
   // ttyd pushes --client-option values here. Only options xterm actually
   // understands are applied, and a font size the user picked on this device wins.
@@ -828,9 +853,9 @@ body { position: fixed; inset: 0; }
 
   // Drag anywhere on the terminal to scroll. Listeners are in the capture
   // phase so a real scroll gesture never reaches xterm's own touch handling,
-  // while a tap still falls through to it and opens the keyboard.
+  // while a short tap opens the native draft on phones.
   // Holding still for LONG_PRESS_MS opens the touch menu.
-  var tY = null, tAcc = 0, tScrolling = false;
+  var tX = null, tY = null, tAcc = 0, tScrolling = false;
   var LONG_PRESS_MS = 500, pressTimer = null, longPressed = false;
 
   termEl.addEventListener('touchstart', function (e) {
@@ -838,7 +863,7 @@ body { position: fixed; inset: 0; }
     longPressed = false;
     if (e.touches.length !== 1) { tY = null; return; }
     var pressX = e.touches[0].clientX, pressY = e.touches[0].clientY;
-    tY = pressY; tAcc = 0; tScrolling = false;
+    tX = pressX; tY = pressY; tAcc = 0; tScrolling = false;
     pressTimer = setTimeout(function () {
       longPressed = true;
       tY = null;
@@ -847,9 +872,10 @@ body { position: fixed; inset: 0; }
   }, { capture: true, passive: true });
 
   termEl.addEventListener('touchmove', function (e) {
-    if (tY === null || e.touches.length !== 1) return;
+    if (e.touches.length !== 1) { clearTimeout(pressTimer); tY = null; return; }
+    if (tY === null) return;
     var y = e.touches[0].clientY, dy = tY - y;
-    if (!tScrolling && Math.abs(dy) < 8) return;       // let short taps be taps
+    if (!tScrolling && Math.abs(dy) < 8 && Math.abs(e.touches[0].clientX - tX) < 8) return;
     tScrolling = true;
     clearTimeout(pressTimer);
     e.preventDefault();
@@ -869,7 +895,15 @@ body { position: fixed; inset: 0; }
       e.stopPropagation();
       longPressed = false;
     } else if (tScrolling) {
+      if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+    } else if (e.type === 'touchend' && tY !== null && e.touches.length === 0 &&
+               touch && !bar.hidden && !directKeyboard) {
+      // touchend has user activation on iOS/Android; touch-down does not.
+      // Suppress the synthetic click so xterm cannot steal focus afterwards.
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      openCompose();
     }
     tY = null; tScrolling = false;
   }
@@ -895,13 +929,22 @@ body { position: fixed; inset: 0; }
     doFit();
   }
 
-  function toggleKeyboard() {
-    var ta = termEl.querySelector('.xterm-helper-textarea');
-    if (ta && document.activeElement === ta && (!touch || ta.getAttribute('inputmode') !== 'none')) ta.blur();
+  var directKeyboard = false;
+  function toggleDirectKeyboard() {
+    var ta = term.textarea;
+    if (ta && document.activeElement === ta && (!touch || directKeyboard)) ta.blur();
     else {
-      if (ta && touch) { ta.blur(); ta.setAttribute('inputmode', 'text'); }
+      if (ta && touch) {
+        ta.blur();
+        directKeyboard = true;
+        ta.setAttribute('inputmode', 'text');
+      }
       term.focus();
     }
+  }
+  function toggleKeyboard() {
+    if (touch && !bar.hidden) openCompose();
+    else toggleDirectKeyboard();
   }
 
   function toggleRow2() {
@@ -933,7 +976,7 @@ body { position: fixed; inset: 0; }
     { l: '⇧⇥', t: 'Shift+Tab', go: function () { fixedKey('\x1b[Z'); } },
     { l: '^C', t: 'Ctrl+C / interrupt', go: function () { fixedKey('\x03'); } },
     { l: '↵', t: 'Newline in Codex (Ctrl+J)', go: function () { fixedKey('\n'); } },
-    { l: 'Write', t: 'Write a prompt without sending live phone keyboard edits', go: openCompose },
+    { l: 'Write', t: 'Open keyboard and write a prompt', click: true, go: openCompose },
     { l: '⋯', t: 'More keys', id: 'more-keys', go: toggleRow2 }
   ];
 
@@ -950,9 +993,11 @@ body { position: fixed; inset: 0; }
     { l: '⇞', t: 'Scroll up a page', rep: true, go: function () { scrollLines(-page()); } },
     { l: '⇟', t: 'Scroll down a page', rep: true, go: function () { scrollLines(page()); } },
     { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach', go: function () { fixedKey('\x02'); } },
-    { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', go: openSelect },
-    { l: '📋', t: 'Paste',     go: pasteText },
-    { l: '⌨', t: 'Show / hide the direct terminal keyboard', go: toggleKeyboard },
+    { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', click: true, go: openSelect },
+    { l: '📋', t: 'Paste', click: true, go: pasteText },
+    // Both familiar typing actions use the same native draft on phones.
+    { l: '⌨', t: 'Open keyboard and write a prompt', click: true, go: toggleKeyboard },
+    { l: 'Keys', t: 'Direct terminal keyboard for shortcuts (disable phone autocorrect)', click: true, go: toggleDirectKeyboard },
     { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
     { l: 'A+',   t: 'Larger text',  go: function () { setFont(1); } }
   ];
@@ -967,7 +1012,7 @@ body { position: fixed; inset: 0; }
     b.setAttribute('aria-label', spec.t);
     if (spec.mod) b.setAttribute('aria-pressed', 'false');
 
-    var holdTimer = null, repeatTimer = null;
+    var holdTimer = null, repeatTimer = null, pointerHandled = false;
 
     function stop() {
       clearTimeout(holdTimer); clearInterval(repeatTimer);
@@ -976,8 +1021,12 @@ body { position: fixed; inset: 0; }
     }
 
     b.addEventListener('pointerdown', function (e) {
-      e.preventDefault();               // never move focus - keeps the keyboard up
+      // Keep the current input focused. Actions that open a keyboard
+      // run on click, after a completed touch grants browser user activation.
+      e.preventDefault();
       b.classList.add('down');
+      if (spec.click) return;
+      pointerHandled = true;
       try { b.setPointerCapture(e.pointerId); } catch (err) {}
       spec.go();
       if (spec.rep) {
@@ -990,9 +1039,14 @@ body { position: fixed; inset: 0; }
     ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'].forEach(function (ev) {
       b.addEventListener(ev, stop);
     });
-    // Keyboard and assistive-technology activation does not fire pointerdown.
+    // A touch click can have detail=0 too. Track whether pointerdown already
+    // sent the key, rather than treating detail=0 as a second keyboard press.
+    b.addEventListener('pointercancel', function () { pointerHandled = false; });
+    b.addEventListener('keydown', function () { pointerHandled = false; });
     b.addEventListener('click', function (e) {
-      if (e.detail === 0) { e.preventDefault(); spec.go(); }
+      var handled = pointerHandled;
+      pointerHandled = false;
+      if (spec.click || !handled) { e.preventDefault(); spec.go(); }
     });
 
     if (spec.mod) modBtns[spec.mod] = b;
@@ -1013,13 +1067,14 @@ body { position: fixed; inset: 0; }
   bar.hidden = force ? force[1] === '0' : !touch;
 
   // Mobile IMEs can replay xterm's accumulated hidden textarea as fresh input.
-  // Write uses a native draft box instead. Keep physical keyboards untouched
-  // and allow the original direct soft keyboard explicitly through More > ⌨.
+  // Taps, Write, and ⌨ use a native draft box instead. Keep physical keyboards
+  // untouched; More > Keys explicitly enables live input for terminal shortcuts.
   // With the key bar forced off, keep direct typing available as before.
   var terminalInput = term.textarea;
   if (touch && !bar.hidden && terminalInput) {
     terminalInput.setAttribute('inputmode', 'none');
     terminalInput.addEventListener('blur', function () {
+      directKeyboard = false;
       terminalInput.setAttribute('inputmode', 'none');
     });
   }
@@ -1103,8 +1158,8 @@ body { position: fixed; inset: 0; }
     } catch (e) {}
   }
   // Some WebViews report the keyboard late; re-measure around focus changes.
-  termEl.addEventListener('focusin', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
-  termEl.addEventListener('focusout', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
+  app.addEventListener('focusin', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
+  app.addEventListener('focusout', function () { setTimeout(layout, 150); setTimeout(layout, 500); });
   window.addEventListener('resize', layout);
   window.addEventListener('orientationchange', function () {
     maxH = 0;

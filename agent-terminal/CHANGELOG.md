@@ -5,7 +5,18 @@
   a sticky Shift modifier, Ctrl+J newline, and a tmux prefix button.
 - Add a Write draft box for phone input. Autocorrect edits stay in the box;
   Insert sends the final text once, after composition finishes. The original
-  direct terminal keyboard is available under More.
+  direct terminal keyboard is available under More > Keys.
+- Open the native draft from a terminal tap, Write, or the keyboard icon.
+  Wait for completed taps before focusing the editor, enlarge phone keys to
+  44 pixels high, and avoid opening the keyboard after scroll/cancel gestures.
+  Keep live terminal shortcuts available through the explicit Keys action.
+- Prevent touch-generated clicks from sending a toolbar key twice or toggling
+  a sticky modifier back off.
+- Give each Write draft a fresh native editor with autocorrect enabled. Ignore
+  late composition events from closed drafts and prevent duplicate openings
+  from resetting the value or composing range while the user is editing.
+- Cover browser touch activation, repeated word replacement, and composition
+  commits with an optional Chromium test using the real bundled xterm.
 - Preserve Claude's Shift+Tab, Esc², Ctrl+C, navigation, and clipboard controls.
   Extra keys wrap and remain accessible under More.
 - Add keyboard activation and modifier state labels for assistive technology,

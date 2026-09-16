@@ -248,30 +248,39 @@ usable from the Home Assistant companion app:
   anything else running here.
 - **Answer Codex questions:** tap **Answer** (Shift+Left), use the arrows to
   choose an option, then **Enter** to confirm. Tab moves between fields.
-- **Write a prompt:** tap **Write**, type or paste into the draft box, then
+- **Write a prompt:** tap the terminal, **Write**, or **⌨** to open the phone
+  keyboard and draft box. Type or paste your prompt, then
   tap **Insert**. Review the text in the terminal and tap **Enter** to submit.
   Phone autocorrect and composition edits stay in the draft; only the finished
   value is pasted into Codex or Claude. Insert waits for composition to finish
   and does not automatically submit the prompt. Ordinary Enter in the draft
   adds a line; Ctrl+Enter inserts the draft when composition is finished.
+  Each draft starts with a fresh editor; reopening an active draft preserves
+  its text and composition. Write supports native autocorrect, while the
+  separate Paste action keeps correction disabled for literal pasted text.
 - **Essential keys stay visible:** `Esc`, `Tab`, `Answer`, `Enter`, arrows,
   `Ctrl`, `Alt`, `Shift`, `Shift+Tab`, `Ctrl+C`, and `↵` (Ctrl+J for a newline
   in Codex). Sticky modifiers apply to the next key: `Shift` then `←` also
   opens Codex questions; `Ctrl` then `r` sends Ctrl+R.
 - **More keys:** tap **⋯** for `Esc²`, `Backspace`, `Home`/`End`, page scrolling,
   the `tmux` prefix (Ctrl+B), Copy/Paste, text size, and the original direct
-  terminal keyboard (**⌨**). Arrows, scrolling, and backspace repeat when held.
+  terminal keyboard (**Keys**). Arrows, scrolling, and backspace repeat when held.
   `tmux` then `[` enters scroll mode; `tmux` then `d` detaches. These use the
   add-on's default tmux prefix.
 - **Claude controls remain available:** Shift+Tab, Esc², Ctrl+C, all navigation
   keys, and copy/paste keep their terminal sequences. **Answer** is a Codex
   shortcut; it sends Shift+Left to whichever program is running.
-- **Direct phone typing:** **⋯ → ⌨** opens the original terminal keyboard for
-  single-key interactions or applications that need it. **Write** is the default
+- **Direct phone typing:** **⋯ → Keys** opens the original terminal keyboard for
+  single-key interactions or applications that need it. Disable autocorrect on
+  your phone keyboard when using this mode. The native draft is the default
   phone entry path because xterm's live IME handling can replay old text (see
   [upstream report](https://github.com/xtermjs/xterm.js/issues/6078)). The direct
   keyboard remains subject to that upstream limitation. Physical keyboards
   continue to work normally. With `?keys=0`, direct phone typing is preserved.
+- **Easier keyboard access:** phone keys are at least 44 pixels high. Keyboard
+  actions focus the editor on a completed tap, which mobile browsers require
+  to show the keyboard. Scrolling, long-press menus, and cancelled touches do
+  not open the draft.
 - **The keyboard no longer shoves the prompt off-screen.** The page sizes itself
   to the visible viewport, so the terminal shrinks to fit above the keyboard
   instead of the whole page scrolling.
@@ -352,8 +361,20 @@ node tests/test_webui_keys.mjs
 These checks execute the page's handlers with a simulated DOM, xterm API, and
 WebSocket. They cover the question-answer sequence, modifiers, Claude controls,
 pointer repeat, keyboard activation, and draft composition/paste handling.
-They make no model requests and do not send keys to a live session. Browser
-layout and real device IME behavior still need checking on a phone.
+They make no model requests and do not send keys to a live session.
+
+For browser regression coverage, build the web UI with its normal build script,
+then point the test at Chromium and the resulting bundle:
+
+```sh
+CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_webui_browser.mjs
+```
+
+The browser test uses real touch activation and composition events with the
+bundled xterm, including repeated word replacement, Korean composition, and
+live Ctrl/Answer/arrow/Enter controls. Its WebSocket is replaced before page
+code runs, so all input stays inside the test. The test skips unless
+`CHROMIUM_BIN` is set. Actual phone keyboard behavior still needs a device check.
 
 ## Known limitations
 

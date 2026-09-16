@@ -23,6 +23,7 @@ async function page({ touch = true, search = '' } = {}) {
       },
       set id(v) { ids.set(v, this); },
       appendChild(child) { this.children.push(child); },
+      replaceWith() {},
       setAttribute(k, v) { this.attributes[k] = v; },
       getAttribute(k) { return this.attributes[k]; },
       querySelector() { return terminal.textarea; },
@@ -33,7 +34,7 @@ async function page({ touch = true, search = '' } = {}) {
         handlers.get(k).push(fn);
       },
       fire(k, props = {}) {
-        const event = { preventDefault() {}, stopPropagation() {}, pointerId: 1, ...props };
+        const event = { type: k, preventDefault() {}, stopPropagation() {}, pointerId: 1, ...props };
         for (const fn of handlers.get(k) || []) fn(event);
       },
       setPointerCapture() {},
@@ -169,6 +170,22 @@ test('More keeps Answer visible, and keyboard clicks activate only once', async 
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\r']);
 });
 
+test('touch clicks with detail zero do not repeat keys or toggle modifiers twice', async () => {
+  const p = await page();
+  for (const label of ['Ctrl', 'Answer', 'Enter']) {
+    p.button(label).fire('pointerdown');
+    p.button(label).fire('pointerup');
+    p.button(label).fire('click', { detail: 0, pointerType: 'touch' });
+    if (label === 'Ctrl') assert.equal(p.button('Ctrl').attributes['aria-pressed'], 'true');
+  }
+  assert.deepEqual(p.input(), ['\x1b[1;2D', '\r']);
+  p.button('Enter').fire('pointerdown');
+  p.button('Enter').fire('pointercancel');
+  p.button('Enter').fire('keydown', { key: 'Enter' });
+  p.button('Enter').fire('click', { detail: 0 });
+  assert.deepEqual(p.input(), ['\r', '\r'], 'keyboard activation also works after a cancelled pointer');
+});
+
 test('double Escape is timed and repeat stops on pointer release', async () => {
   const p = await page();
   p.tap('Esc²');
@@ -208,6 +225,41 @@ test('mobile autocorrect replacements stay in the draft and are inserted once', 
   assert.equal(p.ids.get('paste').hidden, true);
 });
 
+test('keyboard-opening buttons wait for a completed tap and preserve an open draft', async () => {
+  const p = await page();
+  p.button('Write').fire('pointerdown');
+  assert.equal(p.ids.get('paste').hidden, true);
+  p.button('Write').fire('pointercancel');
+  assert.equal(p.ids.get('paste').hidden, true);
+  p.tap('Write');
+  assert.equal(p.ids.get('paste').hidden, false);
+  p.ids.get('paste-text').value = 'keep this draft';
+  p.tap('⌨');
+  assert.equal(p.ids.get('paste-text').value, 'keep this draft');
+  assert.deepEqual(p.input(), []);
+});
+
+test('terminal taps open the native draft; scrolling and cancelled gestures do not', async () => {
+  const p = await page();
+  const el = p.ids.get('term');
+  const start = (x = 40, y = 40) => el.fire('touchstart', { touches: [{ clientX: x, clientY: y }] });
+  const end = () => el.fire('touchend', { touches: [] });
+  start();
+  el.fire('touchcancel', { touches: [] });
+  assert.equal(p.ids.get('paste').hidden, true);
+  start();
+  el.fire('touchmove', { touches: [{ clientX: 60, clientY: 40 }] });
+  end();
+  assert.equal(p.ids.get('paste').hidden, true);
+  start();
+  el.fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }, { clientX: 60, clientY: 40 }] });
+  end();
+  assert.equal(p.ids.get('paste').hidden, true);
+  start(); end();
+  assert.equal(p.ids.get('paste').hidden, false);
+  assert.deepEqual(p.input(), []);
+});
+
 test('Write keeps pasted text for editing; the original Paste action still inserts directly', async () => {
   const p = await page();
   p.tap('Write');
@@ -219,9 +271,35 @@ test('Write keeps pasted text for editing; the original Paste action still inser
   p.ids.get('paste-send').fire('click'); p.flush();
   assert.deepEqual(p.terminal.pastes, ['hello hello']);
   p.tap('📋');
-  box.fire('paste', { clipboardData: { getData: () => '/help' } });
-  box.fire('paste', { clipboardData: { getData: () => '/help' } });
+  const pasteBox = p.ids.get('paste-text');
+  pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
+  pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
   assert.deepEqual(p.terminal.pastes, ['hello hello', '/help']);
+});
+
+test('each draft gets a fresh editor and ignores composition from a previous draft', async () => {
+  const p = await page();
+  p.tap('Write');
+  const old = p.ids.get('paste-text');
+  old.value = 'old draft';
+  old.fire('compositionstart');
+  p.ids.get('paste-cancel').fire('click');
+  p.tap('Write');
+  const box = p.ids.get('paste-text');
+  assert.notEqual(old, box);
+  assert.equal(box.getAttribute('autocorrect'), 'on');
+  assert.equal(box.getAttribute('spellcheck'), 'true');
+  box.value = 'new draft';
+  box.fire('compositionstart');
+  p.tap('Write'); // duplicate activation cannot reset an active editor
+  assert.equal(p.ids.get('paste-text'), box);
+  assert.equal(box.value, 'new draft');
+  p.ids.get('paste-send').fire('click');
+  old.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, [], 'stale events cannot finish the current composition');
+  box.value = 'new corrected draft';
+  box.fire('compositionend'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['new corrected draft']);
 });
 
 test('IME Enter is not submitted early, Cancel sends nothing, and live typing stays available', async () => {
@@ -235,8 +313,11 @@ test('IME Enter is not submitted early, Cancel sends nothing, and live typing st
   p.advance(500);
   p.ids.get('paste-cancel').fire('click');
   assert.deepEqual(p.terminal.pastes, []);
-  p.tap('⌨');
+  p.tap('Keys');
   assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'text');
+  p.ids.get('term').fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
+  p.ids.get('term').fire('touchend', { touches: [] });
+  assert.equal(p.ids.get('paste').hidden, true, 'explicit direct entry stays available');
   p.terminal.type('/help');
   assert.deepEqual(p.input(), ['/help']);
   p.terminal.textarea.blur();
