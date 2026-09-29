@@ -3,6 +3,9 @@ name: Update Codex CLI
 # Codex is pinned in codex.sh because releases have broken the adapter
 # (0.157's background app-server). Once a day, open a pull request that
 # moves the pin to the newest release, and start the full validation on it.
+# The pull request also bumps the add-on's patch version, because Home
+# Assistant only offers an update when the version changes; anything waiting
+# under "Unreleased" in the changelog ships in the same release.
 on:
   schedule:
     - cron: '17 13 * * *'
@@ -45,12 +48,27 @@ jobs:
             exit 0
           fi
           sed -i "s|@openai/codex@$current|@openai/codex@$latest|" "$file"
+
+          config=agent-terminal/config.yaml
+          changelog=agent-terminal/CHANGELOG.md
+          version=$(sed -n 's/^version: "\([0-9]*\.[0-9]*\.[0-9]*\)"$/\1/p' "$config")
+          if [[ -z "$version" ]] || ! grep -qx '## Unreleased' "$changelog"; then
+            echo "Could not read the add-on version or the Unreleased heading." >&2
+            exit 1
+          fi
+          release="${version%.*}.$(( ${version##*.} + 1 ))"
+          sed -i "s/^version: \"$version\"$/version: \"$release\"/" "$config"
+          # New heading under Unreleased: the pending entries move into this release.
+          awk -v release="$release" -v codex="$latest" '
+            !done && $0 == "## Unreleased" { print; print ""; print "## " release; print "- Update the Codex CLI to " codex "."; done = 1; next }
+            { print }' "$changelog" > "$changelog.new"
+          mv "$changelog.new" "$changelog"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git commit -am "Update Codex CLI to $latest"
+          git commit -am "Agent Terminal $release: Codex CLI $latest"
           git push origin "$branch"
           gh pr create --base master --head "$branch" \
-            --title "Update Codex CLI to $latest" \
-            --body "Moves the pinned Codex CLI from $current to $latest. \"Validate add-on\" builds both images with it and runs the adapter tests; merge if it passes. Release notes: https://github.com/openai/codex/releases"
+            --title "Agent Terminal $release: Codex CLI $latest" \
+            --body "Moves the pinned Codex CLI from $current to $latest and releases the add-on as $release, including anything listed under Unreleased in the changelog. \"Validate add-on\" builds both images with it and runs the adapter tests; merge if it passes, and Home Assistant offers the update. Codex release notes: https://github.com/openai/codex/releases"
           gh workflow run validate-addon.yml --ref "$branch"
