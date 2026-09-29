@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 2.5.0
 - Selecting text copies it, everywhere and without a key press: an xterm
   selection copies when the drag settles, the phone's own handles copy inside
   the text sheet, and tmux copy-mode and the agents' own selections keep

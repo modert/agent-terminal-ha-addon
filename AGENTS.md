@@ -4,9 +4,11 @@ Source for the Agent Terminal Home Assistant add-on (`agent-terminal/`). User-fa
 
 ## You are probably running inside this add-on
 
-Claude Code and Codex in the Home Assistant install run in this add-on's container, so rebuilding or restarting the add-on kills the session doing the work. Test changes by hot-deploying them into the live container, commit them here, and let the user rebuild when they're ready.
+Claude Code and Codex in the Home Assistant install run in this add-on's container, so updating, rebuilding or restarting the add-on kills the session doing the work. Test changes by hot-deploying them into the live container, and ship them through a pull request.
 
-The installed add-on (`local_agent_terminal`) is built from this directory. `/addons/agent-terminal` is an older untracked copy (2.3.0 against 2.4.0 here); check which one Supervisor reports before assuming it matters.
+Home Assistant installs this add-on from the add-on store (`62afb2b9_agent_terminal`), built from `master` of this repository. It offers an update when `version` in `agent-terminal/config.yaml` changes on `master`, so a release is a PR that bumps the version and adds a changelog heading (the daily Codex update PRs do this). `master` accepts only pull requests whose CI passes.
+
+A checkout under `/addons` also shows up in Home Assistant as a local add-on with the same name. Don't install or rebuild that one; it would be a second copy.
 
 The user also pushes to this repo from other machines, so `git fetch` before committing.
 
