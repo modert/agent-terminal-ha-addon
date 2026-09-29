@@ -1,0 +1,56 @@
+name: Update Codex CLI
+
+# Codex is pinned in codex.sh because releases have broken the adapter
+# (0.157's background app-server). Once a week, open a pull request that
+# moves the pin to the newest release, and start the full validation on it.
+on:
+  schedule:
+    - cron: '17 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: update-codex
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Open a pull request for a newer Codex CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          file=agent-terminal/rootfs/opt/agents/codex.sh
+          current=$(sed -n 's|.*@openai/codex@\([0-9][0-9.]*\).*|\1|p' "$file")
+          latest=$(npm view @openai/codex dist-tags.latest)
+          if [[ -z "$current" || -z "$latest" ]]; then
+            echo "Could not read the pinned or the latest Codex version." >&2
+            exit 1
+          fi
+          newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
+          if [[ "$newest" == "$current" ]]; then
+            echo "Codex CLI $current is up to date."
+            exit 0
+          fi
+          branch="deps/codex-cli-$latest"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "$branch already exists."
+            exit 0
+          fi
+          sed -i "s|@openai/codex@$current|@openai/codex@$latest|" "$file"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "Update Codex CLI to $latest"
+          git push origin "$branch"
+          gh pr create --base master --head "$branch" \
+            --title "Update Codex CLI to $latest" \
+            --body "Moves the pinned Codex CLI from $current to $latest. \"Validate add-on\" builds both images with it and runs the adapter tests; merge if it passes. Release notes: https://github.com/openai/codex/releases"
+          gh workflow run validate-addon.yml --ref "$branch"
