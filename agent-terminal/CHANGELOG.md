@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Selecting text copies it, everywhere and without a key press: an xterm
+  selection copies when the drag settles, the phone's own handles copy inside
+  the text sheet, and tmux copy-mode and the agents' own selections keep
+  arriving through OSC 52. Ctrl+C and the menu still copy and confirm, so
+  nothing depends on Ctrl+C, which stays the interrupt when nothing is
+  selected.
 - Fix ChatGPT sessions reloading forever on Codex 0.157: its new background
   app-server cannot stay alive in the add-on container, so the TUI exited with
   "failed to record pid-managed app-server process ... startup". Turn

@@ -205,10 +205,13 @@ project folders or Git worktrees when tasks need independent changes.
 
 ## Copy and paste (sidebar panel)
 
-- **Copy:** drag-select in Claude Code and it's copied (a "Copied N
-  characters" toast confirms). Or **Shift+drag** (Option+drag on a Mac) to
-  select anything on screen, then Ctrl+C / Ctrl+Shift+C / ⌘C or right-click →
-  Copy. Ctrl+C copies only while text is selected, otherwise it interrupts.
+- **Copy: selecting is copying.** Whichever selection you make, the text is on
+  the clipboard when the selection settles and a "Copied N characters" toast
+  confirms it. That covers Claude Code's and Codex's own drag-select, tmux
+  copy-mode (mouse drag, or `Ctrl-b [` and Enter), **Shift+drag** (Option+drag
+  on a Mac) anywhere on screen, double-click, and Select all. Ctrl+C /
+  Ctrl+Shift+C / ⌘C and right-click → Copy still copy and confirm; Ctrl+C with
+  nothing selected interrupts, as always.
 - **Paste:** Ctrl+V / Ctrl+Shift+V / ⌘V, or right-click → Paste (needs HTTPS).
   On a phone, tap 📋 (or long-press → Paste): a paste box opens with the
   keyboard. Long-press in it and choose Paste (or tap the keyboard's clipboard
@@ -218,8 +221,10 @@ project folders or Git worktrees when tasks need independent changes.
   screen, Paste.
 - **Copy on a phone:** scroll to what you want, then long-press → **Select
   text…** (or tap **Copy** on the key bar). The screen opens as plain text:
-  select with your phone's handles and tap **Copy**, or **Copy all**. **Done**
-  goes back.
+  select with your phone's handles and it copies itself once they settle.
+  **Copy** confirms it, **Copy all** takes the whole screen, **Done** goes
+  back. (Over plain HTTP, where the browser has no clipboard API, use the
+  buttons — a tap is the gesture that lets the copy through.)
 - **Right-click** opens the terminal's menu; **Shift+right-click** opens the
   browser's. Tick **Right-click pastes** in that menu for Windows Terminal
   behaviour: right-click copies the selection, or pastes when nothing is

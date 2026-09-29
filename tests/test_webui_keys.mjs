@@ -69,7 +69,13 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
     parser = { registerOscHandler() {} };
     loadAddon() {} open() {} onResize() {} onBinary() {}
     focus() { this.textarea.focus(); }
-    clearSelection() {} reset() {}
+    // The keys never make a terminal selection, but the page watches for one.
+    selection = '';
+    onSelectionChange(fn) { this.selectionChanged = fn; }
+    hasSelection() { return this.selection !== ''; }
+    getSelection() { return this.selection; }
+    clearSelection() { this.selection = ''; this.selectionChanged?.(); }
+    reset() {}
     write(data, callback) { if (callback) queueMicrotask(callback); }
     paste(text) { this.pastes.push(text); }
     onData(fn) { this.type = fn; }

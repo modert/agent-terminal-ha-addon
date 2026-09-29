@@ -234,7 +234,7 @@ body { position: fixed; inset: 0; }
   <div id="menu" role="menu" hidden></div>
   <div id="sel" class="sheet" hidden>
     <pre id="sel-text"></pre>
-    <div class="sheet-hint">Select with your phone's handles, then tap Copy</div>
+    <div class="sheet-hint">Select with your phone's handles - it copies itself. Copy confirms.</div>
     <div class="sheet-bar">
       <button type="button" class="k" id="sel-done">Done</button>
       <button type="button" class="k" id="sel-all">Copy all</button>
@@ -462,12 +462,16 @@ body { position: fixed; inset: 0; }
   });
 
   // ------------------------------------------------------------- clipboard
-  // Text reaches the browser clipboard by two routes:
+  // Selecting text is copying it, whichever of the three selections made it,
+  // so nothing has to be pressed afterwards and Ctrl+C stays the interrupt:
   //  - Programs copy with OSC 52: Claude Code's own mouse selection, tmux
-  //    copy-mode. tmux forwards it (set-clipboard on), but xterm.js ignores
-  //    OSC 52 unless something handles it - that's the handler below.
+  //    copy-mode (its drag copies on release). tmux forwards it (set-clipboard
+  //    on), but xterm.js ignores OSC 52 unless something handles it - that's
+  //    the handler below.
   //  - Shift+drag (Option+drag on a Mac) skips mouse tracking and makes an
-  //    xterm selection, copied by the keys or the right-click menu.
+  //    xterm selection, copied as soon as the drag settles.
+  //  - A phone's own handles select inside the text sheet, which copies the
+  //    settled selection the same way.
   var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
@@ -496,13 +500,17 @@ body { position: fixed; inset: 0; }
     return ok;
   }
 
-  function copyText(text) {
+  // opts.quiet: an automatic copy, so say nothing when the browser blocks it;
+  // the menu and the Copy key stay as the explicit route that does report.
+  // opts.keepSelection: skip the execCommand fallback, which has to select a
+  // scratch textarea and would drop the phone's selection handles mid-drag.
+  function copyText(text, opts) {
     if (!text) return;
-    var n = text.length;
+    var n = text.length, o = opts || {};
     function done() { toast('Copied ' + n + (n === 1 ? ' character' : ' characters')); }
     function fallback() {
-      if (execCopy(text)) done();
-      else toast('The browser blocked the copy - select, then right-click → Copy');
+      if (!o.keepSelection && execCopy(text)) done();
+      else if (!o.quiet) toast('The browser blocked the copy - select, then right-click → Copy');
     }
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
     else fallback();
@@ -535,12 +543,38 @@ body { position: fixed; inset: 0; }
     return true;
   });
 
+  // An xterm selection (Shift+drag, double-click, Select all) copies itself.
+  // Copy from mouseup first, synchronously, so the plain-HTTP execCommand
+  // fallback still counts as running inside the user's gesture; the settle
+  // timer then catches selections that no mouse release completes, such as
+  // Select all or a drag that ends off the page. Re-copying the same text is
+  // skipped so one selection cannot toast twice.
+  var autoCopied = '', autoCopyTimer = null;
+  function autoCopySelection() {
+    clearTimeout(autoCopyTimer);
+    var text = term.hasSelection() ? term.getSelection() : '';
+    if (!text || text === autoCopied) return;
+    autoCopied = text;
+    copyText(text, { quiet: true });
+  }
+  term.onSelectionChange(function () {
+    clearTimeout(autoCopyTimer);
+    if (!term.hasSelection()) { autoCopied = ''; return; }
+    autoCopyTimer = setTimeout(autoCopySelection, 400);
+  });
+  ['mouseup', 'touchend'].forEach(function (type) {
+    window.addEventListener(type, autoCopySelection, true);
+  });
+
   term.attachCustomKeyEventHandler(function (e) {
     if (e.type !== 'keydown' || e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return true;
     var k = e.key.toLowerCase();
     if (k === 'c') {
-      // Ctrl+C copies only while there's a selection (then clears it, so the
-      // next one interrupts). Ctrl+Shift+C is swallowed: Chrome's is devtools.
+      // The selection is already on the clipboard, so Ctrl+C only has to clear
+      // it and let the next press interrupt. It still copies, for the moment
+      // between a selection and its settle timer, and because a keystroke is
+      // the gesture that lets a blocked plain-HTTP copy through.
+      // Ctrl+Shift+C is swallowed: Chrome's is devtools.
       if (term.hasSelection()) {
         copyText(term.getSelection());
         if (!isMac && !e.shiftKey) term.clearSelection();
@@ -635,7 +669,7 @@ body { position: fixed; inset: 0; }
       if (term.hasSelection()) { copyText(term.getSelection()); term.clearSelection(); }
       else pasteText();
     } else {
-      showMenu(e.clientX, e.clientY, MENU, (isMac ? 'Option' : 'Shift') + '+drag to select text\n' +
+      showMenu(e.clientX, e.clientY, MENU, (isMac ? 'Option' : 'Shift') + '+drag to select - selecting copies\n' +
         'Shift+right-click: ' + (rcPaste ? 'this menu' : "the browser's menu"));
     }
   }, true);
@@ -700,11 +734,21 @@ body { position: fixed; inset: 0; }
   }
 
   // Tapping a button can collapse the selection first, so remember the last
-  // non-empty one made inside the text.
+  // non-empty one made inside the text. Selecting copies here too, once the
+  // handles have settled, which keeps the Copy key as confirmation rather than
+  // the only way out. The selection has to survive it, so this route never
+  // falls back to the scratch textarea: where the async clipboard is missing
+  // (plain-HTTP LAN), Copy still works because a tap is a gesture.
+  var selCopyTimer = null;
   document.addEventListener('selectionchange', function () {
     if (selEl.hidden) return;
     var s = window.getSelection();
-    if (s && s.rangeCount && selText.contains(s.anchorNode) && String(s)) lastSel = String(s);
+    if (!(s && s.rangeCount && selText.contains(s.anchorNode) && String(s))) return;
+    lastSel = String(s);
+    clearTimeout(selCopyTimer);
+    selCopyTimer = setTimeout(function () {
+      if (!selEl.hidden && lastSel) copyText(lastSel, { quiet: true, keepSelection: true });
+    }, 600);
   });
 
   // Sheets open on completed taps, so there is no trailing opening click to
