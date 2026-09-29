@@ -27,15 +27,23 @@ function client(search = '') {
   document.documentElement = new Element(); document.body = new Element();
   const window = new Element();
   window.top = window; window.innerHeight = 800; window.matchMedia = () => ({ matches: false });
+  window.isSecureContext = true;                   // as Ingress serves the page
   window.getSelection = () => ({ removeAllRanges() {} });
   const location = new URL('https://example.test/api/hassio_ingress/test/' + search);
-  const storage = new Map(), fetches = [], sockets = [], timers = new Map();
+  const storage = new Map(), fetches = [], sockets = [], timers = new Map(), copies = [];
   let timerId = 0, terminal, clipboardResolve;
   class Terminal {
     constructor(options) { this.options = options; terminal = this; }
-    cols = 100; rows = 30; output = []; pastes = []; resets = 0;
+    cols = 100; rows = 30; output = []; pastes = []; resets = 0; selection = '';
     parser = { registerOscHandler() {} };
-    loadAddon() {} open() {} focus() {} clearSelection() {}
+    loadAddon() {} open() {} focus() {}
+    // Selecting text is the page's copy trigger, so the stub keeps a selection
+    // and reports it the way xterm does.
+    onSelectionChange(callback) { this.selectionChanged = callback; }
+    hasSelection() { return this.selection !== ''; }
+    getSelection() { return this.selection; }
+    clearSelection() { this.select(''); }
+    select(text) { this.selection = text; this.selectionChanged?.(); }
     onResize() {} onBinary() {} attachCustomKeyEventHandler() {}
     onData(callback) { this.input = callback; }
     write(data, callback) { this.output.push(data); if (callback) queueMicrotask(callback); }
@@ -53,7 +61,10 @@ function client(search = '') {
   vm.runInNewContext(source, { document, window, location, Terminal, WebSocket,
     TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Promise,
     FitAddon: { FitAddon: class { fit() {} } },
-    navigator: { platform: 'Linux', clipboard: { readText: () => new Promise(resolve => { clipboardResolve = resolve; }) } },
+    navigator: { platform: 'Linux', clipboard: {
+      readText: () => new Promise(resolve => { clipboardResolve = resolve; }),
+      writeText: text => { copies.push(text); return Promise.resolve(); },
+    } },
     history: { replaceState(_state, _title, url) { location.href = new URL(url, location).href; } },
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
     fetch: () => new Promise(resolve => fetches.push(() => resolve({ json: async () => ({ token: '' }) }))),
@@ -63,8 +74,9 @@ function client(search = '') {
     clearInterval: id => timers.delete(id),
   });
   const select = agent => elements.agents.children.find(b => b.dataset.agent === agent).emit('click');
-  return { elements, window, location, fetches, sockets, terminal, timers, select,
+  return { elements, window, location, fetches, sockets, terminal, timers, select, copies,
     resolveClipboard: text => clipboardResolve(text),
+    settle: () => { const id = [...timers.keys()].at(-1); const callback = timers.get(id); timers.delete(id); callback(); },
     async connect(index = fetches.length - 1) { fetches[index](); await tick(); sockets.at(-1).open(); },
   };
 }
@@ -91,7 +103,7 @@ test('latest selection wins while token requests and old sockets complete out of
 
 test('shortcuts change agents and delayed clipboard input stays with its original session', async () => {
   const c = client(); await tick(); await c.connect();
-  c.elements.row2.children.find(b => b.textContent === '📋').emit('pointerdown');
+  c.elements.row2.children.find(b => b.textContent === 'Paste').emit('click', { detail: 1 });
   let prevented = false, stopped = false;
   c.window.emit('keydown', { code: 'Digit2', key: '@', ctrlKey: true, shiftKey: true,
     preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } });
@@ -113,4 +125,29 @@ test('switching cancels a pending reconnect and validates saved URL selections',
   await tick(); await c.connect();
   assert.equal(c.location.searchParams.get('keys'), '0');
   assert.equal(c.sockets.length, 2);
+});
+
+test('selecting text copies it once, with no key press', async () => {
+  const c = client(); await tick(); await c.connect();
+  // A selection no mouse release completes (Select all, a drag off the page)
+  // still copies, from the settle timer.
+  c.terminal.select('ABCD-EF123');
+  c.settle(); await tick();
+  assert.deepEqual(c.copies, ['ABCD-EF123']);
+  c.window.emit('mouseup'); await tick();
+  assert.deepEqual(c.copies, ['ABCD-EF123'], 'one selection copies once');
+
+  // A drag copies on release, before any timer runs.
+  c.terminal.select('second selection');
+  c.window.emit('mouseup'); await tick();
+  assert.deepEqual(c.copies, ['ABCD-EF123', 'second selection']);
+
+  // Clearing the selection copies nothing, and the same text can be selected
+  // again afterwards.
+  c.terminal.clearSelection();
+  c.window.emit('mouseup'); await tick();
+  assert.deepEqual(c.copies, ['ABCD-EF123', 'second selection']);
+  c.terminal.select('second selection');
+  c.window.emit('mouseup'); await tick();
+  assert.deepEqual(c.copies, ['ABCD-EF123', 'second selection', 'second selection']);
 });

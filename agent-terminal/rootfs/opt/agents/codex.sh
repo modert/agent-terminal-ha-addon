@@ -10,7 +10,7 @@ AGENT_DATA="/data/codex"          # persistent: login, settings, and sessions
 # Build time: pin the CLI version verified with this adapter. The npm package
 # includes native Linux binaries for both amd64 and aarch64 (including musl).
 agent_install() {
-    npm install -g @openai/codex@0.154.0
+    npm install -g @openai/codex@0.158.0
     npm cache clean --force
     codex --version
 }
@@ -27,7 +27,32 @@ agent_init() {
     chmod 700 "${AGENT_DATA}"
     if [ ! -e "${AGENT_DATA}/config.toml" ]; then
         (umask 077; printf '%s\n' 'cli_auth_credentials_store = "file"' \
+            'features.daemon_auto_start = false' \
             > "${AGENT_DATA}/config.toml")
+    fi
+    codex_disable_daemon_auto_start
+}
+
+# 0.157 runs the agent inside a background app-server by default. That server
+# dies here before Codex can record its start time, so the TUI exits with
+# "failed to record pid-managed app-server process ... startup" and the web
+# terminal shows an endless reload. Codex works normally without it, so switch
+# the auto-start off in the stored config once: that covers the panel, tmux,
+# and a bare `codex` typed over SSH. Leave the setting alone once it is there,
+# including a deliberate `true`.
+codex_disable_daemon_auto_start() {
+    local config="${AGENT_DATA}/config.toml"
+    if grep -q '^[[:space:]]*\(features\.\)\?daemon_auto_start[[:space:]]*=' "${config}"; then
+        return 0
+    fi
+    if grep -q '^[[:space:]]*\[features\]' "${config}"; then
+        # A dotted key cannot reopen a table the file already declares, and a
+        # second [features] header is invalid TOML: extend the existing table.
+        sed -i '/^[[:space:]]*\[features\]/a daemon_auto_start = false' "${config}"
+    else
+        # First line, as a dotted key, so it belongs to no table and the end of
+        # the file stays free for whatever appends a plain top-level setting.
+        sed -i '1i features.daemon_auto_start = false' "${config}"
     fi
 }
 
