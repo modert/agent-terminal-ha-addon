@@ -1,11 +1,11 @@
 name: Update Codex CLI
 
 # Codex is pinned in codex.sh because releases have broken the adapter
-# (0.157's background app-server). Once a week, open a pull request that
+# (0.157's background app-server). Once a day, open a pull request that
 # moves the pin to the newest release, and start the full validation on it.
 on:
   schedule:
-    - cron: '17 13 * * 1'
+    - cron: '17 13 * * *'
   workflow_dispatch:
 
 permissions:

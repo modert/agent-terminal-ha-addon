@@ -4,10 +4,10 @@ on:
   pull_request:
   push:
     branches: [master]
-  # Claude Code isn't pinned, so a weekly build catches a release that breaks
+  # Claude Code isn't pinned, so a daily build catches a release that breaks
   # the image or the adapter before the next rebuild does.
   schedule:
-    - cron: '41 13 * * 1'
+    - cron: '41 13 * * *'
   # Lets update-codex.yml start a run: pull requests it opens with
   # GITHUB_TOKEN don't trigger pull_request workflows.
   workflow_dispatch:
