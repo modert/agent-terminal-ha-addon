@@ -74,6 +74,52 @@ class CodexAdapterTests(unittest.TestCase):
             str(self.data),
         )
 
+    def test_new_config_disables_the_unusable_background_app_server(self):
+        self.assertIs(
+            tomllib.loads(self.config.read_text())["features"]["daemon_auto_start"],
+            False,
+        )
+        # A dotted key on the first line belongs to no table, so a plain
+        # top-level setting appended later still lands outside every table.
+        with self.config.open("a") as handle:
+            handle.write('model_reasoning_effort = "high"\n')
+        appended = tomllib.loads(self.config.read_text())
+        self.assertEqual(appended["model_reasoning_effort"], "high")
+        self.assertIs(appended["features"]["daemon_auto_start"], False)
+
+    def test_existing_config_gets_the_setting_once(self):
+        original = (
+            "# Keep my preferences.\n"
+            'cli_auth_credentials_store = "file"\n'
+            "\n"
+            "[tui]\n"
+            "screen_reader_detection_done = true\n"
+        )
+        self.config.write_text(original)
+        self.run_adapter("agent_init")
+        patched = self.config.read_text()
+        config = tomllib.loads(patched)
+        self.assertIs(config["features"]["daemon_auto_start"], False)
+        self.assertIs(config["tui"]["screen_reader_detection_done"], True)
+        self.assertIn("# Keep my preferences.", patched)
+        self.run_adapter("agent_init")
+        self.assertEqual(self.config.read_text(), patched)
+
+    def test_existing_features_table_is_extended_not_duplicated(self):
+        self.config.write_text("[features]\napps = true\n")
+        self.run_adapter("agent_init")
+        # A second [features] header, or a dotted key beside the table, would
+        # make this file invalid TOML and tomllib would raise here.
+        config = tomllib.loads(self.config.read_text())
+        self.assertIs(config["features"]["daemon_auto_start"], False)
+        self.assertIs(config["features"]["apps"], True)
+
+    def test_a_chosen_daemon_auto_start_is_left_alone(self):
+        original = "features.daemon_auto_start = true\n"
+        self.config.write_text(original)
+        self.run_adapter("agent_init")
+        self.assertEqual(self.config.read_text(), original)
+
     def test_registration_is_idempotent_and_preserves_user_data(self):
         original = (
             '# Keep my preferences and other MCP servers.\n'
