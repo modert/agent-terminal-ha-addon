@@ -1,5 +1,5 @@
 name: "Agent Terminal"
-version: "2.5.0"
+version: "2.5.1"
 slug: "agent_terminal"
 description: "Switch Claude, ChatGPT, and Shell live - task workspaces, persistent login, mobile web terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"

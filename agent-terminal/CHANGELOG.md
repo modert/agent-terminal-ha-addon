@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.5.1
+- Update the Codex CLI to 0.159.0.
+
 ## 2.5.0
 - Selecting text copies it, everywhere and without a key press: an xterm
   selection copies when the drag settles, the phone's own handles copy inside
