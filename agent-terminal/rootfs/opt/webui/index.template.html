@@ -59,12 +59,38 @@ body { position: fixed; inset: 0; }
   cursor: pointer; touch-action: manipulation;
 }
 .agent-button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
-.agent-button:hover { background: var(--key-down); }
+/* A touchscreen keeps :hover after a tap, which would read as a pressed toggle. */
+@media (hover: hover) { .agent-button:hover { background: var(--key-down); } }
 #workspace:focus-visible, .agent-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Drawn rather than a glyph: phones' symbol fonts may lack the keyboard. */
+#keys-switch, #top-collapse {
+  flex: 0 0 auto; min-width: 44px; padding: 0 11px;
+  display: flex; align-items: center; justify-content: center;
+}
+#keys-switch { margin-left: auto; }
+#keys-switch svg { display: block; width: 22px; height: 16px; }
+#top-collapse svg { display: block; width: 14px; height: 9px; }
+#session-bar[hidden], #session-strip[hidden] { display: none; }
+/* The collapsed session bar: one slim row naming the session. */
+#session-strip {
+  position: relative; z-index: 6; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 26px; padding: 0 12px; margin: 0;
+  border: 0; border-bottom: 1px solid var(--line); background: var(--bar);
+  color: #aeb4bf; font: inherit; font-size: 12px;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+#session-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#session-strip svg { flex: 0 0 auto; width: 12px; height: 8px; }
+#session-strip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: hover) { #session-strip:hover { color: var(--fg); } }
+@media (pointer: coarse) { #session-strip { height: 32px; font-size: 13px; } }
 @media (max-width: 560px) {
   #session-bar { flex-wrap: wrap; gap: 6px; }
   #workspace { max-width: none; }
-  #agents { flex-basis: 100%; }
+  /* The switches share the workspace row; the agents get a row of their own. */
+  #keys-switch, #top-collapse { order: 1; margin-left: 0; }
+  #agents { order: 2; flex-basis: 100%; }
   .agent-button { flex: 1; min-height: 42px; }
 }
 @media (pointer: coarse) { #workspace, .agent-button { min-height: 44px; } }
@@ -74,11 +100,21 @@ body { position: fixed; inset: 0; }
   #app.compact-height #session-bar { flex-wrap: nowrap; gap: 4px; }
   #app.compact-height #workspace-label { display: none; }
   #app.compact-height #workspace { max-width: none; }
-  #app.compact-height #agents { flex-basis: auto; }
+  #app.compact-height #agents { flex-basis: auto; order: 0; }
+  #app.compact-height #keys-switch, #app.compact-height #top-collapse { order: 0; }
   #app.compact-height .agent-button { padding: 0 7px; }
+}
+@media (pointer: coarse) and (max-width: 560px) {
+  /* A narrow row can't fit both switches: while typing, collapsing matters more. */
+  #app.compact-height #keys-switch { display: none; }
 }
 #term { flex: 1 1 auto; min-height: 0; padding: 0; overflow: hidden; touch-action: none; -webkit-touch-callout: none; }
 .xterm { height: 100%; }
+/* xterm redraws a row by replacing its elements, and a touch's later events
+   go to the element it started on even once it has left the page. So streaming
+   output could swallow the end of a tap or the rest of a drag. Touches land on
+   the screen element beneath the rows instead, which stays put. */
+@media (any-pointer: coarse) { #term .xterm-rows { pointer-events: none; } }
 /* iOS zooms the page when focusing an input under 16px. xterm's hidden input
    inherits the terminal font size, so pin it. */
 .xterm-helper-textarea { font-size: 16px !important; }
@@ -91,24 +127,44 @@ body { position: fixed; inset: 0; }
 #bar[hidden] { display: none; }
 .row { display: flex; gap: 4px; padding: 4px; }
 .row[hidden] { display: none; }
-#key-panel[hidden], #keys-main[hidden], #keys-more[hidden] { display: none; }
+#key-panel[hidden], .page[hidden] { display: none; }
+/* Keys opens one row: a group's keys, then the group button above Keys. */
+.page { display: contents; }
+/* One seventh of the row and set apart like Keys, so the agent keys line up
+   with the bottom row and the group button sits right above Keys. */
+#key-group { flex: 0 0 calc((100% - 30px) / 7); margin-left: 6px; gap: 5px; }
+#key-group::after {
+  content: ''; width: 5px; height: 5px; margin-top: -3px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+#key-group[aria-expanded="true"]::after { margin-top: 3px; transform: rotate(-135deg); }
+/* Seven keys to a row leave narrow phones little room for labels. */
+@media (max-width: 379px) { #key-group { gap: 3px; } }
+@media (max-width: 349px) {
+  #bar .k { font-size: 11px; }
+  #key-group::after { display: none; }
+}
 #key-panel { border-bottom: 1px solid var(--line); }
-#key-rail { padding: 5px; gap: 6px; }
-#key-rail .k { background: transparent; border: 1px solid var(--line); }
-#key-rail .k.on { background: var(--key-down); border-color: var(--accent); }
+/* A slipped tap on Keys must not land on Enter. */
+#key-toggle { margin-left: 6px; }
 #key-toggle { position: relative; gap: 6px; }
+@media (max-width: 349px) { #key-toggle { gap: 3px; } }   /* seven keys share a 320px row */
 #key-toggle::after { content: '+'; color: var(--accent); font-size: 17px; }
 #key-toggle[aria-expanded="true"]::after { content: '−'; }
 #key-modifiers { position: absolute; bottom: 2px; font-size: 10px; color: var(--accent); }
 .k:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .k {
   flex: 1 1 0; min-width: 0; height: 34px; padding: 0;
-  border: 0; border-radius: 7px; background: var(--key); color: var(--fg);
+  border: 1px solid transparent;   /* as wide as the outlined controls, so rows line up */
+  border-radius: 7px; background: var(--key); color: var(--fg);
   font: inherit; font-size: 13px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
   touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
 @media (pointer: coarse) { .k { min-height: 44px; } }
+/* Controls - writing, and the panel's pages - are outlined; keys are filled. */
+.k.ctl { background: transparent; border: 1px solid var(--line); }
 .k:active, .k.down { background: var(--key-down); }
 .k.wide { flex-grow: 1.5; }
 /* Draw arrows without relying on the phone's symbol font. */
@@ -122,6 +178,33 @@ body { position: fixed; inset: 0; }
 .k[data-arrow="↑"]::before { transform: rotate(-45deg); }
 .k[data-arrow="↓"]::before { transform: rotate(135deg); }
 .k.on { background: var(--key-down); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.k.ctl.on { border-color: var(--accent); box-shadow: none; }
+.k[hidden] { display: none; }
+/* A wide screen gets a compact centred keypad rather than keys stretched edge
+   to edge. Rows still fill it, so More and Less share a spot there too. */
+@media (min-width: 720px) {
+  #bar .row { max-width: 660px; margin: 0 auto; }
+}
+/* A phone on its side is short of height, not width, so the keys move to a
+   column beside the terminal and a draft takes one line. */
+#app.side-keys {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+#app.side-keys > #session-bar, #app.side-keys > #session-strip { grid-column: 1 / -1; grid-row: 1; }
+#app.side-keys > #term { grid-column: 1; grid-row: 2; }
+#app.side-keys > #paste.compose { grid-column: 1; grid-row: 3; }
+#app.side-keys > #bar:not([hidden]) {
+  grid-column: 2; grid-row: 2 / 4; width: 184px; overflow-y: auto;
+  display: flex; flex-direction: column;
+  border-top: 0; border-left: 1px solid var(--line);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+/* Keys sit at the bottom, in thumb reach, and stay scrollable when they overflow. */
+#app.side-keys > #bar::before { content: ''; flex: 1 1 auto; }
+#app.side-keys #bar .row { flex-wrap: wrap; }
+#app.side-keys #bar .k, #app.side-keys #key-group { flex: 1 1 30%; margin-left: 0; }
+#app.side-keys #paste.compose #paste-text { height: 44px; }
 
 #overlay {
   position: absolute; inset: 0; z-index: 5;
@@ -159,7 +242,7 @@ body { position: fixed; inset: 0; }
   background: var(--bg); color: var(--fg);
   font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;   /* 16px: no iOS zoom */
 }
-/* Write stays below the terminal, leaving output visible and scrollable. */
+/* A draft stays below the terminal, leaving output visible and scrollable. */
 #paste.compose {
   position: relative; inset: auto; z-index: 1; flex: 0 0 auto; flex-direction: row;
   align-items: center; gap: 6px; padding: 6px;
@@ -173,6 +256,10 @@ body { position: fixed; inset: 0; }
 #paste.compose .sheet-bar { padding: 0; gap: 4px; }
 #paste.compose .sheet-bar .k { flex: 0 0 auto; width: 44px; }
 #paste.compose #paste-send { width: 56px; }
+/* New line only makes sense in a draft, not in the paste box. */
+#paste-newline { display: none; }
+#paste.compose #paste-newline { display: flex; }
+#paste-newline svg { width: 16px; height: 14px; }
 /* Sheet buttons sit at the bottom, in thumb reach, primary action on the right. */
 .sheet-hint {
   flex: 0 0 auto; padding: 6px 10px; text-align: center; font-size: 13px; color: #8b919c;
@@ -205,27 +292,48 @@ body { position: fixed; inset: 0; }
     <label id="workspace-label" for="workspace">Workspace</label>
     <select id="workspace" title="Task folder and instructions"></select>
     <div id="agents" role="group" aria-label="Agent"></div>
+    <button type="button" class="agent-button" id="keys-switch" aria-label="On-screen keys"
+            aria-controls="bar" aria-pressed="false" title="Show on-screen keys">
+      <svg viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+        <rect x="1" y="1.75" width="20" height="12.5" rx="2.5" stroke-width="1.5"/>
+        <path d="M5.5 6h.01M9.17 6h.01M12.83 6h.01M16.5 6h.01" stroke-width="2"/>
+        <path d="M7 10.25h8" stroke-width="1.5"/>
+      </svg>
+    </button>
+    <button type="button" class="agent-button" id="top-collapse" aria-label="Hide top bar"
+            aria-controls="session-bar" aria-expanded="true" title="Hide top bar">
+      <svg viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.75"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8l6-6 6 6"/></svg>
+    </button>
   </div>
+  <!-- Stands in for the session bar while it is collapsed. -->
+  <button type="button" id="session-strip" aria-controls="session-bar" aria-expanded="false" hidden>
+    <span id="session-summary"></span>
+    <svg viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.75"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2l6 6 6-6"/></svg>
+  </button>
   <div id="term"></div>
   <div id="paste" class="sheet" hidden>
     <textarea id="paste-text" placeholder="Long-press here and choose Paste (or tap your keyboard's clipboard suggestion). Pasted text goes straight to the terminal."
               autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
     <div class="sheet-hint" id="paste-hint">Pastes go straight in · typed text needs Send</div>
     <div class="sheet-bar">
+      <button type="button" class="k" id="paste-newline" aria-label="New line" title="New line (Shift+Enter)">
+        <svg viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M14 2v5a2 2 0 0 1-2 2H3M6 6L3 9l3 3"/></svg>
+      </button>
       <button type="button" class="k" id="paste-cancel">Cancel</button>
       <button type="button" class="k primary" id="paste-send">Send</button>
     </div>
   </div>
   <div id="bar" hidden>
     <div id="key-panel" role="group" aria-label="Terminal helper keys" hidden>
-      <div id="keys-main">
-        <div class="row" id="row1"></div>
-        <div class="row" id="row-nav"></div>
-      </div>
-      <div id="keys-more" hidden>
-        <div class="row" id="row-mods"></div>
-        <div class="row" id="row-edit"></div>
-        <div class="row" id="row2"></div>
+      <div class="row" id="key-row">
+        <div class="page" id="keys-agent"></div>
+        <div class="page" id="keys-ctrl" hidden></div>
+        <div class="page" id="keys-edit" hidden></div>
+        <div class="page" id="keys-tools" hidden></div>
+        <div class="page" id="key-groups" role="group" aria-label="Key groups" hidden></div>
       </div>
     </div>
     <div class="row" id="key-rail"></div>
@@ -275,11 +383,6 @@ body { position: fixed; inset: 0; }
   var termEl  = document.getElementById('term');
   var bar     = document.getElementById('bar');
   var keyPanel = document.getElementById('key-panel');
-  var keysMain = document.getElementById('keys-main');
-  var keysMore = document.getElementById('keys-more');
-  var row1El  = document.getElementById('row1');
-  var rowModsEl = document.getElementById('row-mods');
-  var row2El  = document.getElementById('row2');
   var overlay = document.getElementById('overlay');
   var overlayMsg = document.getElementById('overlay-msg');
 
@@ -293,6 +396,9 @@ body { position: fixed; inset: 0; }
   // ------------------------------------------------------ session controls
   var workspaceEl = document.getElementById('workspace');
   var agentsEl = document.getElementById('agents');
+  var sessionBar = document.getElementById('session-bar');
+  var sessionStrip = document.getElementById('session-strip');
+  var topCollapse = document.getElementById('top-collapse');
   var sessionKey = 'session:' + base;
   var savedSession = {};
   try { savedSession = JSON.parse(lsGet(sessionKey, '{}')) || {}; } catch (e) {}
@@ -320,6 +426,7 @@ body { position: fixed; inset: 0; }
     var agent = sessionConfig.agents.find(function (a) { return a.id === selectedAgent; });
     var workspace = sessionConfig.workspaces.find(function (w) { return w.id === selectedWorkspace; });
     workspaceEl.title = workspace.directory;
+    document.getElementById('session-summary').textContent = agent.name + ' · ' + workspace.name;
     document.title = agent.name + ' · ' + workspace.name + ' · Agent Terminal';
     lsSet(sessionKey, JSON.stringify({ agent: selectedAgent, workspace: selectedWorkspace }));
   }
@@ -358,6 +465,26 @@ body { position: fixed; inset: 0; }
     switchSession(sessionConfig.agents[Number(e.code.slice(-1)) - 1].id, selectedWorkspace);
   }, true);
   updateSessionControls();
+
+  // The session bar collapses to a slim strip naming the session, and each
+  // device remembers which. Like the keys, the buttons keep the current input
+  // focused; keyboard focus follows to whichever of the two is now showing.
+  function setTopBarShown(shown) {
+    var from = shown ? sessionStrip : topCollapse, to = shown ? topCollapse : sessionStrip;
+    sessionBar.hidden = !shown;
+    sessionStrip.hidden = shown;
+    if (document.activeElement === from) to.focus();
+  }
+  setTopBarShown(lsGet('topbar', '1') !== '0');
+  [topCollapse, sessionStrip].forEach(function (b) {
+    b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+    b.addEventListener('click', function () {
+      var show = b === sessionStrip;
+      lsSet('topbar', show ? '1' : '0');
+      setTopBarShown(show);
+      layout();
+    });
+  });
 
   // --------------------------------------------------------------- terminal
   var term = new Terminal({
@@ -871,10 +998,6 @@ body { position: fixed; inset: 0; }
     if (mods.shift) newDraftLine();
     else sendPaste();
   }
-  function newlineKey() {
-    if (draftOpen()) newDraftLine();
-    else fixedKey('\n');
-  }
 
   function bindPasteBox(box) {
     var allowLineBreak = false;
@@ -936,6 +1059,7 @@ body { position: fixed; inset: 0; }
   }
 
   selButton('paste-send', sendPaste);
+  selButton('paste-newline', newDraftLine);
   selButton('paste-cancel', closePaste);
 
   // ttyd pushes --client-option values here. Only options xterm actually
@@ -1106,6 +1230,12 @@ body { position: fixed; inset: 0; }
   }
 
   var directKeyboard = false;
+  function setDirect(on) {
+    directKeyboard = on;
+    var b = document.getElementById('direct-keys');
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
   function toggleDirectKeyboard() {
     if (draftOpen()) closePaste();
     var ta = term.textarea;
@@ -1113,7 +1243,7 @@ body { position: fixed; inset: 0; }
     else {
       if (ta && touch) {
         ta.blur();
-        directKeyboard = true;
+        setDirect(true);
         ta.setAttribute('inputmode', 'text');
       }
       setKeysOpen(false);
@@ -1123,98 +1253,112 @@ body { position: fixed; inset: 0; }
   function setKeysOpen(open) {
     stopKeyHolds.forEach(function (stop) { stop(); });
     keyPanel.hidden = !open;
-    // Every opening starts with common controls. Never restore an expanded
+    // Every opening starts with the agent keys. Never restore an expanded
     // toolbar from storage or expand it in response to keyboard resizing.
-    keysMain.hidden = false;
-    keysMore.hidden = true;
+    showKeyGroup('agent');
     if (!open) clearMods();
     var toggle = document.getElementById('key-toggle');
     toggle.setAttribute('aria-expanded', String(open));
     toggle.title = open ? 'Hide helper keys' : 'Show helper keys';
     toggle.setAttribute('aria-label', toggle.title);
     toggle.classList.toggle('on', open);
-    document.getElementById('more-keys').setAttribute('aria-expanded', 'false');
     layout();
   }
-  function showMoreKeys(more) {
+  // Shows a group's keys in the panel's row, or with 'groups', the list of
+  // groups in their place.
+  var keyGroup = 'agent';
+  function showKeyGroup(id) {
     stopKeyHolds.forEach(function (stop) { stop(); });
-    keysMain.hidden = more;
-    keysMore.hidden = !more;
-    var from = document.getElementById(more ? 'more-keys' : 'back-keys');
-    var to = document.getElementById(more ? 'back-keys' : 'more-keys');
-    document.getElementById('more-keys').setAttribute('aria-expanded', String(more));
-    // Keyboard navigation must not strand focus in the page just hidden.
-    if (document.activeElement === from) to.focus();
-    layout();
+    var choosing = id === 'groups';
+    if (!choosing) keyGroup = id;
+    KEY_GROUPS.forEach(function (g) {
+      document.getElementById('keys-' + g.id).hidden = choosing || g.id !== keyGroup;
+      var b = document.getElementById('group-' + g.id);
+      b.classList.toggle('on', g.id === keyGroup);
+      b.setAttribute('aria-pressed', String(g.id === keyGroup));
+    });
+    document.getElementById('key-groups').hidden = !choosing;
+    var name = KEY_GROUPS.filter(function (g) { return g.id === keyGroup; })[0].l;
+    var button = document.getElementById('key-group');
+    button.textContent = name;
+    button.setAttribute('aria-label', 'Key group: ' + name);
+    button.setAttribute('aria-expanded', String(choosing));
+    button.classList.toggle('on', choosing);
+    // A group picked from the keyboard hides its button; focus stays in the row.
+    var active = document.activeElement;
+    if (!choosing && active && active.dataset && active.dataset.group) button.focus();
   }
 
   // ------------------------------------------------------------- on-screen keys
+  // The bottom row holds the keys the agents ask for most - interrupting,
+  // moving through a menu, confirming - and the key panel's toggle. A tap on
+  // the terminal writes, so it needs no button.
   var RAIL = [
-    { l: 'Write', t: 'Open keyboard and write a prompt', click: true, go: openCompose },
-    { l: 'New line', t: 'New line in draft / Ctrl+J in terminal', click: true, go: newlineKey },
-    { l: 'Keys', t: 'Show helper keys', id: 'key-toggle', click: true,
-      go: function () { setKeysOpen(keyPanel.hidden); } }
-  ];
-  var ROW1 = [
     { l: 'Esc', t: 'Escape / cancel in terminal', go: function () { key('\x1b'); } },
-    { l: 'Tab', t: 'Tab / next field / complete', go: function () { key('\t'); } },
-    { l: 'Mode', t: 'Shift+Tab — Claude permissions / Codex plan mode',
-      go: function () { fixedKey('\x1b[Z'); } },
-    { l: 'Answer', t: 'Open Codex questions (Shift+Left)',
-      go: function () { fixedKey('\x1b[1;2D'); } },
-    // Keep double Escape as two presses across tmux's escape timeout.
-    { l: 'Esc²', t: 'Esc twice — Claude rewind / Codex edit previous (empty prompt)', go: function () {
-        var id = connectionId;
-        clearMods(); send('\x1b');
-        setTimeout(function () { if (id === connectionId) send('\x1b'); }, 120);
-      } },
-    { l: 'Enter', t: 'Send open draft / Enter to confirm in terminal', primary: true, click: true, go: enterKey }
-  ];
-  var ROW_NAV = [
     { l: '←', t: 'Left', rep: true, go: function () { arrow('D'); } },
     { l: '↑', t: 'Up', rep: true, go: function () { arrow('A'); } },
     { l: '↓', t: 'Down', rep: true, go: function () { arrow('B'); } },
     { l: '→', t: 'Right', rep: true, go: function () { arrow('C'); } },
-    { l: 'Space', t: 'Space / toggle a choice in terminal', go: function () { key(' '); } },
-    { l: 'More', t: 'Editing, clipboard and tmux keys', id: 'more-keys', click: true,
-      go: function () { showMoreKeys(true); } }
+    { l: 'Enter', t: 'Send open draft / Enter to confirm in terminal', primary: true, click: true, go: enterKey },
+    { l: 'Keys', t: 'Show helper keys', id: 'key-toggle', ctl: true, click: true,
+      go: function () { setKeysOpen(keyPanel.hidden); } }
   ];
-  var ROW_MODS = [
-    { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
-    { l: 'Alt', t: 'Alt (applies to the next key)', mod: 'alt', go: function () { setMod('alt', !mods.alt); } },
-    { l: 'Shift', t: 'Shift (applies to the next key)', mod: 'shift', go: function () { setMod('shift', !mods.shift); } },
-    { l: 'Ctrl+C', t: 'Ctrl+C / interrupt or exit, depending on the running program', go: function () { fixedKey('\x03'); } },
-    { l: 'Back', t: 'Back to common keys', id: 'back-keys', click: true,
-      go: function () { showMoreKeys(false); } }
-  ];
-  var ROW_EDIT = [
-    { l: 'Bksp', t: 'Backspace in terminal', rep: true, go: function () { key('\x7f'); } },
-    { l: 'Home', t: 'Home in terminal', go: function () { arrow('H'); } },
-    { l: 'End', t: 'End in terminal', go: function () { arrow('F'); } },
-    { l: 'PgUp', t: 'Scroll up a page', rep: true, go: function () { scrollLines(-page()); } },
-    { l: 'PgDn', t: 'Scroll down a page', rep: true, go: function () { scrollLines(page()); } }
-  ];
-  var ROW2 = [
-    { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } },
-    { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', click: true, go: openSelect },
-    { l: 'Paste', t: 'Paste literal text into terminal', click: true, go: pasteText },
-    { l: 'Direct', t: 'Direct terminal keyboard for shortcuts (disable phone autocorrect)', click: true, go: toggleDirectKeyboard },
-    { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
-    { l: 'A+', t: 'Larger text', go: function () { setFont(1); } }
+  // Keys opens a single row: one group's keys and, right above Keys, the group
+  // button. It turns the row into the list of groups, so every key is two taps
+  // away and the panel never grows past one row.
+  var KEY_GROUPS = [
+    { id: 'agent', l: 'Agent', keys: [
+      { l: 'Tab', t: 'Tab / next field / complete', go: function () { key('\t'); } },
+      { l: 'Mode', t: 'Shift+Tab — Claude permissions / Codex plan mode',
+        go: function () { fixedKey('\x1b[Z'); } },
+      { l: 'Answer', t: 'Open Codex questions (Shift+Left)',
+        go: function () { fixedKey('\x1b[1;2D'); } },
+      // Keep double Escape as two presses across tmux's escape timeout.
+      { l: 'Esc²', t: 'Esc twice — Claude rewind / Codex edit previous (empty prompt)', go: function () {
+          var id = connectionId;
+          clearMods(); send('\x1b');
+          setTimeout(function () { if (id === connectionId) send('\x1b'); }, 120);
+        } },
+      // Both agents clear typed input with Ctrl+C; it also interrupts, and a
+      // second press on an empty prompt exits. Kept away from the group button.
+      { l: 'Ctrl+C', t: 'Ctrl+C — clear input or interrupt; twice on an empty prompt exits', go: function () { fixedKey('\x03'); } },
+      { l: 'Space', t: 'Space / toggle a choice in terminal', go: function () { key(' '); } }
+    ] },
+    { id: 'ctrl', l: 'Ctrl', keys: [
+      { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
+      { l: 'Alt', t: 'Alt (applies to the next key)', mod: 'alt', go: function () { setMod('alt', !mods.alt); } },
+      { l: 'Shift', t: 'Shift (applies to the next key)', mod: 'shift', go: function () { setMod('shift', !mods.shift); } },
+      { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } }
+    ] },
+    { id: 'edit', l: 'Edit', keys: [
+      { l: 'Bksp', t: 'Backspace in terminal', rep: true, go: function () { key('\x7f'); } },
+      { l: 'Home', t: 'Home in terminal', go: function () { arrow('H'); } },
+      { l: 'End', t: 'End in terminal', go: function () { arrow('F'); } },
+      { l: 'PgUp', t: 'Scroll up a page', rep: true, go: function () { scrollLines(-page()); } },
+      { l: 'PgDn', t: 'Scroll down a page', rep: true, go: function () { scrollLines(page()); } }
+    ] },
+    { id: 'tools', l: 'Tools', keys: [
+      { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', click: true, go: openSelect },
+      { l: 'Paste', t: 'Paste literal text into terminal', click: true, go: pasteText },
+      { l: 'Direct', t: 'Direct terminal keyboard for shortcuts (disable phone autocorrect)', id: 'direct-keys',
+        toggle: true, click: true, go: toggleDirectKeyboard },
+      { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
+      { l: 'A+', t: 'Larger text', go: function () { setFont(1); } }
+    ] }
   ];
 
   var stopKeyHolds = [];
   function buildKey(spec, parent) {
     var b = document.createElement('button');
     b.type = 'button';
-    b.className = 'k' + (spec.wide ? ' wide' : '') + (spec.primary ? ' primary' : '');
+    b.className = 'k' + (spec.wide ? ' wide' : '') + (spec.primary ? ' primary' : '') + (spec.ctl ? ' ctl' : '');
     if (spec.id) b.id = spec.id;
     b.textContent = spec.l;
     b.dataset.key = spec.l;
     if (['←', '↑', '↓', '→'].indexOf(spec.l) !== -1) b.setAttribute('data-arrow', spec.l);
     b.title = spec.t;
     b.setAttribute('aria-label', spec.t);
-    if (spec.mod) b.setAttribute('aria-pressed', 'false');
+    if (spec.mod || spec.toggle) b.setAttribute('aria-pressed', 'false');
 
     var holdTimer = null, repeatTimer = null, pointerHandled = false;
 
@@ -1259,41 +1403,71 @@ body { position: fixed; inset: 0; }
   }
 
   RAIL.forEach(function (s) { buildKey(s, document.getElementById('key-rail')); });
-  ROW1.forEach(function (s) { buildKey(s, row1El); });
-  ROW_NAV.forEach(function (s) { buildKey(s, document.getElementById('row-nav')); });
-  ROW_EDIT.forEach(function (s) { buildKey(s, document.getElementById('row-edit')); });
-  ROW_MODS.forEach(function (s) { buildKey(s, rowModsEl); });
-  ROW2.forEach(function (s) { buildKey(s, row2El); });
+  KEY_GROUPS.forEach(function (g) {
+    g.keys.forEach(function (s) { buildKey(s, document.getElementById('keys-' + g.id)); });
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'k ctl'; b.id = 'group-' + g.id;
+    b.textContent = g.l; b.dataset.group = g.id;
+    b.addEventListener('pointerdown', function (e) { e.preventDefault(); });   // keep the current input focused
+    b.addEventListener('click', function () { showKeyGroup(g.id); layout(); });
+    document.getElementById('key-groups').appendChild(b);
+  });
+  buildKey({ l: 'Group', t: 'Choose a group of keys', id: 'key-group', ctl: true, click: true, go: function () {
+    showKeyGroup(document.getElementById('key-groups').hidden ? 'groups' : keyGroup);
+    layout();
+  } }, document.getElementById('key-row'));
+  document.getElementById('key-group').setAttribute('aria-controls', 'key-row');
+  showKeyGroup('agent');
   keyPanel.hidden = true;
-  keysMain.hidden = false;
-  keysMore.hidden = true;
   document.getElementById('key-toggle').setAttribute('aria-controls', 'key-panel');
   document.getElementById('key-toggle').setAttribute('aria-expanded', 'false');
-  document.getElementById('more-keys').setAttribute('aria-controls', 'keys-more');
-  document.getElementById('more-keys').setAttribute('aria-expanded', 'false');
   var keyModifiers = document.createElement('span');
   keyModifiers.id = 'key-modifiers';
   keyModifiers.setAttribute('aria-live', 'polite');
   document.getElementById('key-toggle').appendChild(keyModifiers);
 
-  // The bar only earns its screen space on touch devices; a desktop keyboard
-  // already has every key on it.
+  // By default the bar only earns its screen space on touch devices; a desktop
+  // keyboard already has every key on it. The switch in the session bar
+  // changes that per device - for a keyboard without Esc, or a tablet with a
+  // keyboard attached - and ?keys=1 / ?keys=0 overrides it for one page load.
   var touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   var force = /[?&]keys=(\d)/.exec(location.search);
-  bar.hidden = force ? force[1] === '0' : !touch;
+  var savedBar = lsGet('keybar', '');
+  var keysSwitch = document.getElementById('keys-switch');
+  // A desktop already types straight into the terminal.
+  document.getElementById('direct-keys').hidden = !touch;
 
   // Mobile IMEs can replay xterm's accumulated hidden textarea as fresh input.
-  // Taps and Write use a native draft box instead. Keep physical keyboards
-  // untouched; Keys > More > Direct enables live input for terminal shortcuts.
-  // With the key bar forced off, keep direct typing available as before.
+  // While the bar is shown, a tap on the terminal opens a native draft box, and
+  // Keys > More > Direct enables live input for terminal shortcuts. Physical
+  // keyboards are untouched. With the bar hidden, a tap types directly again.
   var terminalInput = term.textarea;
-  if (touch && !bar.hidden && terminalInput) {
-    terminalInput.setAttribute('inputmode', 'none');
+  function setBarShown(shown) {
+    bar.hidden = !shown;
+    keysSwitch.setAttribute('aria-pressed', String(shown));
+    keysSwitch.title = shown ? 'Hide on-screen keys' : 'Show on-screen keys';
+    if (!touch || !terminalInput) return;
+    // Change input modes with the terminal unfocused; its next tap uses the new one.
+    if (document.activeElement === terminalInput) terminalInput.blur();
+    setDirect(false);
+    if (shown) terminalInput.setAttribute('inputmode', 'none');
+    else terminalInput.removeAttribute('inputmode');
+  }
+  if (touch && terminalInput) {
     terminalInput.addEventListener('blur', function () {
-      directKeyboard = false;
-      terminalInput.setAttribute('inputmode', 'none');
+      setDirect(false);
+      if (!bar.hidden) terminalInput.setAttribute('inputmode', 'none');
     });
   }
+  setBarShown(force ? force[1] !== '0' : savedBar ? savedBar === '1' : touch);
+  keysSwitch.addEventListener('pointerdown', function (e) { e.preventDefault(); });   // keep the current input focused
+  keysSwitch.addEventListener('click', function () {
+    var show = bar.hidden;
+    lsSet('keybar', show ? '1' : '0');
+    setBarShown(show);
+    // Asking for keys shows them; hiding them drops armed modifiers and repeats.
+    setKeysOpen(show);
+  });
 
   // ---------------------------------------------------------------- layout
   var vv = window.visualViewport;
@@ -1350,6 +1524,10 @@ body { position: fixed; inset: 0; }
       ' host ' + (host ? Math.round(host.height) + '@' + Math.round(host.top) : '-') + ' -> ' + Math.round(h);
     app.style.height = h + 'px';
     app.classList.toggle('compact-height', h < 520);
+    // A phone on its side: wider than the tallest it has been since turning,
+    // and short. Comparing with that height, not the current one, keeps the
+    // on-screen keyboard from flipping an upright phone into this layout.
+    app.classList.toggle('side-keys', touch && window.innerWidth > maxH && maxH < 520);
     app.style.transform = top ? 'translateY(' + top + 'px)' : '';
     // Drop the home-indicator gutter while the keyboard is covering it anyway.
     var keyboardUp = (maxH - h) > 120;
@@ -1390,6 +1568,15 @@ body { position: fixed; inset: 0; }
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
   overlay.addEventListener('click', function () { retry = 500; connect(); });
+  // A phone suspends a page in the background, where the retry delay can grow
+  // to its maximum. Coming back to it, or back online, retries at once.
+  function reconnectNow() {
+    if (retryTimer === null || document.hidden) return;
+    retry = 500;
+    connect();
+  }
+  document.addEventListener('visibilitychange', reconnectNow);
+  window.addEventListener('online', reconnectNow);
 
   layout();
   doFit();
