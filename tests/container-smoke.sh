@@ -26,6 +26,9 @@ unset -f curl
 test -f /data/.imported
 test ! -e /share/agent-terminal/import
 test -s /data/codex/config.toml
+# Codex's background app-server cannot stay alive in the container, and the TUI
+# aborts when it dies, so the auto-start must be off from the first boot.
+grep -qx 'features\.daemon_auto_start = false' /data/codex/config.toml
 test -s /data/claude/.claude/.claude.json
 test -s /run/agent-terminal/index.html
 test "$(bash -lc 'printf %s "$AGENT"')" = codex

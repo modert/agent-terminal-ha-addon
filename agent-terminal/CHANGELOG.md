@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Fix ChatGPT sessions reloading forever on Codex 0.157: its new background
+  app-server cannot stay alive in the add-on container, so the TUI exited with
+  "failed to record pid-managed app-server process ... startup". Turn
+  `daemon_auto_start` off in the stored Codex config, for existing installs too,
+  and pin the CLI to 0.157.1.
 - Start phone helper keys minimized with a small Write / New line / Keys row.
   Opening a new draft or switching sessions minimizes them; explicit expansion
   survives keyboard resizing. More replaces common controls with a compact
