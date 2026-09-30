@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.6.1
+- Update the Codex CLI to 0.159.2.
+
 ## 2.6.0
 - A keyboard button at the right end of the top bar shows or hides the
   helper keys on any device, and each device remembers the choice. Desktops
