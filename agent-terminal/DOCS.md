@@ -124,7 +124,12 @@ tools."
 The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
 or **Shell**; keyboard shortcuts are **Ctrl+Shift+1**, **Ctrl+Shift+2**, and
 **Ctrl+Shift+3** respectively. Use the buttons if your browser or OS reserves
-a shortcut. The workspace selector chooses the task folder.
+a shortcut. The workspace selector chooses the task folder. The keyboard
+button at the right end shows or hides the on-screen helper keys (see
+[Helper keys on a desktop](#helper-keys-on-a-desktop)). The **⌃** button
+next to it collapses the bar to a slim strip naming the current agent and
+workspace. Tap or click the strip to bring the bar back. The shortcuts keep
+working while it is collapsed, and each device remembers the choice.
 
 Switching detaches the current terminal and attaches the selected session.
 An agent keeps working while you are viewing another one. Returning to the
@@ -213,7 +218,7 @@ project folders or Git worktrees when tasks need independent changes.
   Ctrl+Shift+C / ⌘C and right-click → Copy still copy and confirm; Ctrl+C with
   nothing selected interrupts, as always.
 - **Paste:** Ctrl+V / Ctrl+Shift+V / ⌘V, or right-click → Paste (needs HTTPS).
-  On a phone, tap 📋 (or long-press → Paste): a paste box opens with the
+  On a phone, tap **Keys → Tools → Paste** (or long-press → Paste): a paste box opens with the
   keyboard. Long-press in it and choose Paste (or tap the keyboard's clipboard
   suggestion) and it goes straight to the terminal. Typed text needs **Send**.
 - **Esc twice on a phone:** tap **Keys**, then **Esc²**.
@@ -246,53 +251,90 @@ project folders or Git worktrees when tasks need independent changes.
 The sidebar panel serves a terminal page built for touch, including the Home
 Assistant companion app.
 
-- **Helpers start minimized.** Only **Write**, **New line**, and **Keys** stay
-  visible. Tap **Keys** to open or close the helpers. Reloading, switching an
-  agent/workspace, or starting a new draft starts minimized; an old saved
-  expanded-toolbar preference is ignored. You can reopen Keys while typing:
-  keyboard resizing leaves your choice alone.
-- **Common controls:** Keys shows Esc, Tab, Mode, Answer, Esc², Enter, arrows,
-  and Space. **More** switches to editing, clipboard, text size, and tmux
-  controls; **Back** returns to common keys. These pages replace each other
-  so extra controls do not stack over the conversation.
-- **Answer Codex questions:** **Keys → Answer**, choose with the arrows, then
-  **Enter**. Tab moves between fields; Space toggles a choice where supported.
-- **Write a prompt:** tap the terminal or **Write** to open a compact draft
-  and the phone keyboard. The response stays visible and scrollable. **Enter**
-  or **Send** submits; **Shift+Enter** or **New line** adds a line. The helper
+- **The bottom row is always there:** **Esc**, **← ↑ ↓ →**, **Enter** and
+  **Keys**, the keys the agents ask for most (interrupting, moving through a
+  menu or between questions, confirming). Keys is outlined, as a control
+  rather than a key, and set slightly apart so a slipped tap doesn't send
+  Enter.
+- **Keys opens a single row** of grouped keys, so the panel never takes more
+  than one row. It starts with the agent keys; the button at its right end,
+  directly above Keys, names the group and lists the others in the same row:
+
+  | Group | Keys |
+  |---|---|
+  | Agent | Tab, Mode, Answer, Esc², Ctrl+C, Space |
+  | Ctrl | Ctrl, Alt, Shift, tmux |
+  | Edit | Bksp, Home, End, PgUp, PgDn |
+  | Tools | Copy, Paste, Direct, A−, A+ |
+
+  The group button stays put, so tapping it twice returns you to where you
+  were. Reloading, switching an agent/workspace, or starting a new draft
+  closes Keys; an old saved expanded-toolbar preference is ignored. You can reopen Keys while typing: keyboard resizing leaves your
+  choice alone.
+- **Answer Codex questions:** **Keys → Answer** (Codex's Shift+Left), choose
+  with the arrows, then **Enter**. Tab moves between fields; Space toggles a choice where supported.
+- **Write a prompt:** tap the terminal to open a compact draft and the phone
+  keyboard. The response stays visible and scrollable. **Enter** or **Send**
+  submits; **Shift+Enter** or **↵** beside the draft adds a line. The helper
   Enter button also submits an open draft. Tap **×** to close without sending.
   Autocorrect and composition edits stay in the native draft; Send pastes the
   final value once and submits after composition finishes. Enter used to accept
   an IME candidate does not submit. Reopening an active draft preserves its
   editor and text. Paste keeps autocorrect off for literal pasted content.
-- **Drag on the terminal to scroll**, even while a draft is open. Drags send
-  wheel events to programs that request mouse tracking, and otherwise scroll
-  terminal history. Long-press opens the selection/copy/paste menu.
-- **Modifiers and direct input:** **Keys → More** contains Ctrl, Alt, and
+- **Drag on the terminal to scroll**, even while a draft is open or output is
+  streaming. Drags send wheel events to programs that request mouse tracking,
+  and otherwise scroll terminal history. Long-press opens the selection/copy/paste menu.
+- **Modifiers and direct input:** the **Ctrl** group has Ctrl, Alt, and
   Shift. Each applies to the next terminal key; armed modifiers are shown on
-  the Keys button even after returning with Back. Collapsing helpers clears
+  the Keys button even after switching groups. Collapsing helpers clears
   them. **Direct** opens the original terminal keyboard for single letters or
-  shortcuts: for example, reopen Keys → More and tap Ctrl, then type r for
-  Ctrl+R. Disable phone autocorrect in Direct mode: xterm's live IME can replay
-  text ([upstream report](https://github.com/xtermjs/xterm.js/issues/6078)).
-  Physical keyboards work normally; `?keys=0` preserves direct phone input.
-- **tmux:** Keys → More → tmux sends the default Ctrl+B prefix. In Direct
+  shortcuts: for example, reopen Keys → Ctrl and tap Ctrl, then type r for
+  Ctrl+R. Direct stays highlighted until the keyboard closes. Disable phone
+  autocorrect in Direct mode: xterm's live IME can replay text
+  ([upstream report](https://github.com/xtermjs/xterm.js/issues/6078)).
+  Physical keyboards work normally.
+- **tmux:** Keys → Ctrl → tmux sends the default Ctrl+B prefix. In Direct
   mode, follow with `[` to scroll or `d` to detach. Tap tmux twice to pass
   Ctrl+B through to Claude's background-task control.
-- **Touch targets are at least 44 × 44 pixels** on phones 320 pixels wide or
-  larger. Keyboard actions run on a completed tap. Scrolling, long-press menus,
+- **Touch targets are at least 44 × 44 pixels** on phones 350 pixels wide or
+  larger. Between 320 and 350 pixels, the seven-key rows (the bottom row and
+  the agent keys) are at least 40 pixels wide. Keyboard actions run on a completed tap. Scrolling, long-press menus,
   and cancelled touches do not open the draft. The page fits above the keyboard;
   the session selector uses one row when the available height is small.
-- Text size is remembered per device. The bar is hidden on desktop; append
-  `?keys=1` to force it on, or `?keys=0` to hide it. Set `mobile_ui: false`
-  to use ttyd's stock client.
+- **Collapse the top bar** with **⌃** for about four more lines of output; the
+  strip that replaces it brings it back. Collapsing or expanding it while
+  writing keeps the draft and the phone keyboard open. On a narrow phone
+  with the keyboard up, the keyboard button steps aside so the one-row bar
+  still fits.
+- **Hide the helpers entirely** with the keyboard button at the right end of
+  the top bar, for example on a tablet with a keyboard attached. A tap on the
+  terminal then types into it directly, as Direct does. Tap the button again
+  to bring the keys back.
+- **Turn the phone on its side** and the helper keys move to a column on the
+  right, since width is what is left over then. The draft shrinks to one line,
+  so the terminal keeps several rows visible above the keyboard.
+- **Coming back to the app reconnects right away**, instead of waiting out the
+  retry delay that built up while the phone was asleep.
+- Text size, the keyboard button and the top bar are remembered per device.
+  Append `?keys=1` or `?keys=0` to the address to override that choice for one
+  visit. Set `mobile_ui: false` to use ttyd's stock client.
+
+### Helper keys on a desktop
+
+The helper keys are hidden on desktop, since a physical keyboard has every
+key. If yours is missing one (an Esc key, say), or the browser or OS takes a
+shortcut first, click the keyboard button at the right end of the top bar.
+The keys open with the agent keys, drawn as a compact centred keypad.
+Clicking them leaves the terminal focused, so you can keep typing. The browser
+remembers the choice, and later visits start with just the bottom row. **Direct** isn't offered, because typing already goes straight to
+the terminal.
 
 ### Shared shortcut map
 
 The helper buttons send the same terminal keys for either agent. The running
 program and its keybindings decide the action; these are the default meanings.
 Navigation and shortcut keys act on the terminal even while an unsent native
-draft is open. New line edits that draft and Enter submits it.
+draft is open. ↵ beside the draft adds a line to it, and Enter submits it.
 
 | Button | Keys sent | Claude | Codex |
 |---|---|---|---|
@@ -302,11 +344,12 @@ draft is open. New line edits that draft and Enter submits it.
 | Mode | Shift+Tab | Cycle permission modes, including Plan | Toggle Plan mode |
 | Answer | Shift+Left | Ordinary Shift+Left | Open pending questions |
 | Esc² | Escape twice, spaced apart | Rewind with an empty prompt; clear nonempty input | Edit previous message with an empty prompt |
-| New line | Native draft newline, otherwise Ctrl+J | Newline | Newline |
-| Ctrl+C (More) | Ctrl+C | Interrupt / clear / exit, depending on state | Interrupt / exit, depending on state |
+| ↵ (beside a draft) | Draft newline; Shift then Enter sends Ctrl+J in Direct mode | Newline | Newline |
+| Ctrl+C | Ctrl+C | Clear input / interrupt; twice on an empty prompt exits | Clear input / interrupt; twice on an empty prompt exits |
 
-Arrows and Space keep their normal navigation/selection behavior. More also
-retains Backspace (Bksp), Home/End, page scrolling, Copy/Paste, and A−/A+.
+Arrows and Space keep their normal navigation/selection behavior. The Edit
+group has Backspace (Bksp), Home/End and page scrolling; Tools has Copy/Paste,
+Direct and A−/A+.
 See [Claude's shortcut reference](https://code.claude.com/docs/en/interactive-mode),
 [Codex's interactive commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli#interactive-shortcuts),
 and [Codex Plan mode](https://learn.chatgpt.com/guides/best-practices#plan-first-for-difficult-tasks).
@@ -382,7 +425,7 @@ node tests/test_webui_keys.mjs
 These checks execute the page's handlers with a simulated DOM, xterm API, and
 WebSocket. They cover the question-answer sequence, modifiers, Claude controls,
 pointer repeat, keyboard activation, minimized helper state, modifier cleanup,
-and draft composition/paste handling.
+draft composition/paste handling, the keyboard button and the collapsible top bar.
 They make no model requests and do not send keys to a live session.
 
 For browser regression coverage, build the web UI with its normal build script,
@@ -395,7 +438,10 @@ CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_
 The browser test uses real touch activation and composition events with the
 bundled xterm, including repeated word replacement, Korean composition, and
 live Ctrl/Answer/arrow/Enter controls. It checks minimized defaults, expansion
-while typing, terminal visibility, and 44-pixel touch targets on a 320px phone.
+while typing, terminal visibility, touch targets on a 320px phone in every
+state of the one-row key panel, the group button keeping its spot, a drag that keeps scrolling while xterm
+redraws the rows under it, the keyboard button and top bar collapse on a phone
+and on a desktop, and the side column on a phone turned sideways.
 Its WebSocket is replaced before page
 code runs, so all input stays inside the test. The test skips unless
 `CHROMIUM_BIN` is set. Actual phone keyboard behavior still needs a device check.

@@ -116,6 +116,8 @@ test('phone taps and composition with real browser events and xterm', {
       windowsVirtualKeyCode: 13, modifiers });
   }
   const button = label => `[...document.querySelectorAll('#bar button')].find(b => b.dataset.key === ${JSON.stringify(label)})`;
+  // The group button, then a group from the list it shows in the same row.
+  async function group(id) { await tap(button('Group')); await tap(`document.getElementById('group-${id}')`); }
   const target = await command('Target.createTarget', { url: 'about:blank' });
   session = (await command('Target.attachToTarget', { targetId: target.targetId, flatten: true })).sessionId;
   await command('Page.enable');
@@ -123,7 +125,7 @@ test('phone taps and composition with real browser events and xterm', {
   await command('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   async function load(search = '') {
     await command('Page.navigate', { url: origin + '/' + search });
-    await until("!!document.querySelector('#row1 button') && window.testSocket?.onmessage && document.getElementById('overlay').hidden");
+    await until("!!document.querySelector('#keys-agent button') && window.testSocket?.onmessage && document.getElementById('overlay').hidden");
     await evaluate(`window.testPackets = []; window.testFocus = [];
       window.testSocket.onmessage({ data: new TextEncoder().encode('0\\x1b[?2004h').buffer });`);
     await delay(30);
@@ -133,6 +135,9 @@ test('phone taps and composition with real browser events and xterm', {
   }
   await load();
   assert.equal(await evaluate("matchMedia('(pointer: coarse)').matches"), true);
+  const railKeys = "[...document.querySelectorAll('#key-rail button')].filter(b => b.getBoundingClientRect().width).map(b => b.dataset.key)";
+  assert.deepEqual(await evaluate(railKeys), ['Esc', '←', '↑', '↓', '→', 'Enter', 'Keys'],
+    'a 390px phone shows all four arrows in the bottom row');
   if (process.env.WEBUI_SCREENSHOT) {
     const screenshot = await command('Page.captureScreenshot');
     writeFileSync(process.env.WEBUI_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
@@ -144,8 +149,8 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate("document.getElementById('key-panel').hidden"), true,
     'old saved expansion must not open the helpers');
   await tap(button('Keys'));
-  await tap(button('More'));
-  await tap(button('Write'));
+  await group('tools');
+  await tap("document.getElementById('term')");
   await until("document.activeElement.id === 'paste-text'");
   assert.equal(await evaluate("document.getElementById('key-panel').hidden"), true,
     'opening a draft minimizes the keys');
@@ -168,15 +173,15 @@ test('phone taps and composition with real browser events and xterm', {
   await delay(100);
   assert.equal(await evaluate("document.getElementById('key-panel').hidden"), false,
     'the keyboard resizing does not close explicitly opened helpers');
-  await tap(button('More'));
-  assert.equal(await evaluate("document.getElementById('keys-main').hidden && !document.getElementById('keys-more').hidden"), true);
-  assert.equal(await evaluate("document.getElementById('term').getBoundingClientRect().height > 60"), true,
-    'even More leaves response space above a draft');
+  await group('edit');
+  assert.equal(await evaluate("document.getElementById('keys-agent').hidden && !document.getElementById('keys-edit').hidden"), true);
+  assert.equal(await evaluate("document.getElementById('term').getBoundingClientRect().height > 100"), true,
+    'another group still leaves response space above a draft');
   if (process.env.WEBUI_SCREENSHOT) {
     const shot = await command('Page.captureScreenshot');
     writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-more.png'), Buffer.from(shot.data, 'base64'));
   }
-  await tap(button('Back'));
+  await group('agent');
   if (process.env.WEBUI_SCREENSHOT) {
     const shot = await command('Page.captureScreenshot');
     writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-keys.png'), Buffer.from(shot.data, 'base64'));
@@ -211,7 +216,7 @@ test('phone taps and composition with real browser events and xterm', {
   await until("document.getElementById('paste').hidden");
   assert.deepEqual(await packets(), ['\x1b[200~the hello hello\x1b[201~', '\r'], 'send only the final draft once, then submit');
   await evaluate("window.previousEditor = document.getElementById('paste-text')");
-  await tap(button('Write'));
+  await tap("document.getElementById('term')");
   assert.equal(await evaluate("previousEditor !== document.getElementById('paste-text')"), true);
   assert.equal(await evaluate("document.getElementById('paste-text').getAttribute('autocorrect')"), 'on');
   assert.equal(await evaluate("document.getElementById('paste-text').value"), '');
@@ -232,11 +237,11 @@ test('phone taps and composition with real browser events and xterm', {
   assert.deepEqual(await packets(), ['\x1b[200~한글\x1b[201~', '\r'], 'commit an active composition before reading its value');
 
   await load();
-  await tap(button('Write'));
+  await tap("document.getElementById('term')");
   await command('Input.insertText', { text: 'first' });
   await enter(8); // Shift+Enter edits a line without submitting.
   await command('Input.insertText', { text: 'second' });
-  await tap(button('New line'));
+  await tap("document.getElementById('paste-newline')");
   await command('Input.insertText', { text: 'third' });
   assert.equal(await evaluate("document.getElementById('paste-text').value"), 'first\nsecond\nthird');
   assert.deepEqual(await packets(), []);
@@ -249,9 +254,9 @@ test('phone taps and composition with real browser events and xterm', {
   assert.deepEqual(await packets(), ['\x1b[200~first\rsecond\rthird\x1b[201~', '\r']);
 
   await load();
-  await tap(button('Write'));
+  await tap("document.getElementById('term')");
   await command('Input.imeSetComposition', { text: '한글', selectionStart: 2, selectionEnd: 2 });
-  await tap(button('New line'));
+  await tap("document.getElementById('paste-newline')");
   assert.equal(await evaluate("document.getElementById('paste-text').value"), '한글\n');
   assert.deepEqual(await packets(), [], 'newline edits must not send a partially composed word');
   await command('Input.insertText', { text: 'next' });
@@ -272,36 +277,164 @@ test('phone taps and composition with real browser events and xterm', {
   await touch('touchEnd');
   assert.equal(await evaluate("document.getElementById('menu').hidden"), false, 'long-press still opens the copy/paste menu');
   assert.equal(await evaluate("document.getElementById('paste').hidden"), true);
-  await tap(button('Write'));
+  await tap("document.getElementById('term')");
   await until("document.activeElement.id === 'paste-text'");
   await tap("document.getElementById('paste-cancel')");
-  async function direct() { await tap(button('Keys')); await tap(button('More')); await tap(button('Direct')); }
+  async function direct() { await tap(button('Keys')); await group('tools'); await tap(button('Direct')); }
   await direct();
   assert.equal(await evaluate("document.activeElement.classList.contains('xterm-helper-textarea')"), true);
   await direct();
   assert.equal(await evaluate("document.activeElement.classList.contains('xterm-helper-textarea')"), false, 'direct keyboard can be hidden again');
-  await tap(button('Direct')); // still in More after hiding the direct keyboard
+  await tap(button('Direct')); // still in Tools after hiding the direct keyboard
   await evaluate('window.testPackets = []');
-  await tap(button('Keys')); await tap(button('More')); await tap(button('Ctrl'));
+  await tap(button('Keys')); await group('ctrl'); await tap(button('Ctrl'));
   await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'l', code: 'KeyL', text: 'l', windowsVirtualKeyCode: 76 });
   await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'l', code: 'KeyL', windowsVirtualKeyCode: 76 });
-  await tap(button('Back'));
+  await group('agent');
   await tap(button('Answer')); await tap(button('↓')); await tap(button('Enter'));
   await tap(button('Mode')); await tap(button('Space'));
   await tap(button('Esc²')); await delay(160);
-  await tap(button('More')); await tap(button('tmux')); await tap(button('tmux'));
+  await group('ctrl'); await tap(button('tmux')); await tap(button('tmux'));
   assert.deepEqual(await packets(), ['\x0c', '\x1b[1;2D', '\x1b[B', '\r', '\x1b[Z', ' ', '\x1b', '\x1b', '\x02', '\x02'],
     'retain shared controls, Codex questions and Claude background via tmux');
-  // A narrow phone must retain usable targets on every page, without overflow.
+  // A narrow phone keeps every state of the keys usable, without overflowing
+  // labels: 44px tall, and at least 40px wide in the seven-key rows.
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 1, mobile: true });
-  for (const action of ['Keys', 'Keys', 'More']) {
-    await tap(button(action));
+  await until('innerWidth === 320');
+  await delay(100);
+  for (const step of [() => tap(button('Keys')), () => tap(button('Keys')), () => tap(button('Group')),
+    () => tap("document.getElementById('group-tools')")]) {
+    await step();
     assert.equal(await evaluate(`[...document.querySelectorAll('#bar button')].filter(b => b.getBoundingClientRect().height).every(b => {
-      const r = b.getBoundingClientRect(); return r.width >= 44 && r.height >= 44 && r.left >= 0 && r.right <= 320;
-    })`), true, 'all visible keys fit a 320px phone with 44px touch targets');
+      const r = b.getBoundingClientRect();
+      return r.width >= 40 && r.height >= 44 && r.left >= 0 && r.right <= 320 && b.scrollWidth <= b.clientWidth + 1;
+    })`), true, 'all visible keys fit a 320px phone with usable touch targets');
   }
+  assert.equal(await evaluate("document.getElementById('key-row').getBoundingClientRect().height < 60"), true, 'the panel is one row');
+  assert.deepEqual(await evaluate(railKeys), ['Esc', '←', '↑', '↓', '→', 'Enter', 'Keys']);
+  // The group button keeps its spot, so a second tap undoes the first.
+  await load();
+  await tap(button('Keys'));
+  const spot = () => evaluate(`(() => { const r = ${button('Group')}.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(); })()`);
+  const groupSpot = await spot();
+  await tap(button('Group'));
+  assert.equal(await evaluate("!document.getElementById('key-groups').hidden"), true);
+  assert.equal(await spot(), groupSpot);
+  assert.equal(await evaluate(`(() => { const g = ${button('Group')}.getBoundingClientRect(), k = ${button('Keys')}.getBoundingClientRect();
+    return Math.round(g.x) === Math.round(k.x) && Math.round(g.width) === Math.round(k.width); })()`), true, 'the group button sits right above Keys');
+  await tap(button('Group'));
+  assert.equal(await evaluate("!document.getElementById('keys-agent').hidden"), true);
 
   await load('?keys=0');
   await tap("document.getElementById('term')");
   assert.equal(await evaluate("document.getElementById('paste').hidden"), true, 'the explicit toolbar opt-out keeps original typing');
+
+  // A drag that starts on text keeps scrolling once xterm redraws the rows under
+  // the finger, which replaces their elements.
+  await load();
+  await evaluate(`testSocket.onmessage({ data: new TextEncoder().encode('0' +
+    Array.from({ length: 200 }, (_, i) => 'Scrollback line ' + i + '\\r\\n').join('')).buffer })`);
+  await until('testTerminal.buffer.active.baseY > 100');
+  const dragTop = await evaluate("document.getElementById('term').getBoundingClientRect().top");
+  await touch('touchStart', 40, dragTop + 40);
+  await touch('touchMove', 40, dragTop + 80);
+  await until('testTerminal.buffer.active.viewportY < testTerminal.buffer.active.baseY');
+  await delay(50);
+  const midDrag = await evaluate('testTerminal.buffer.active.viewportY');
+  await touch('touchMove', 40, dragTop + 300);
+  await touch('touchEnd');
+  await until('testTerminal.buffer.active.viewportY < ' + midDrag);
+
+  // The session bar's switch hides the keys for direct typing and brings them back.
+  const keysSwitch = "document.getElementById('keys-switch')";
+  await load();
+  assert.equal(await evaluate(`${keysSwitch}.getBoundingClientRect().width >= 44`), true);
+  await tap(keysSwitch);
+  assert.equal(await evaluate("document.getElementById('bar').hidden"), true);
+  await tap("document.getElementById('term')");
+  assert.equal(await evaluate(`document.getElementById('paste').hidden &&
+    document.activeElement === testTerminal.textarea && !testTerminal.textarea.hasAttribute('inputmode')`), true,
+    'with the keys hidden, a tap types into the terminal');
+  await tap(keysSwitch);
+  assert.equal(await evaluate(`!document.getElementById('bar').hidden && !document.getElementById('key-panel').hidden &&
+    testTerminal.textarea.getAttribute('inputmode') === 'none'`), true, 'showing the keys restores the draft mode');
+
+  // The top bar collapses to a strip, and back, without taking the draft's focus.
+  const termHeight = "document.getElementById('term').getBoundingClientRect().height";
+  await load();
+  await tap("document.getElementById('term')");
+  await until("document.activeElement.id === 'paste-text'");
+  const expandedHeight = await evaluate(termHeight);
+  await tap("document.getElementById('top-collapse')");
+  await delay(100);
+  assert.equal(await evaluate(`document.getElementById('session-bar').hidden && document.activeElement.id === 'paste-text' &&
+    ${termHeight} > ${expandedHeight} + 50`), true, 'collapsing gives the terminal the space and keeps typing');
+  assert.equal(await evaluate("document.getElementById('session-strip').getBoundingClientRect().height >= 32"), true);
+  await tap("document.getElementById('session-strip')");
+  assert.equal(await evaluate("!document.getElementById('session-bar').hidden && document.activeElement.id === 'paste-text'"), true);
+  await tap("document.getElementById('paste-cancel')");
+
+  // A phone on its side moves the keys beside the terminal, even with its
+  // keyboard up; an upright phone's keyboard never flips it that way.
+  const sideways = "document.getElementById('app').classList.contains('side-keys')";
+  await command('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 1, mobile: true });
+  await load();
+  await tap(button('Keys'));
+  assert.equal(await evaluate(`${sideways} && (() => {
+    const keys = document.getElementById('bar').getBoundingClientRect();
+    return keys.left >= document.getElementById('term').getBoundingClientRect().right &&
+      [...document.querySelectorAll('#bar button')].filter(b => b.getBoundingClientRect().height).every(b => {
+        const r = b.getBoundingClientRect();
+        return r.width >= 44 && r.height >= 44 && r.left >= keys.left && r.right <= keys.right;
+      });
+  })()`), true, 'the side column keeps 44px keys within it');
+  await tap("document.getElementById('term')");
+  await command('Emulation.setDeviceMetricsOverride', { width: 844, height: 190, deviceScaleFactor: 1, mobile: true });
+  await delay(150);
+  assert.equal(await evaluate(`${sideways} && ${termHeight} >= 60`), true, 'a sideways phone keeps rows visible while typing');
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await load();
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 300, deviceScaleFactor: 1, mobile: true });
+  await delay(150);
+  assert.equal(await evaluate(sideways), false);
+
+  // A desktop hides the keys until the switch asks for them; its clicks keep
+  // the terminal focused, so typing carries on.
+  async function click(expression) {
+    const rect = await evaluate(`(() => {
+      const r = (${expression}).getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await command('Input.dispatchMouseEvent', { type, x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
+    }
+  }
+  await command('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await evaluate("localStorage.removeItem('cc-mobile:keybar')");
+  await load();
+  assert.equal(await evaluate("matchMedia('(pointer: coarse)').matches"), false);
+  assert.equal(await evaluate("document.getElementById('bar').hidden"), true, 'desktops start without the keys');
+  await evaluate('testTerminal.focus()');
+  await click(keysSwitch);
+  assert.equal(await evaluate("!document.getElementById('bar').hidden && !document.getElementById('key-panel').hidden"), true);
+  assert.equal(await evaluate(`[...document.querySelectorAll('#bar button')].filter(b => b.getBoundingClientRect().height).every(b => {
+    const r = b.getBoundingClientRect(); return r.left >= (innerWidth - 660) / 2 && r.right <= (innerWidth + 660) / 2;
+  })`), true, 'a wide screen gets a compact centred keypad');
+  await click(button('Esc')); await click(button('Mode'));
+  await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'l', code: 'KeyL', text: 'l', windowsVirtualKeyCode: 76 });
+  await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'l', code: 'KeyL', windowsVirtualKeyCode: 76 });
+  assert.deepEqual(await packets(), ['\x1b', '\x1b[Z', 'l'], 'helper clicks leave the terminal focused');
+  assert.equal(await evaluate(`${button('Direct')}.hidden`), true);
+  await load();
+  assert.equal(await evaluate("!document.getElementById('bar').hidden && document.getElementById('key-panel').hidden"), true,
+    'the desktop remembers the keys, minimized');
+  await evaluate('testTerminal.focus()');
+  await click("document.getElementById('top-collapse')");
+  await load();
+  assert.equal(await evaluate("document.getElementById('session-bar').hidden && !document.getElementById('session-strip').hidden"), true,
+    'the desktop remembers a collapsed top bar');
+  await evaluate('testTerminal.focus()');
+  await click("document.getElementById('session-strip')");
+  assert.equal(await evaluate("!document.getElementById('session-bar').hidden && document.activeElement === testTerminal.textarea"), true);
 });

@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## 2.6.0
+- A keyboard button at the right end of the top bar shows or hides the
+  helper keys on any device, and each device remembers the choice. Desktops
+  can bring up Esc, Mode, Esc², Ctrl+C and the rest when a keyboard lacks a key
+  or the browser takes a shortcut. Clicking them keeps the terminal focused.
+  Phones and tablets can hide them and type into the terminal directly.
+  `?keys=1` / `?keys=0` still override the choice for one visit.
+- On wide screens the helper keys form a compact centred keypad instead of
+  stretching edge to edge.
+- Direct is highlighted while its keyboard is open, and is left out on
+  desktops, where typing already reaches the terminal.
+- Touchscreens no longer leave the agent buttons looking pressed after a tap.
+- The top bar collapses (⌃) to a slim strip naming the agent and workspace,
+  giving a phone about four more lines of output. The strip brings it back.
+  Both keep a draft and the phone keyboard open, and each device remembers
+  the choice.
+- A phone turned on its side puts the helper keys in a column beside the
+  terminal and shrinks the draft to one line. With the keyboard up, the
+  terminal keeps about five rows instead of one.
+- Coming back to the page, or back online, reconnects at once rather than
+  waiting out a retry delay that grew while the phone slept.
+- The always-visible bottom row now carries keys: Esc, ← ↑ ↓ →, Enter and
+  Keys. Write is gone, because a tap on the terminal already opens the draft;
+  New line is ↵ beside the draft.
+- Keys opens a single row instead of up to three: the Agent, Ctrl, Edit or
+  Tools group, with a group button above Keys that lists the groups in the
+  same row. It replaces More and Back and never moves, so a second tap undoes
+  the first. Controls are outlined, and Keys is set slightly apart from Enter.
+- Ctrl+C joins the agent keys (Tab, Mode, Answer, Esc², Ctrl+C, Space), since
+  both agents clear typed input with it. They line up with the bottom row, and
+  the group button sits right above Keys.
+- Below 350px wide, the seven-key rows are 40px wide rather than 44.
+- Fix taps on the terminal sometimes not opening the draft, and drags that
+  started on text stopping after a line. xterm replaces a row's elements when
+  it redraws it, and the rest of the touch went to the removed element.
+
 ## 2.5.0
 - Selecting text copies it, everywhere and without a key press: an xterm
   selection copies when the drag settles, the phone's own handles copy inside
