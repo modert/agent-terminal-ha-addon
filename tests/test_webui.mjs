@@ -74,7 +74,7 @@ function client(search = '') {
     clearInterval: id => timers.delete(id),
   });
   const select = agent => elements.agents.children.find(b => b.dataset.agent === agent).emit('click');
-  return { elements, window, location, fetches, sockets, terminal, timers, select, copies,
+  return { elements, document, window, location, fetches, sockets, terminal, timers, select, copies,
     resolveClipboard: text => clipboardResolve(text),
     settle: () => { const id = [...timers.keys()].at(-1); const callback = timers.get(id); timers.delete(id); callback(); },
     async connect(index = fetches.length - 1) { fetches[index](); await tick(); sockets.at(-1).open(); },
@@ -103,7 +103,7 @@ test('latest selection wins while token requests and old sockets complete out of
 
 test('shortcuts change agents and delayed clipboard input stays with its original session', async () => {
   const c = client(); await tick(); await c.connect();
-  c.elements.row2.children.find(b => b.textContent === 'Paste').emit('click', { detail: 1 });
+  c.elements['keys-tools'].children.find(b => b.textContent === 'Paste').emit('click', { detail: 1 });
   let prevented = false, stopped = false;
   c.window.emit('keydown', { code: 'Digit2', key: '@', ctrlKey: true, shiftKey: true,
     preventDefault() { prevented = true; }, stopImmediatePropagation() { stopped = true; } });
@@ -150,4 +150,22 @@ test('selecting text copies it once, with no key press', async () => {
   c.terminal.select('second selection');
   c.window.emit('mouseup'); await tick();
   assert.deepEqual(c.copies, ['ABCD-EF123', 'second selection', 'second selection']);
+});
+
+test('coming back to the page reconnects at once instead of waiting out the backoff', async () => {
+  const c = client(); await tick(); await c.connect();
+  c.sockets[0].close();
+  const waiting = c.fetches.length;
+  c.document.hidden = true;
+  c.document.emit('visibilitychange'); await tick();
+  assert.equal(c.fetches.length, waiting, 'a page in the background keeps waiting');
+  c.document.hidden = false;
+  c.document.emit('visibilitychange'); await tick();
+  assert.equal(c.fetches.length, waiting + 1, 'a visible page starts a new connection right away');
+  await c.connect();
+  c.document.emit('visibilitychange'); await tick();
+  assert.equal(c.fetches.length, waiting + 1, 'a live connection is left alone');
+  c.sockets.at(-1).close();
+  c.window.emit('online'); await tick();
+  assert.equal(c.fetches.length, waiting + 2, 'so is coming back online');
 });

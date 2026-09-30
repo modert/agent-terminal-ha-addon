@@ -27,6 +27,7 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
       replaceWith() {},
       setAttribute(k, v) { this.attributes[k] = v; },
       getAttribute(k) { return this.attributes[k]; },
+      removeAttribute(k) { delete this.attributes[k]; },
       querySelector() { return terminal.textarea; },
       focus() { document.activeElement = this; },
       blur() { if (document.activeElement === this) document.activeElement = null; this.fire('blur'); },
@@ -108,7 +109,7 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
   assert.ok(socket, 'page creates its ttyd connection');
   socket.onopen();
   packets.length = 0;
-  const buttons = ['key-rail', 'row1', 'row-nav', 'row-mods', 'row-edit', 'row2'].flatMap(id => ids.get(id).children);
+  const buttons = ['key-rail', 'keys-agent', 'keys-ctrl', 'keys-edit', 'keys-tools', 'key-row'].flatMap(id => ids.get(id).children);
   const button = label => {
     const b = buttons.find(b => b.dataset.key === label);
     assert.ok(b, `button ${label} exists`);
@@ -118,6 +119,22 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
     const b = button(label);
     b.fire('pointerdown'); b.fire('pointerup'); b.fire('click', { detail: 1 });
   }
+  // The group button, then a group from the list it shows.
+  function group(id) {
+    tap('Group');
+    const b = ids.get('group-' + id);
+    b.fire('pointerdown'); b.fire('click');
+  }
+  // A completed tap on the terminal opens the draft.
+  function write() {
+    const el = ids.get('term');
+    el.fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
+    el.fire('touchend', { touches: [] });
+  }
+  function newline() {
+    const b = ids.get('paste-newline');
+    b.fire('pointerdown'); b.fire('click');
+  }
   function input() {
     return packets.splice(0).filter(p => p.startsWith('0')).map(p => p.slice(1));
   }
@@ -126,16 +143,18 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
       if (timer.ms === 0) { timers.delete(id); timer.fn(); }
     }
   }
-  return { ids, window, button, tap, input, terminal, timers, flush, advance: ms => { now += ms; },
+  return { ids, window, button, tap, group, write, newline, input, terminal, timers, flush, storage, advance: ms => { now += ms; },
     socket: () => socket, activeElement: () => document.activeElement };
 }
 
-test('common keys answer a Codex question without opening More', async () => {
+test('Keys opens the agent keys, which answer a Codex question', async () => {
   const p = await page();
   assert.equal(p.ids.get('key-panel').hidden, true);
   p.tap('Keys');
-  assert.equal(p.ids.get('keys-more').hidden, true);
-  assert.equal(p.ids.get('keys-main').hidden, false);
+  assert.equal(p.ids.get('keys-agent').hidden, false);
+  for (const id of ['keys-ctrl', 'keys-edit', 'keys-tools', 'key-groups']) assert.equal(p.ids.get(id).hidden, true);
+  assert.deepEqual(p.ids.get('keys-agent').children.map(b => b.dataset.key), ['Tab', 'Mode', 'Answer', 'Esc²', 'Ctrl+C', 'Space'],
+    'Ctrl+C clears input in both agents, so it sits with the agent keys');
   p.tap('Answer'); p.tap('↓'); p.tap('Enter');
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[B', '\r']);
 });
@@ -154,7 +173,7 @@ test('Shift reaches tmux arrow keys and clears after one press', async () => {
 test('fixed actions clear pending modifiers; Enter and newline are distinct', async () => {
   const p = await page();
   for (const [label, seq] of [['Answer', '\x1b[1;2D'], ['Mode', '\x1b[Z'],
-    ['Ctrl+C', '\x03'], ['New line', '\n'], ['tmux', '\x02']]) {
+    ['Ctrl+C', '\x03'], ['tmux', '\x02']]) {
     p.tap('Ctrl'); p.tap('Alt'); p.tap('Shift'); p.tap(label); p.tap('Enter');
     assert.deepEqual(p.input(), [seq, '\r']);
   }
@@ -187,31 +206,33 @@ test('helpers start collapsed, including with a saved expanded toolbar preferenc
   assert.equal(p.ids.get('key-panel').hidden, false);
   p.window.innerHeight = 370; p.window.fire('resize');
   assert.equal(p.ids.get('key-panel').hidden, false, 'resizing never undoes an explicit expansion');
-  p.tap('More');
-  assert.equal(p.ids.get('keys-main').hidden, true);
-  assert.equal(p.ids.get('keys-more').hidden, false, 'More replaces, rather than stacks on, common keys');
-  p.tap('Ctrl'); p.tap('Back');
-  assert.equal(p.ids.get('keys-main').hidden, false);
+  p.group('ctrl');
+  assert.equal(p.ids.get('keys-agent').hidden, true);
+  assert.equal(p.ids.get('keys-ctrl').hidden, false, 'a group replaces, rather than stacks on, the agent keys');
+  assert.equal(p.ids.get('key-groups').hidden, true);
+  p.tap('Ctrl'); p.group('agent');
+  assert.equal(p.ids.get('keys-agent').hidden, false);
   assert.equal(p.ids.get('key-modifiers').textContent, 'Ctrl', 'hidden modifier remains visible on the rail');
-  p.tap('←');
-  assert.deepEqual(p.input(), ['\x1b[1;5D']);
+  p.tap('↑');
+  assert.deepEqual(p.input(), ['\x1b[1;5A']);
   assert.equal(p.ids.get('key-modifiers').textContent, '');
-  p.tap('More'); p.tap('Shift'); p.tap('Keys');
+  p.group('ctrl'); p.tap('Shift'); p.tap('Keys');
   assert.equal(p.ids.get('key-panel').hidden, true);
   assert.equal(p.button('Shift').attributes['aria-pressed'], 'false');
   p.tap('Keys');
-  assert.equal(p.ids.get('keys-more').hidden, true, 'reopening always starts with common keys');
+  assert.equal(p.ids.get('keys-ctrl').hidden, true, 'reopening always starts with the agent keys');
+  assert.equal(p.ids.get('keys-agent').hidden, false);
   p.button('Answer').fire('click', { detail: 0 }); p.tap('Enter');
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\r']);
 });
 
 test('starting a draft minimizes helpers; explicit expansion keeps the same editor', async () => {
   const p = await page();
-  p.tap('Keys'); p.tap('More'); p.tap('Ctrl'); p.tap('Write');
+  p.tap('Keys'); p.group('ctrl'); p.tap('Ctrl'); p.write();
   assert.equal(p.ids.get('key-panel').hidden, true);
   const box = p.ids.get('paste-text');
   box.value = 'the same draft'; box.fire('compositionstart');
-  p.tap('Keys'); p.tap('More'); p.tap('Back');
+  p.tap('Keys'); p.group('edit'); p.group('agent');
   assert.equal(p.ids.get('paste-text'), box);
   assert.equal(box.value, 'the same draft');
   p.window.innerHeight = 380; p.window.fire('resize');
@@ -220,16 +241,33 @@ test('starting a draft minimizes helpers; explicit expansion keeps the same edit
   assert.deepEqual(p.input(), []);
 });
 
-test('keyboard navigation follows the More and Back controls', async () => {
+test('the bottom row holds Esc, all four arrows and Enter', async () => {
+  const p = await page();
+  assert.deepEqual(p.ids.get('key-rail').children.map(b => b.dataset.key), ['Esc', '←', '↑', '↓', '→', 'Enter', 'Keys']);
+  for (const label of ['Esc', '←', '↑', '↓', '→', 'Enter']) p.tap(label);
+  assert.deepEqual(p.input(), ['\x1b', '\x1b[D', '\x1b[A', '\x1b[B', '\x1b[C', '\r']);
+});
+
+test('the group button lists the groups in the same row, and keeps keyboard focus there', async () => {
   const p = await page();
   p.tap('Keys');
-  p.button('More').focus(); p.button('More').fire('click', { detail: 0 });
-  assert.equal(p.activeElement(), p.button('Back'));
-  // Firing another keyboard click on Back exercises the inverse path too.
-  p.button('Back').fire('click', { detail: 0 });
-  assert.equal(p.activeElement(), p.button('More'));
-  assert.equal(p.ids.get('keys-main').hidden, false);
-  assert.equal(p.button('More').attributes['aria-expanded'], 'false');
+  const choose = p.button('Group');
+  assert.equal(choose.textContent, 'Agent');
+  choose.focus(); choose.fire('click', { detail: 0 });
+  assert.equal(p.ids.get('key-groups').hidden, false);
+  assert.equal(p.ids.get('keys-agent').hidden, true);
+  assert.equal(choose.attributes['aria-expanded'], 'true');
+  assert.equal(p.ids.get('group-agent').attributes['aria-pressed'], 'true');
+  choose.fire('click', { detail: 0 });
+  assert.equal(p.ids.get('keys-agent').hidden, false, 'a second tap goes back');
+  assert.equal(choose.attributes['aria-expanded'], 'false');
+  choose.fire('click', { detail: 0 });
+  const tools = p.ids.get('group-tools');
+  tools.focus(); tools.fire('click');
+  assert.equal(p.ids.get('keys-tools').hidden, false);
+  assert.equal(p.ids.get('key-groups').hidden, true);
+  assert.equal(choose.textContent, 'Tools');
+  assert.equal(p.activeElement(), choose, 'focus moves from the hidden list to the group button');
 });
 
 test('touch clicks with detail zero do not repeat keys or toggle modifiers twice', async () => {
@@ -264,21 +302,22 @@ test('double Escape is timed and repeat stops on pointer release', async () => {
 
 test('hiding helper keys stops an active or pending key repeat', async () => {
   const p = await page();
-  p.tap('Keys');
-  p.button('←').fire('pointerdown');
-  [...p.timers.values()].find(t => t.ms === 380).fn();
-  p.tap('More');
-  assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
+  p.tap('Keys'); p.group('edit');
   p.button('Bksp').fire('pointerdown');
+  [...p.timers.values()].find(t => t.ms === 380).fn();
+  p.tap('Group');
+  assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
+  p.group('edit');
+  p.button('PgUp').fire('pointerdown');
   p.tap('Keys');
   assert.equal([...p.timers.values()].some(t => t.ms === 55 || t.ms === 380), false);
-  assert.deepEqual(p.input(), ['\x1b[D', '\x7f']);
+  assert.deepEqual(p.input(), ['\x7f']);
 });
 
 test('mobile autocorrect replacements stay in the draft and are inserted once', async () => {
   const p = await page();
   assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'none');
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   box.value = 'teh same text';
   box.fire('input', { inputType: 'insertText', data: 'teh same text' });
@@ -301,16 +340,12 @@ test('mobile autocorrect replacements stay in the draft and are inserted once', 
   assert.equal(p.ids.get('paste').hidden, true);
 });
 
-test('keyboard-opening buttons wait for a completed tap and preserve an open draft', async () => {
+test('another tap on the terminal keeps an open draft', async () => {
   const p = await page();
-  p.button('Write').fire('pointerdown');
-  assert.equal(p.ids.get('paste').hidden, true);
-  p.button('Write').fire('pointercancel');
-  assert.equal(p.ids.get('paste').hidden, true);
-  p.tap('Write');
+  p.write();
   assert.equal(p.ids.get('paste').hidden, false);
   p.ids.get('paste-text').value = 'keep this draft';
-  p.tap('Write');
+  p.write();
   assert.equal(p.ids.get('paste-text').value, 'keep this draft');
   assert.deepEqual(p.input(), []);
 });
@@ -336,9 +371,9 @@ test('terminal taps open the native draft; scrolling and cancelled gestures do n
   assert.deepEqual(p.input(), []);
 });
 
-test('Write keeps pasted text for editing; the original Paste action still inserts directly', async () => {
+test('a draft keeps pasted text for editing; the original Paste action still inserts directly', async () => {
   const p = await page();
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   box.fire('paste', { clipboardData: { getData: () => 'hello hello' } });
   assert.deepEqual(p.terminal.pastes, []);
@@ -357,11 +392,11 @@ test('Write keeps pasted text for editing; the original Paste action still inser
 
 test('Enter submits a draft and Shift+Enter or the newline key keeps editing', async () => {
   const p = await page();
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   assert.equal(box.getAttribute('enterkeyhint'), 'send');
   box.value = 'first'; box.selectionStart = box.selectionEnd = 5;
-  p.tap('New line');
+  p.newline();
   assert.equal(box.value, 'first\n');
   assert.deepEqual(p.input(), []);
   box.fire('keydown', { key: 'Enter', shiftKey: true });
@@ -378,7 +413,7 @@ test('Enter submits a draft and Shift+Enter or the newline key keeps editing', a
 test('Android Enter submits through beforeinput or its non-cancellable input fallback', async () => {
   for (const cancelable of [true, false]) {
     const p = await page();
-    p.tap('Write');
+    p.write();
     const box = p.ids.get('paste-text');
     box.value = 'corrected words';
     box.selectionStart = box.selectionEnd = box.value.length;
@@ -400,7 +435,7 @@ test('Android Enter submits through beforeinput or its non-cancellable input fal
 
 test('the toolbar Enter submits an open draft; pending composition still waits', async () => {
   const p = await page();
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   box.value = 'teh'; box.fire('compositionstart');
   p.tap('Enter'); p.flush();
@@ -412,19 +447,19 @@ test('the toolbar Enter submits an open draft; pending composition still waits',
 
 test('each draft gets a fresh editor and ignores composition from a previous draft', async () => {
   const p = await page();
-  p.tap('Write');
+  p.write();
   const old = p.ids.get('paste-text');
   old.value = 'old draft';
   old.fire('compositionstart');
   p.ids.get('paste-cancel').fire('click');
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   assert.notEqual(old, box);
   assert.equal(box.getAttribute('autocorrect'), 'on');
   assert.equal(box.getAttribute('spellcheck'), 'true');
   box.value = 'new draft';
   box.fire('compositionstart');
-  p.tap('Write'); // duplicate activation cannot reset an active editor
+  p.write(); // duplicate activation cannot reset an active editor
   assert.equal(p.ids.get('paste-text'), box);
   assert.equal(box.value, 'new draft');
   p.ids.get('paste-send').fire('click');
@@ -437,7 +472,7 @@ test('each draft gets a fresh editor and ignores composition from a previous dra
 
 test('IME Enter is not submitted early, Cancel sends nothing, and live typing stays available', async () => {
   const p = await page();
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   box.value = 'draft';
   box.fire('keydown', { key: 'Enter', ctrlKey: true, isComposing: true });
@@ -446,9 +481,10 @@ test('IME Enter is not submitted early, Cancel sends nothing, and live typing st
   p.advance(500);
   p.ids.get('paste-cancel').fire('click');
   assert.deepEqual(p.terminal.pastes, []);
-  p.tap('Keys'); p.tap('More'); p.tap('Direct');
+  p.tap('Keys'); p.group('tools'); p.tap('Direct');
   assert.equal(p.ids.get('key-panel').hidden, true);
   assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'text');
+  assert.equal(p.button('Direct').attributes['aria-pressed'], 'true', 'Direct shows that it is on');
   p.ids.get('term').fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
   p.ids.get('term').fire('touchend', { touches: [] });
   assert.equal(p.ids.get('paste').hidden, true, 'explicit direct entry stays available');
@@ -456,13 +492,14 @@ test('IME Enter is not submitted early, Cancel sends nothing, and live typing st
   assert.deepEqual(p.input(), ['/help']);
   p.terminal.textarea.blur();
   assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'none');
-  for (const label of ['Esc', 'Tab', 'Mode', '←', '↑', '↓', '→', 'PgUp', 'PgDn', 'More',
-    'Ctrl', 'Alt', 'Ctrl+C', 'Esc²', 'Bksp', 'Home', 'End', 'Copy', 'Paste', 'A−', 'A+', 'Write']) p.button(label);
+  assert.equal(p.button('Direct').attributes['aria-pressed'], 'false');
+  for (const label of ['Esc', 'Tab', 'Mode', '←', '↑', '↓', '→', 'PgUp', 'PgDn', 'Group',
+    'Ctrl', 'Alt', 'Ctrl+C', 'Esc²', 'Bksp', 'Home', 'End', 'Copy', 'Paste', 'A−', 'A+']) p.button(label);
 });
 
 test('disconnecting preserves a draft instead of dropping its text', async () => {
   const p = await page();
-  p.tap('Write');
+  p.write();
   p.ids.get('paste-text').value = 'keep this draft';
   p.socket().readyState = 3;
   p.advance(500);
@@ -480,10 +517,82 @@ test('desktop and phones with the toolbar hidden retain their original keyboard'
   }
 });
 
+test('the keyboard switch hides phone helpers for direct typing, and brings them back', async () => {
+  const p = await page();
+  const toggle = p.ids.get('keys-switch');
+  assert.equal(toggle.attributes['aria-pressed'], 'true');
+  p.tap('Keys'); p.group('ctrl'); p.tap('Ctrl');
+  toggle.fire('click');
+  assert.equal(p.ids.get('bar').hidden, true);
+  assert.equal(toggle.attributes['aria-pressed'], 'false');
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), undefined, 'the phone keyboard types into the terminal');
+  const el = p.ids.get('term');
+  el.fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
+  el.fire('touchend', { touches: [] });
+  assert.equal(p.ids.get('paste').hidden, true, 'a tap no longer opens the native draft');
+  p.terminal.type('x');
+  assert.deepEqual(p.input(), ['x'], 'a modifier armed before hiding does not linger');
+  toggle.fire('click');
+  assert.equal(p.ids.get('bar').hidden, false);
+  assert.equal(p.ids.get('key-panel').hidden, false, 'asking for keys shows them');
+  assert.equal(p.ids.get('keys-agent').hidden, false);
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'none');
+  el.fire('touchstart', { touches: [{ clientX: 40, clientY: 40 }] });
+  el.fire('touchend', { touches: [] });
+  assert.equal(p.ids.get('paste').hidden, false, 'taps open the draft again');
+  toggle.fire('click');
+  const q = await page({ saved: [...p.storage] });
+  assert.equal(q.ids.get('bar').hidden, true, 'the choice is remembered on this device');
+  assert.equal(q.terminal.textarea.getAttribute('inputmode'), undefined);
+});
+
+test('a desktop can show the helper keys, and remembers it', async () => {
+  const p = await page({ touch: false });
+  const toggle = p.ids.get('keys-switch');
+  assert.equal(p.ids.get('bar').hidden, true);
+  assert.equal(toggle.attributes['aria-pressed'], 'false');
+  assert.equal(toggle.title, 'Show on-screen keys');
+  toggle.fire('click');
+  assert.equal(p.ids.get('bar').hidden, false);
+  assert.equal(p.ids.get('key-panel').hidden, false);
+  assert.equal(toggle.title, 'Hide on-screen keys');
+  p.tap('Esc'); p.tap('Mode'); p.tap('Ctrl+C');
+  assert.deepEqual(p.input(), ['\x1b', '\x1b[Z', '\x03']);
+  assert.equal(p.button('Direct').hidden, true, 'a desktop already types into the terminal');
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), undefined);
+  const q = await page({ touch: false, saved: [...p.storage] });
+  assert.equal(q.ids.get('bar').hidden, false, 'the choice is remembered on this device');
+  assert.equal(q.ids.get('key-panel').hidden, true, 'a reload still starts minimized');
+  const r = await page({ touch: false, search: '?keys=0', saved: [...p.storage] });
+  assert.equal(r.ids.get('bar').hidden, true, '?keys=0 still wins for one load');
+});
+
+test('the top bar collapses to a strip naming the session, and is remembered', async () => {
+  const p = await page();
+  const strip = p.ids.get('session-strip');
+  assert.equal(p.ids.get('session-bar').hidden, false);
+  assert.equal(strip.hidden, true);
+  p.ids.get('top-collapse').focus();
+  p.ids.get('top-collapse').fire('click');
+  assert.equal(p.ids.get('session-bar').hidden, true);
+  assert.equal(strip.hidden, false);
+  assert.equal(p.activeElement(), strip, 'keyboard focus follows to the strip');
+  assert.equal(p.ids.get('session-summary').textContent, 'Claude · Home Assistant');
+  p.window.fire('keydown', { ctrlKey: true, shiftKey: true, code: 'Digit2', stopImmediatePropagation() {} });
+  assert.equal(p.ids.get('session-summary').textContent, 'ChatGPT · Home Assistant',
+    'the strip follows a switch made by shortcut');
+  const q = await page({ saved: [...p.storage] });
+  assert.equal(q.ids.get('session-bar').hidden, true, 'the choice is remembered on this device');
+  q.ids.get('session-strip').focus();
+  q.ids.get('session-strip').fire('click');
+  assert.equal(q.ids.get('session-bar').hidden, false);
+  assert.equal(q.activeElement(), q.ids.get('top-collapse'));
+});
+
 test('switching agents cancels insertion while a phone composition is pending', async t => {
   const p = await page();
   if (!p.ids.has('agents')) return t.skip('installed version has no live session switching');
-  p.tap('Write');
+  p.write();
   const box = p.ids.get('paste-text');
   box.value = 'belongs to the original session'; box.fire('compositionstart');
   p.advance(500); p.ids.get('paste-send').fire('click');
