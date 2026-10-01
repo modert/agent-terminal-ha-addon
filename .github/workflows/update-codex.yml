@@ -2,10 +2,11 @@ name: Update Codex CLI
 
 # Codex is pinned in codex.sh because releases have broken the adapter
 # (0.157's background app-server). Once a day, open a pull request that
-# moves the pin to the newest release, and start the full validation on it.
-# The pull request also bumps the add-on's patch version, because Home
-# Assistant only offers an update when the version changes; anything waiting
-# under "Unreleased" in the changelog ships in the same release.
+# moves the pin to the newest release and merges itself once "Validate
+# add-on" passes on it. The pull request also bumps the add-on's patch
+# version, because Home Assistant only offers an update when the version
+# changes; anything waiting under "Unreleased" in the changelog ships in
+# the same release.
 on:
   schedule:
     - cron: '17 13 * * *'
@@ -14,7 +15,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 concurrency:
   group: update-codex
@@ -23,11 +23,19 @@ jobs:
   update:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      # A pull request opened with GITHUB_TOKEN belongs to github-actions[bot],
+      # and GitHub holds its checks until someone approves them. The
+      # CODEX_UPDATE_TOKEN secret is a personal access token for this
+      # repository (Contents and Pull requests: read and write), so the pull
+      # request is the token owner's and is validated like any other.
+      GH_TOKEN: ${{ secrets.CODEX_UPDATE_TOKEN || github.token }}
+      OWN_TOKEN: ${{ secrets.CODEX_UPDATE_TOKEN != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.CODEX_UPDATE_TOKEN || github.token }}
       - name: Open a pull request for a newer Codex CLI
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           file=agent-terminal/rootfs/opt/agents/codex.sh
@@ -40,11 +48,6 @@ jobs:
           newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
           if [[ "$newest" == "$current" ]]; then
             echo "Codex CLI $current is up to date."
-            exit 0
-          fi
-          branch="deps/codex-cli-$latest"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
-            echo "$branch already exists."
             exit 0
           fi
           sed -i "s|@openai/codex@$current|@openai/codex@$latest|" "$file"
@@ -63,12 +66,28 @@ jobs:
             !done && $0 == "## Unreleased" { print; print ""; print "## " release; print "- Update the Codex CLI to " codex "."; done = 1; next }
             { print }' "$changelog" > "$changelog.new"
           mv "$changelog.new" "$changelog"
+          title="Agent Terminal $release: Codex CLI $latest"
+          body="Moves the pinned Codex CLI from $current to $latest and releases the add-on as $release, including anything listed under Unreleased in the changelog. \"Validate add-on\" builds both images with it and runs the adapter tests; this merges itself when that passes, and Home Assistant offers the update. Codex release notes: https://github.com/openai/codex/releases"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # One branch for every update. Each run rebuilds it from master, so a
+          # newer Codex release or a change on master replaces the open pull
+          # request instead of leaving a stale one behind.
+          branch=deps/codex-cli
           git switch -c "$branch"
-          git commit -am "Agent Terminal $release: Codex CLI $latest"
-          git push origin "$branch"
-          gh pr create --base master --head "$branch" \
-            --title "Agent Terminal $release: Codex CLI $latest" \
-            --body "Moves the pinned Codex CLI from $current to $latest and releases the add-on as $release, including anything listed under Unreleased in the changelog. \"Validate add-on\" builds both images with it and runs the adapter tests; merge if it passes, and Home Assistant offers the update. Codex release notes: https://github.com/openai/codex/releases"
-          gh workflow run validate-addon.yml --ref "$branch"
+          git commit -am "$title"
+          if git fetch origin "$branch" 2>/dev/null && git diff --quiet FETCH_HEAD HEAD; then
+            echo "$branch already holds this update."
+            exit 0
+          fi
+          git push --force origin "$branch"
+          pr=$(gh pr list --base master --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$pr" ]]; then
+            gh pr edit "$pr" --title "$title" --body "$body"
+          else
+            gh pr create --base master --head "$branch" --title "$title" --body "$body"
+          fi
+          gh pr merge "$branch" --auto --squash
+          if [[ "$OWN_TOKEN" != true ]]; then
+            echo "::warning::CODEX_UPDATE_TOKEN is not set, so the pull request waits for someone to approve its checks."
+          fi
