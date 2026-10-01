@@ -108,6 +108,23 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const custom = await connect();
   await until(() => custom.screen().includes('TEST-AGENT:trusted-custom:homeassistant:'), 'configured default custom command did not start');
 
+  // Exercise the word-editing commands against real Bash readline, through
+  // ttyd's PTY and tmux. The text is consumed by read, never run as a command.
+  for (const [name, input, expected] of [
+    ['word-backspace', 'alpha beta\x1b\x7f', 'alpha '],
+    ['word-boundary', 'alpha foo/bar\x1b\x7f', 'alpha foo/'],
+    ['word-delete', 'alpha beta gamma\x01\x1bf\x1bd', 'alpha gamma'],
+    ['word-left-right', 'alpha beta gamma\x1bbX\x01\x1bfY', 'alphaY beta Xgamma'],
+  ]) {
+    const output = join(root, name);
+    shell.socket.send('0printf \'%s%s\' \'editing-ready-\' \'' + name +
+      '\'; IFS= read -r -e WORD_TEST; printf \'%s\' "$WORD_TEST" > ' + output + '\r');
+    await until(() => shell.screen().includes('editing-ready-' + name), 'word editor did not open');
+    shell.socket.send('0' + input + '\r');
+    await until(() => existsSync(output), 'word editor did not receive input');
+    assert.equal(readFileSync(output, 'utf8'), expected, name);
+  }
+
   // The actual ttyd PTY carries a raw JSON control stream, independently of
   // terminal input. Metadata updates must not enter either provider's stdin.
   const control = await connect('sessions');

@@ -283,6 +283,26 @@ project folders or Git worktrees when tasks need independent changes.
   behaviour: right-click copies the selection, or pastes when nothing is
   selected, and Shift+right-click opens the menu.
 
+### Word editing with a desktop keyboard
+
+In Claude, ChatGPT, and Shell sessions, click the terminal and use:
+
+| Shortcut | Action |
+|---|---|
+| **Ctrl+Left / Ctrl+Right** | Move backward / forward by one word. |
+| **Ctrl+Backspace** | Delete the previous word. |
+| **Ctrl+Delete** | Delete the next word. |
+
+On a Mac, **Option** with the arrows, Backspace, or forward Delete uses the
+same word commands. The terminal sends standard readline commands; each
+program defines its word boundaries. Custom sessions retain their original
+terminal key sequences. Shift combinations continue to reach the program,
+including selection shortcuts supported by that program.
+
+Session search, task names, purpose notes, and the mobile draft are native
+text fields, so they keep the browser's normal editing shortcuts. Only the
+focused terminal receives terminal shortcuts, including in split view.
+
 ## Options
 
 | Option | Default | Description |
@@ -462,8 +482,9 @@ serves newly created workspaces without restarting ttyd.
 `tests/test_sessions.mjs` uses a separate temporary tmux server to check named
 process isolation, persisted stop state, input validation, and concurrent
 launch/stop operations. It requires tmux and `flock` (both supplied by the
-add-on). The container integration test exercises management requests through
-the real ttyd WebSocket and PTY, alongside named provider terminals.
+add-on). The container integration test exercises management requests and
+readline word editing through the real ttyd WebSocket, PTY, and tmux,
+alongside named provider terminals.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.
@@ -492,9 +513,11 @@ CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_
 The browser suite also creates and renames sessions, routes real keystrokes
 to separate split panes, resizes and restores the split, stops and restarts
 a session, and checks workspace groups, purpose search, and the picker on a
-narrow screen. It also verifies that opening or canceling an empty second pane
-never connects to an agent, and that creating a task there preserves the left
-terminal. Its management transport
+narrow screen. Desktop checks exercise Ctrl+Left/Right, Ctrl+Backspace and
+Ctrl+Delete, unmodified character editing, native text fields, and word
+shortcuts in the focused split pane. The suite also verifies that opening or
+canceling an empty second pane never connects to an agent, and that creating
+a task there preserves the left terminal. Its management transport
 is simulated; it does not send keys or lifecycle operations to live agents.
 
 The browser test uses real touch activation and composition events with the
@@ -506,7 +529,8 @@ redraws the rows under it, the keyboard button and top bar collapse on a phone
 and on a desktop, and the side column on a phone turned sideways.
 Its WebSocket is replaced before page
 code runs, so all input stays inside the test. The test skips unless
-`CHROMIUM_BIN` is set. Actual phone keyboard behavior still needs a device check.
+`CHROMIUM_BIN` is set; CI installs Chromium and runs it on both architectures.
+Actual phone keyboard behavior still needs a device check.
 
 ## Known limitations
 

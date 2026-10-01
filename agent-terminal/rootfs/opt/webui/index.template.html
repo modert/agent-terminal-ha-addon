@@ -881,7 +881,22 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   });
 
   term.attachCustomKeyEventHandler(function (e) {
-    if (e.type !== 'keydown' || e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return true;
+    if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
+    // xterm sends Ctrl+Backspace as ^H (one character), and modified Delete
+    // is not understood consistently by the prompt editors. Use their shared
+    // readline word commands. Keep Shift combinations, AltGr, and Custom
+    // terminals untouched; native input fields never enter this handler.
+    if (selectedAgent !== 'custom' && !e.shiftKey && !e.metaKey &&
+        ((e.ctrlKey && !e.altKey) || (isMac && e.altKey && !e.ctrlKey))) {
+      var wordKey = { ArrowLeft: '\x1bb', ArrowRight: '\x1bf',
+        Backspace: '\x1b\x7f', Delete: '\x1bd' }[e.key];
+      if (wordKey) {
+        e.preventDefault();
+        fixedKey(wordKey);
+        return false;
+      }
+    }
+    if (e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return true;
     var k = e.key.toLowerCase();
     if (k === 'c') {
       // The selection is already on the clipboard, so Ctrl+C only has to clear

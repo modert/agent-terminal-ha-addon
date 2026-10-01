@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.7.1
+- Make Ctrl+Left/Right move by word, Ctrl+Backspace delete the previous word,
+  and Ctrl+Delete delete the next word in the web terminal. Mac Option uses
+  the same word shortcuts. Preserve text-field editing and Shift combinations.
+- Run the real Chromium interaction suite in CI on both architectures, with
+  word-editing, split-pane routing, and real ttyd/tmux/readline coverage.
+
 ## 2.7.0
 - Create and rename independent sessions of the same provider and workspace.
   Existing provider buttons keep their Main sessions and persistent logins.

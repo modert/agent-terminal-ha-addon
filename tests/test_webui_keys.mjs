@@ -10,7 +10,7 @@ const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
   import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
 const script = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
-async function page({ touch = true, search = '', saved = [] } = {}) {
+async function page({ touch = true, search = '', saved = [], platform = 'Linux', config = null } = {}) {
   const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
   let timerId = 0, terminal, socket, now = 1000;
   function element() {
@@ -81,7 +81,7 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
     write(data, callback) { if (callback) queueMicrotask(callback); }
     paste(text) { this.pastes.push(text); }
     onData(fn) { this.type = fn; }
-    attachCustomKeyEventHandler() {}
+    attachCustomKeyEventHandler(fn) { this.keyEvent = fn; }
   }
   class WebSocket {
     static OPEN = 1;
@@ -93,8 +93,8 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
   const window = Object.assign(element(), { innerHeight: 700, matchMedia: () => ({ matches: touch }) });
   window.top = window;
   window.getSelection = () => ({ removeAllRanges() {} });
-  vm.runInNewContext(script, {
-    Terminal, WebSocket, document, window, navigator: { platform: 'Linux' },
+  vm.runInNewContext(script.replace('/*{{SESSION_CONFIG}}*/ null', JSON.stringify(config)), {
+    Terminal, WebSocket, document, window, navigator: { platform },
     FitAddon: { FitAddon: class { fit() {} } },
     location: { pathname: '/terminal', protocol: 'https:', host: 'example.test', search },
     TextEncoder, TextDecoder, Uint8Array, URLSearchParams,
@@ -158,6 +158,46 @@ test('Keys opens the agent keys, which answer a Codex question', async () => {
     'Ctrl+C clears input in both agents, so it sits with the agent keys');
   p.tap('Answer'); p.tap('↓'); p.tap('Enter');
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[B', '\r']);
+});
+
+test('desktop word shortcuts emit one editing command on keydown for each provider', async () => {
+  for (const agent of ['claude', 'codex', 'shell']) {
+    const p = await page({ touch: false, search: '?arg=' + agent + '&arg=homeassistant' });
+    for (const [key, command] of [['ArrowLeft', '\x1bb'], ['ArrowRight', '\x1bf'],
+      ['Backspace', '\x1b\x7f'], ['Delete', '\x1bd']]) {
+      let prevented = false;
+      const event = { type: 'keydown', key, ctrlKey: true, preventDefault() { prevented = true; } };
+      assert.equal(p.terminal.keyEvent(event), false);
+      assert.equal(prevented, true, 'the browser must not also edit its hidden textarea');
+      assert.deepEqual(p.input(), [command], agent + ': ' + key);
+      assert.equal(p.terminal.keyEvent({ ...event, type: 'keyup' }), true);
+      assert.deepEqual(p.input(), [], 'releasing the key must not repeat its action');
+    }
+  }
+});
+
+test('word shortcuts preserve composition, selection modifiers, and Mac command keys', async () => {
+  for (const platform of ['Linux', 'MacIntel']) {
+    const p = await page({ touch: false, platform });
+    for (const props of [{}, { ctrlKey: true, shiftKey: true }, { ctrlKey: true, altKey: true },
+      { metaKey: true }, { ctrlKey: true, isComposing: true }, { ctrlKey: true, keyCode: 229 }]) {
+      const event = { type: 'keydown', key: 'Backspace', ...props,
+        preventDefault() { assert.fail('unrelated key combination must pass through'); } };
+      assert.equal(p.terminal.keyEvent(event), true);
+      assert.deepEqual(p.input(), []);
+    }
+    const event = { type: 'keydown', key: 'Delete', altKey: true, preventDefault() {} };
+    assert.equal(p.terminal.keyEvent(event), platform !== 'MacIntel');
+    assert.deepEqual(p.input(), platform === 'MacIntel' ? ['\x1bd'] : []);
+  }
+  const custom = await page({ touch: false, config: {
+    agents: [{ id: 'custom', name: 'Custom' }],
+    workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
+    defaultAgent: 'custom',
+  } });
+  assert.equal(custom.terminal.keyEvent({ type: 'keydown', key: 'Backspace', ctrlKey: true,
+    preventDefault() { assert.fail('Custom terminals retain their original key sequences'); } }), true);
+  assert.deepEqual(custom.input(), []);
 });
 
 test('Shift reaches tmux arrow keys and clears after one press', async () => {

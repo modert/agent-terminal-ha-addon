@@ -162,6 +162,11 @@ test('phone taps and composition with real browser events and xterm', {
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter',
       windowsVirtualKeyCode: 13, modifiers });
   }
+  async function shortcut(key, windowsVirtualKeyCode, modifiers = 2) {
+    for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', {
+      type, key, code: key, windowsVirtualKeyCode, modifiers,
+    });
+  }
   const button = label => `[...document.querySelectorAll('#bar button')].find(b => b.dataset.key === ${JSON.stringify(label)})`;
   // The group button, then a group from the list it shows in the same row.
   async function group(id) { await tap(button('Group')); await tap(`document.getElementById('group-${id}')`); }
@@ -487,6 +492,32 @@ test('phone taps and composition with real browser events and xterm', {
   await click("document.getElementById('session-strip')");
   assert.equal(await evaluate("!document.getElementById('session-bar').hidden && document.activeElement === testTerminal.textarea"), true);
 
+  // Exercise real desktop key events through xterm, including the ^H that
+  // Ctrl+Backspace used to emit and the native text fields outside xterm.
+  for (const agent of ['claude', 'codex']) {
+    await load('?arg=' + agent + '&arg=homeassistant');
+    await evaluate('testTerminal.focus()');
+    await shortcut('ArrowLeft', 37);
+    await shortcut('ArrowRight', 39);
+    await shortcut('Backspace', 8);
+    await shortcut('Delete', 46);
+    assert.deepEqual(await packets(), ['\x1bb', '\x1bf', '\x1b\x7f', '\x1bd'],
+      'desktop word editing reaches ' + agent + ' exactly once per key');
+    await evaluate('window.testPackets = []');
+    await shortcut('Backspace', 8, 0);
+    await shortcut('Delete', 46, 0);
+    await shortcut('ArrowLeft', 37, 10); // Ctrl+Shift: preserve the native selection sequence
+    assert.deepEqual(await packets(), ['\x7f', '\x1b[3~', '\x1b[1;6D']);
+  }
+  await evaluate('window.testPackets = []');
+  await click("document.getElementById('sessions-open')");
+  await click("document.getElementById('sessions-search')");
+  await command('Input.insertText', { text: 'alpha beta' });
+  await shortcut('Backspace', 8);
+  assert.equal(await evaluate("document.getElementById('sessions-search').value"), 'alpha ');
+  assert.deepEqual(await packets(), [], 'editing a search field must never send terminal input');
+  await click("document.getElementById('sessions-done')");
+
   // Named sessions use the real picker and two independent browser clients.
   // Only the transport is simulated; key routing, layout and reloads are real.
   await evaluate("localStorage.setItem('cc-mobile:keybar', '0')");
@@ -561,8 +592,9 @@ test('phone taps and composition with real browser events and xterm', {
   await letter('l');
   await evaluate(`${side}.testTerminal.focus()`);
   await letter('r');
+  await shortcut('Backspace', 8);
   assert.deepEqual(await packets(), ['l'], 'right-pane typing cannot reach the left session');
-  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r']);
+  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r', '\x1b\x7f']);
   const leftWidth = await evaluate("document.getElementById('term').getBoundingClientRect().width");
   const dividerX = await evaluate("document.getElementById('split-divider').getBoundingClientRect().x + 4");
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: dividerX, y: 300, button: 'left', clickCount: 1 });
