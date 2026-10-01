@@ -295,7 +295,10 @@ test('phone taps and composition with real browser events and xterm', {
   await command('Input.insertText', { text: 'second' });
   await tap("document.getElementById('paste-newline')");
   await command('Input.insertText', { text: 'third' });
-  assert.equal(await evaluate("document.getElementById('paste-text').value"), 'first\nsecond\nthird');
+  await tap(button('Keys')); await group('edit'); await tap(button('↵'));
+  await command('Input.insertText', { text: 'fourth' });
+  assert.equal(await evaluate("document.getElementById('paste-text').value"), 'first\nsecond\nthird\nfourth');
+  assert.equal(await evaluate("document.activeElement.id === 'paste-text'"), true, 'the helper keeps editing the open draft');
   assert.deepEqual(await packets(), []);
   if (process.env.WEBUI_SCREENSHOT) {
     const screenshot = await command('Page.captureScreenshot');
@@ -303,7 +306,7 @@ test('phone taps and composition with real browser events and xterm', {
   }
   await enter();
   await until("document.getElementById('paste').hidden");
-  assert.deepEqual(await packets(), ['\x1b[200~first\rsecond\rthird\x1b[201~', '\r']);
+  assert.deepEqual(await packets(), ['\x1b[200~first\rsecond\rthird\rfourth\x1b[201~', '\r']);
 
   await load();
   await tap("document.getElementById('term')");
@@ -346,8 +349,9 @@ test('phone taps and composition with real browser events and xterm', {
   await tap(button('Answer')); await tap(button('↓')); await tap(button('Enter'));
   await tap(button('Mode')); await tap(button('Space'));
   await tap(button('Esc²')); await delay(160);
+  await group('edit'); await tap(button('↵')); await enter(8);
   await group('ctrl'); await tap(button('tmux')); await tap(button('tmux'));
-  assert.deepEqual(await packets(), ['\x0c', '\x1b[1;2D', '\x1b[B', '\r', '\x1b[Z', ' ', '\x1b', '\x1b', '\x02', '\x02'],
+  assert.deepEqual(await packets(), ['\x0c', '\x1b[1;2D', '\x1b[B', '\r', '\x1b[Z', ' ', '\x1b', '\x1b', '\n', '\n', '\x02', '\x02'],
     'retain shared controls, Codex questions and Claude background via tmux');
   // A narrow phone keeps every state of the keys usable, without overflowing
   // labels: 44px tall, and at least 40px wide in the seven-key rows.
@@ -355,7 +359,7 @@ test('phone taps and composition with real browser events and xterm', {
   await until('innerWidth === 320');
   await delay(100);
   for (const step of [() => tap(button('Keys')), () => tap(button('Keys')), () => tap(button('Group')),
-    () => tap("document.getElementById('group-tools')")]) {
+    () => tap("document.getElementById('group-tools')"), () => group('edit')]) {
     await step();
     assert.equal(await evaluate(`[...document.querySelectorAll('#bar button')].filter(b => b.getBoundingClientRect().height).every(b => {
       const r = b.getBoundingClientRect();
@@ -504,6 +508,10 @@ test('phone taps and composition with real browser events and xterm', {
     assert.deepEqual(await packets(), ['\x1bb', '\x1bf', '\x1b\x7f', '\x1bd'],
       'desktop word editing reaches ' + agent + ' exactly once per key');
     await evaluate('window.testPackets = []');
+    await enter(8);
+    await enter();
+    assert.deepEqual(await packets(), ['\n', '\r'], 'Shift+Enter adds a line, and Enter submits in ' + agent);
+    await evaluate('window.testPackets = []');
     await shortcut('Backspace', 8, 0);
     await shortcut('Delete', 46, 0);
     await shortcut('ArrowLeft', 37, 10); // Ctrl+Shift: preserve the native selection sequence
@@ -593,8 +601,9 @@ test('phone taps and composition with real browser events and xterm', {
   await evaluate(`${side}.testTerminal.focus()`);
   await letter('r');
   await shortcut('Backspace', 8);
+  await enter(8);
   assert.deepEqual(await packets(), ['l'], 'right-pane typing cannot reach the left session');
-  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r', '\x1b\x7f']);
+  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r', '\x1b\x7f', '\n']);
   const leftWidth = await evaluate("document.getElementById('term').getBoundingClientRect().width");
   const dividerX = await evaluate("document.getElementById('split-divider').getBoundingClientRect().x + 4");
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: dividerX, y: 300, button: 'left', clickCount: 1 });

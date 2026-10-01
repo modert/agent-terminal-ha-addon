@@ -882,6 +882,14 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 
   term.attachCustomKeyEventHandler(function (e) {
     if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
+    // Legacy terminal input loses Shift on Enter. Both agent editors accept
+    // Ctrl+J as a newline, so a physical Shift+Enter must send LF, not CR.
+    if ((selectedAgent === 'claude' || selectedAgent === 'codex') &&
+        e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      fixedKey('\n');
+      return false;
+    }
     // xterm sends Ctrl+Backspace as ^H (one character), and modified Delete
     // is not understood consistently by the prompt editors. Use their shared
     // readline word commands. Keep Shift combinations, AltGr, and Custom
@@ -1182,8 +1190,8 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   }
 
   function draftOpen() { return !pasteEl.hidden && !pasteAutoSend; }
-  function newDraftLine() {
-    if (!draftOpen() || pasteSending) return;
+  function newTextLine() {
+    if (pasteEl.hidden || pasteSending) return;
     clearMods();
     // Finish the current word before inserting outside its composing range.
     // Keep blur/focus inside the tap so the phone keyboard can stay open.
@@ -1195,9 +1203,13 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       if (!document.execCommand('insertText', false, '\n')) toast('Use Shift+Enter to add a line');
     } finally { addingDraftLine = false; }
   }
+  function newLineKey() {
+    if (!pasteEl.hidden) newTextLine();
+    else fixedKey('\n');
+  }
   function enterKey() {
     if (!draftOpen()) { key('\r'); return; }
-    if (mods.shift) newDraftLine();
+    if (mods.shift) newTextLine();
     else sendPaste();
   }
 
@@ -1261,7 +1273,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   }
 
   selButton('paste-send', sendPaste);
-  selButton('paste-newline', newDraftLine);
+  selButton('paste-newline', newTextLine);
   selButton('paste-cancel', closePaste);
 
   // ttyd pushes --client-option values here. Only options xterm actually
@@ -1533,6 +1545,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } }
     ] },
     { id: 'edit', l: 'Edit', keys: [
+      { l: '↵', t: 'New line (Shift+Enter) — edit the open draft or send Ctrl+J to the terminal', click: true, go: newLineKey },
       { l: 'Bksp', t: 'Backspace in terminal', rep: true, go: function () { key('\x7f'); } },
       { l: 'Home', t: 'Home in terminal', go: function () { arrow('H'); } },
       { l: 'End', t: 'End in terminal', go: function () { arrow('F'); } },

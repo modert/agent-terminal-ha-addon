@@ -283,7 +283,7 @@ project folders or Git worktrees when tasks need independent changes.
   behaviour: right-click copies the selection, or pastes when nothing is
   selected, and Shift+right-click opens the menu.
 
-### Word editing with a desktop keyboard
+### Editing with a desktop keyboard
 
 In Claude, ChatGPT, and Shell sessions, click the terminal and use:
 
@@ -292,12 +292,18 @@ In Claude, ChatGPT, and Shell sessions, click the terminal and use:
 | **Ctrl+Left / Ctrl+Right** | Move backward / forward by one word. |
 | **Ctrl+Backspace** | Delete the previous word. |
 | **Ctrl+Delete** | Delete the next word. |
+| **Shift+Enter** | Add a line without sending in Claude and ChatGPT prompts. |
 
 On a Mac, **Option** with the arrows, Backspace, or forward Delete uses the
 same word commands. The terminal sends standard readline commands; each
 program defines its word boundaries. Custom sessions retain their original
-terminal key sequences. Shift combinations continue to reach the program,
+terminal key sequences. Shift-modified navigation continues to reach the program,
 including selection shortcuts supported by that program.
+
+Physical **Shift+Enter** sends the agents' newline shortcut, **Ctrl+J**, so it
+works through tmux without extended keyboard support. Plain **Enter** still
+sends or confirms. You can also use **Keys → Edit → ↵ (New line)**; while a
+draft or paste field is open, the helper adds a line there without sending it.
 
 Session search, task names, purpose notes, and the mobile draft are native
 text fields, so they keep the browser's normal editing shortcuts. Only the
@@ -332,7 +338,7 @@ Assistant companion app.
   |---|---|
   | Agent | Tab, Mode, Answer, Esc², Ctrl+C, Space |
   | Ctrl | Ctrl, Alt, Shift, tmux |
-  | Edit | Bksp, Home, End, PgUp, PgDn |
+  | Edit | ↵ (New line), Bksp, Home, End, PgUp, PgDn |
   | Tools | Copy, Paste, Direct, A−, A+ |
 
   The group button stays put, so tapping it twice returns you to where you
@@ -343,7 +349,7 @@ Assistant companion app.
   with the arrows, then **Enter**. Tab moves between fields; Space toggles a choice where supported.
 - **Write a prompt:** tap the terminal to open a compact draft and the phone
   keyboard. The response stays visible and scrollable. **Enter** or **Send**
-  submits; **Shift+Enter** or **↵** beside the draft adds a line. The helper
+  submits; **Shift+Enter**, **↵** beside the draft, or **Keys → Edit → ↵** adds a line. The helper
   Enter button also submits an open draft. Tap **×** to close without sending.
   Autocorrect and composition edits stay in the native draft; Send pastes the
   final value once and submits after composition finishes. Enter used to accept
@@ -402,7 +408,8 @@ the terminal.
 The helper buttons send the same terminal keys for either agent. The running
 program and its keybindings decide the action; these are the default meanings.
 Navigation and shortcut keys act on the terminal even while an unsent native
-draft is open. ↵ beside the draft adds a line to it, and Enter submits it.
+draft is open. The ↵ helpers edit an open draft or paste field locally;
+Enter submits a draft.
 
 | Button | Keys sent | Claude | Codex |
 |---|---|---|---|
@@ -412,7 +419,7 @@ draft is open. ↵ beside the draft adds a line to it, and Enter submits it.
 | Mode | Shift+Tab | Cycle permission modes, including Plan | Toggle Plan mode |
 | Answer | Shift+Left | Ordinary Shift+Left | Open pending questions |
 | Esc² | Escape twice, spaced apart | Rewind with an empty prompt; clear nonempty input | Edit previous message with an empty prompt |
-| ↵ (beside a draft) | Draft newline; Shift then Enter sends Ctrl+J in Direct mode | Newline | Newline |
+| ↵ (Edit keys or beside a draft) | Local newline in an open text field; otherwise Ctrl+J | Newline | Newline |
 | Ctrl+C | Ctrl+C | Clear input / interrupt; twice on an empty prompt exits | Clear input / interrupt; twice on an empty prompt exits |
 
 Arrows and Space keep their normal navigation/selection behavior. The Edit
@@ -514,8 +521,10 @@ The browser suite also creates and renames sessions, routes real keystrokes
 to separate split panes, resizes and restores the split, stops and restarts
 a session, and checks workspace groups, purpose search, and the picker on a
 narrow screen. Desktop checks exercise Ctrl+Left/Right, Ctrl+Backspace and
-Ctrl+Delete, unmodified character editing, native text fields, and word
-shortcuts in the focused split pane. The suite also verifies that opening or
+Ctrl+Delete, Shift+Enter, unmodified character editing, native text fields,
+and shortcuts in the focused split pane. It checks the New line helper in
+direct input and an open draft, including its touch target on a narrow phone.
+The suite also verifies that opening or
 canceling an empty second pane never connects to an agent, and that creating
 a task there preserves the left terminal. Its management transport
 is simulated; it does not send keys or lifecycle operations to live agents.

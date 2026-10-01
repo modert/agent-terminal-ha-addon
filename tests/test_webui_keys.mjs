@@ -211,6 +211,44 @@ test('Shift reaches tmux arrow keys and clears after one press', async () => {
   assert.deepEqual(p.input(), ['\x1b[1;8C']);
 });
 
+test('physical Shift+Enter inserts one newline in either agent and preserves other Enter shortcuts', async () => {
+  for (const agent of ['claude', 'codex']) {
+    const p = await page({ touch: false, search: '?arg=' + agent + '&arg=homeassistant' });
+    const event = { type: 'keydown', key: 'Enter', shiftKey: true, preventDefault() {} };
+    p.tap('Ctrl'); p.tap('Alt');
+    assert.equal(p.terminal.keyEvent(event), false);
+    assert.deepEqual(p.input(), ['\n']);
+    assert.equal(p.button('Ctrl').attributes['aria-pressed'], 'false');
+    assert.equal(p.terminal.keyEvent({ ...event, type: 'keyup' }), true);
+    for (const props of [{ shiftKey: false }, { ctrlKey: true }, { altKey: true },
+      { metaKey: true }, { isComposing: true }, { keyCode: 229 }]) {
+      assert.equal(p.terminal.keyEvent({ ...event, ...props }), true);
+    }
+    assert.deepEqual(p.input(), [], 'unrelated Enter combinations and IME confirmation pass through');
+  }
+  const shell = await page({ touch: false, search: '?arg=shell&arg=homeassistant' });
+  assert.equal(shell.terminal.keyEvent({ type: 'keydown', key: 'Enter', shiftKey: true }), true);
+  assert.deepEqual(shell.input(), [], 'Shell keeps its own physical Enter bindings');
+});
+
+test('the New line helper edits open text fields without submitting and sends LF in the terminal', async () => {
+  const p = await page();
+  p.tap('Ctrl'); p.tap('Alt'); p.tap('Shift'); p.tap('↵'); p.tap('Enter');
+  assert.deepEqual(p.input(), ['\n', '\r']);
+  for (const open of [() => p.write(), () => p.tap('Paste')]) {
+    open();
+    const box = p.ids.get('paste-text');
+    box.value = 'firstsecond'; box.selectionStart = box.selectionEnd = 5;
+    p.tap('↵'); p.flush();
+    assert.equal(box.value, 'first\nsecond');
+    assert.equal(p.ids.get('paste').hidden, false, 'newline keeps the editor open');
+    assert.equal(p.activeElement(), box);
+    assert.deepEqual(p.input(), []);
+    assert.deepEqual(p.terminal.pastes, []);
+    p.ids.get('paste-cancel').fire('click');
+  }
+});
+
 test('fixed actions clear pending modifiers; Enter and newline are distinct', async () => {
   const p = await page();
   for (const [label, seq] of [['Answer', '\x1b[1;2D'], ['Mode', '\x1b[Z'],

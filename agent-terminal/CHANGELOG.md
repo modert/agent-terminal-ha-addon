@@ -5,7 +5,10 @@
 ## 2.7.1
 - Make Ctrl+Left/Right move by word, Ctrl+Backspace delete the previous word,
   and Ctrl+Delete delete the next word in the web terminal. Mac Option uses
-  the same word shortcuts. Preserve text-field editing and Shift combinations.
+  the same word shortcuts. Preserve text-field editing and navigation modifiers.
+- Make physical Shift+Enter add a line in Claude and ChatGPT prompts instead
+  of submitting. Restore the New line (↵) helper under Keys → Edit; it edits
+  an open draft or paste field locally and adds a line to a direct agent prompt.
 - Run the real Chromium interaction suite in CI on both architectures, with
   word-editing, split-pane routing, and real ttyd/tmux/readline coverage.
 
