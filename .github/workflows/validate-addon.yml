@@ -8,9 +8,6 @@ on:
   # the image or the adapter before the next rebuild does.
   schedule:
     - cron: '41 13 * * *'
-  # Lets update-codex.yml start a run: pull requests it opens with
-  # GITHUB_TOKEN don't trigger pull_request workflows.
-  workflow_dispatch:
 
 permissions:
   contents: read

@@ -6,7 +6,9 @@ Source for the Agent Terminal Home Assistant add-on (`agent-terminal/`). User-fa
 
 Claude Code and Codex in the Home Assistant install run in this add-on's container, so updating, rebuilding or restarting the add-on kills the session doing the work. Test changes by hot-deploying them into the live container, and ship them through a pull request.
 
-Home Assistant installs this add-on from the add-on store (`62afb2b9_agent_terminal`), built from `master` of this repository. It offers an update when `version` in `agent-terminal/config.yaml` changes on `master`, so a release is a PR that bumps the version and adds a changelog heading (the daily Codex update PRs do this). `master` accepts only pull requests whose CI passes.
+Home Assistant installs this add-on from the add-on store (`62afb2b9_agent_terminal`), built from `master` of this repository. It offers an update when `version` in `agent-terminal/config.yaml` changes on `master`, so a release is a PR that bumps the version and adds a changelog heading (the daily Codex update PR does this and merges itself once CI passes). `master` accepts only pull requests whose CI passes.
+
+The Codex update PR is opened with the `CODEX_UPDATE_TOKEN` repository secret, a personal access token. Without it the PR belongs to `github-actions[bot]`, and GitHub holds its checks until someone approves them on the PR page, so a Codex update PR that sits unmerged usually means the token is missing or has expired.
 
 A checkout under `/addons` also shows up in Home Assistant as a local add-on with the same name. Don't install or rebuild that one; it would be a second copy.
 
