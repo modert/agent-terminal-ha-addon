@@ -57,9 +57,13 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   html = await (await fetch('http://127.0.0.1:8099/')).text();
   assert.match(html, /"id":"second-test"/, 'ttyd must serve updated workspaces without restarting');
 
-  async function connect(agent, workspace = 'homeassistant') {
+  async function connect(agent, workspace = 'homeassistant', session) {
     const query = new URLSearchParams();
-    if (agent) { query.append('arg', agent); query.append('arg', workspace); }
+    if (agent) {
+      query.append('arg', agent);
+      if (agent !== 'sessions') query.append('arg', workspace);
+      if (session) query.append('arg', session);
+    }
     const socket = new WebSocket('ws://127.0.0.1:8099/ws?' + query, ['tty']);
     sockets.push(socket); socket.binaryType = 'arraybuffer';
     let screen = '';
@@ -104,8 +108,52 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const custom = await connect();
   await until(() => custom.screen().includes('TEST-AGENT:trusted-custom:homeassistant:'), 'configured default custom command did not start');
 
+  // The actual ttyd PTY carries a raw JSON control stream, independently of
+  // terminal input. Metadata updates must not enter either provider's stdin.
+  const control = await connect('sessions');
+  await until(() => control.screen().includes('"type":"sessions"'), 'session control stream did not start');
+  let request = 0;
+  async function manage(method, fields = {}) {
+    const id = ++request;
+    control.socket.send('0' + JSON.stringify({ request: id, method, ...fields }) + '\n');
+    let reply;
+    await until(() => {
+      reply = control.screen().split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } })
+        .find(packet => packet.request === id && !packet.method);
+      return reply;
+    }, 'management request did not complete: ' + method);
+    assert.equal(reply.error, undefined);
+    return reply.result;
+  }
+  const namedA = await manage('create', { name: 'Dashboard refresh', description: 'Simplify the tablet overview', agent: 'codex', workspace: 'web-test' });
+  const namedB = await manage('create', { name: 'Attic fan', agent: 'codex', workspace: 'web-test' });
+  const namedView = await connect('codex', 'web-test', namedA.id);
+  const secondView = await connect('codex', 'web-test', namedB.id);
+  await until(() => namedView.screen().includes('TEST-AGENT:codex:web-test:') && secondView.screen().includes('TEST-AGENT:codex:web-test:'), 'named sessions did not start');
+  const namedPid = panePid(namedA.id);
+  assert.notEqual(namedPid, panePid(namedB.id));
+  namedView.socket.close();
+  const reattached = await connect('codex', 'web-test', namedA.id);
+  await until(() => reattached.screen().includes('TEST-AGENT:codex:web-test:'), 'named session did not reattach');
+  assert.equal(panePid(namedA.id), namedPid);
+  run('agent-session', ['--session', namedA.id]);
+  assert.equal(panePid(namedA.id), namedPid, 'SSH must resolve the stored provider and workspace');
+  await manage('rename', { session: namedA.id, name: 'Review dashboard', description: 'Check layout and spacing' });
+  assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).name, 'Review dashboard');
+  assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).description, 'Check layout and spacing');
+  await manage('stop', { session: namedA.id });
+  assert.notEqual(spawnSync('agent-session', ['--web', 'codex', 'web-test', namedA.id]).status, 0);
+  assert.notEqual(spawnSync('tmux', ['has-session', '-t', '=' + namedA.id]).status, 0, 'reconnect must not restart a stopped session');
+  assert.equal(spawnSync('tmux', ['has-session', '-t', '=' + namedB.id]).status, 0, 'stop must leave the other named session running');
+  await manage('start', { session: namedA.id });
+  const started = await connect('codex', 'web-test', namedA.id);
+  await until(() => started.screen().includes('TEST-AGENT:codex:web-test:'), 'explicit start did not work');
+  assert.notEqual(panePid(namedA.id), namedPid);
+  assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).description, 'Check layout and spacing');
+
   const before = tmux('list-sessions', '-F', '#{session_name}');
-  for (const args of [['--web', 'bash -c id'], ['--web', 'shell', '../../data'], ['--web', 'shell', 'unknown'], ['--web', 'shell', 'homeassistant', 'extra']]) {
+  for (const args of [['--web', 'bash -c id'], ['--web', 'shell', '../../data'], ['--web', 'shell', 'unknown'], ['--web', 'shell', 'homeassistant', 'extra'],
+    ['--web', 'sessions', 'homeassistant'], ['--web', 'shell', 'web-test', namedA.id]]) {
     assert.notEqual(spawnSync('agent-session', args).status, 0, 'invalid web selection was accepted');
   }
   assert.equal(tmux('list-sessions', '-F', '#{session_name}'), before, 'invalid requests must not create sessions');

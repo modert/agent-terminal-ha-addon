@@ -191,9 +191,9 @@ chmod 600 /root/.ssh/environment
    Supervisor   : the `ha` CLI works here (ha core restart, ...)
    MCP          : 'homeassistant' server auto-registered
                   (ha_list_entities, ha_call_service, ha_render_template, ...)
-   Sessions     : switch Claude / ChatGPT / Shell in the panel
+   Sessions     : Sessions / Ctrl+Shift+K; Split on wide screens
                   `agent-session --agent codex --workspace homeassistant`
-                  (one live tmux session per workspace and agent)
+                  `agent-session --session ID` for a named session
    Workspaces   : `agent-workspace create ID "Task name"`
                   reload the panel to choose the new workspace
 

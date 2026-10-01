@@ -1,28 +1,41 @@
 #!/usr/bin/env bash
-# Each workspace/agent pair has its own persistent tmux session. Switching
+# Each named terminal has its own persistent tmux session. Switching
 # disconnects only a client; the agent's live process keeps running.
-# Usage: agent-session [--agent claude|codex|shell] [--workspace ID] [command]
-# ttyd uses --web followed by at most two URL arguments: agent and workspace.
+# Usage: agent-session [--session ID] [--agent claude|codex|shell] [--workspace ID] [command]
+# ttyd uses --web followed by agent, workspace and optional session ID.
 set -euo pipefail
 
-MODE=""; WORKSPACE="homeassistant"; START_CMD=""; WEB=false
+MODE=""; WORKSPACE="homeassistant"; START_CMD=""; WEB=false; SESSION_ID=""
 if [ "${1:-}" = "--web" ]; then
     WEB=true; shift
-    [ "$#" -le 2 ] || { echo 'Too many terminal arguments' >&2; exit 2; }
-    MODE="${1:-}"; WORKSPACE="${2:-homeassistant}"
+    # A separate connection manages metadata and lifecycle. No URL value is
+    # evaluated as a shell command, including on this control connection.
+    if [ "${1:-}" = sessions ]; then
+        [ "$#" -eq 1 ] || { echo 'Too many control arguments' >&2; exit 2; }
+        exec node /opt/agent-terminal/sessions.mjs serve
+    fi
+    [ "$#" -le 3 ] || { echo 'Too many terminal arguments' >&2; exit 2; }
+    MODE="${1:-}"; WORKSPACE="${2:-homeassistant}"; SESSION_ID="${3:-}"
 else
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --agent|--workspace)
+            --agent|--workspace|--session)
                 [ "$#" -ge 2 ] || { echo "Missing value for $1" >&2; exit 2; }
-                if [ "$1" = --agent ]; then MODE="$2"; else WORKSPACE="$2"; fi
+                case "$1" in --agent) MODE="$2" ;; --workspace) WORKSPACE="$2" ;; --session) SESSION_ID="$2" ;; esac
                 shift 2 ;;
             --help)
-                echo 'Usage: agent-session [--agent claude|codex|shell] [--workspace ID] [command]'; exit 0 ;;
+                echo 'Usage: agent-session [--session ID] [--agent claude|codex|shell] [--workspace ID] [command]'; exit 0 ;;
             --*) echo "Unknown option: $1" >&2; exit 2 ;;
             *) [ "$#" -eq 1 ] || { echo 'Quote a custom command as one argument' >&2; exit 2; }; START_CMD="$1"; shift ;;
         esac
     done
+fi
+
+if [ -n "${SESSION_ID}" ] && ! "${WEB}"; then
+    [ -z "${START_CMD}" ] || { echo 'A named session cannot override its command' >&2; exit 2; }
+    SELECTION="$(node /opt/agent-terminal/sessions.mjs get "${SESSION_ID}")"
+    MODE="$(jq -r '.agent' <<< "${SELECTION}")"
+    WORKSPACE="$(jq -r '.workspace' <<< "${SELECTION}")"
 fi
 
 if [ -n "${MODE}" ]; then
@@ -55,18 +68,12 @@ fi
 WORKSPACE_JSON="$(agent-workspace get "${WORKSPACE}")"
 WORKSPACE_DIR="$(jq -r '.directory' <<< "${WORKSPACE_JSON}")"
 [ -d "${WORKSPACE_DIR}" ] || { echo "Workspace directory is missing: ${WORKSPACE_DIR}" >&2; exit 1; }
-SESSION="agent-${WORKSPACE}-${MODE}"
-
-TMUX_ENV=(-e "AGENT=${AGENT}" -e "AGENT_WORKSPACE=${WORKSPACE}" -e "AGENT_WORKSPACE_DIR=${WORKSPACE_DIR}")
+TMUX_ENV=("AGENT=${AGENT}" "AGENT_WORKSPACE=${WORKSPACE}" "AGENT_WORKSPACE_DIR=${WORKSPACE_DIR}")
 while IFS= read -r kv; do
-    [ -z "${kv}" ] || TMUX_ENV+=(-e "${kv}")
+    [ -z "${kv}" ] || TMUX_ENV+=("${kv}")
 done < <(agent_all_env)
 
-if ! tmux has-session -t "=${SESSION}" 2>/dev/null; then
-    # Another client may create the same session between has-session and new.
-    tmux new-session -d -s "${SESSION}" -c "${WORKSPACE_DIR}" "${TMUX_ENV[@]}" "${START_CMD}" \
-        || tmux has-session -t "=${SESSION}"
-fi
+SESSION="$(node /opt/agent-terminal/sessions.mjs ensure "${MODE}" "${WORKSPACE}" "${SESSION_ID}" "${START_CMD}" "${TMUX_ENV[@]}")"
 
 # Attach if we have a terminal; otherwise the detached session just keeps running.
 if [ -t 1 ]; then

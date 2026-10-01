@@ -13,21 +13,68 @@ import test from 'node:test';
 // No test input can reach an agent or tmux process.
 test('phone taps and composition with real browser events and xterm', {
   skip: !process.env.CHROMIUM_BIN,
-  timeout: 30000,
+  timeout: 60000,
 }, async t => {
   const bundle = process.env.WEBUI_BUNDLE || resolve(import.meta.dirname,
     '../agent-terminal/rootfs/opt/webui/index.html');
   const mock = `<script>
-    window.testPackets = []; window.testFocus = [];
+    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = [];
     document.addEventListener('focusin', e => {
       window.testFocus.push({ id: e.target.id, active: navigator.userActivation.isActive });
     });
     window.fetch = async () => ({ json: async () => ({ token: '' }) });
+    window.testHub = window.parent !== window && window.parent.testHub || {
+      workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' },
+        { id: 'addon', name: 'Agent Terminal', directory: '/addons/agent-terminal' }],
+      sessions: JSON.parse(localStorage.getItem('test-sessions') || 'null') || [
+        ...['claude', 'codex', 'shell'].map(agent =>
+          ({ id: 'agent-homeassistant-' + agent, name: 'Main', workspace: 'homeassistant', agent, stopped: false, running: false })),
+        { id: 'session-' + 'b'.repeat(32), name: 'Session navigation', description: 'Polish the provider chooser',
+          workspace: 'addon', agent: 'claude', stopped: false, running: false }],
+      controls: [],
+      publish() {
+        localStorage.setItem('test-sessions', JSON.stringify(this.sessions));
+        for (const socket of this.controls) if (socket.readyState === 1) socket.packet({ type: 'sessions', sessions: this.sessions,
+          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+          workspaces: this.workspaces });
+      }
+    };
     window.WebSocket = class {
       static OPEN = 1;
       readyState = 1;
-      constructor() { window.testSocket = this; setTimeout(() => this.onopen(), 0); }
-      send(data) { window.testPackets.push(new TextDecoder().decode(data)); }
+      constructor(url) {
+        this.url = url; this.args = new URL(url).searchParams.getAll('arg'); this.control = this.args[0] === 'sessions';
+        if (this.control) testHub.controls.push(this); else { window.testSocket = this; window.testTerminalConnections.push(this); }
+        setTimeout(() => this.onopen(), 0);
+      }
+      packet(value) { this.onmessage({ data: '0' + JSON.stringify(value) + '\\n' }); }
+      send(data) {
+        const text = new TextDecoder().decode(data);
+        if (!this.control) {
+          window.testPackets.push(text);
+          if (text[0] === '{') {
+            const id = this.args[2] || 'agent-' + this.args[1] + '-' + this.args[0];
+            const record = testHub.sessions.find(s => s.id === id);
+            if (record && !record.stopped) record.running = true;
+          }
+          return;
+        }
+        if (text[0] === '{') { testHub.publish(); return; }
+        const request = JSON.parse(text.slice(1));
+        let record = testHub.sessions.find(s => s.id === request.session);
+        if (request.method === 'create') {
+          record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: request.name, description: request.description || '',
+            agent: request.agent, workspace: request.workspace, running: false, stopped: false };
+          testHub.sessions.push(record);
+        } else if (request.method === 'rename') { record.name = request.name; record.description = request.description ?? record.description; }
+        else if (request.method === 'stop') { record.stopped = true; record.running = false; }
+        else if (request.method === 'start') record.stopped = false;
+        if (request.method !== 'list') this.packet({ request: request.request, result: record });
+        else this.packet({ request: request.request, result: { sessions: testHub.sessions,
+          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+          workspaces: testHub.workspaces } });
+        testHub.publish();
+      }
       close() { this.readyState = 3; if (this.onclose) this.onclose(); }
     };
   </script>`;
@@ -59,10 +106,10 @@ test('phone taps and composition with real browser events and xterm', {
   t.after(async () => {
     if (browser.exitCode === null) {
       const exit = once(browser, 'exit');
-      browser.kill('SIGTERM');
+      try { await command('Browser.close', {}, undefined); } catch { browser.kill('SIGTERM'); }
       await exit;
     }
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    rmSync(profile, { recursive: true, force: true, maxRetries: 15, retryDelay: 100 });
   });
   browser.stdio[4].on('data', chunk => {
     buffer += chunk;
@@ -402,8 +449,10 @@ test('phone taps and composition with real browser events and xterm', {
   // the terminal focused, so typing carries on.
   async function click(expression) {
     const rect = await evaluate(`(() => {
-      const r = (${expression}).getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      const node = (${expression}), r = node.getBoundingClientRect();
+      let x = r.x + r.width / 2, y = r.y + r.height / 2, frame = node.ownerDocument.defaultView.frameElement;
+      while (frame) { const f = frame.getBoundingClientRect(); x += f.x; y += f.y; frame = frame.ownerDocument.defaultView.frameElement; }
+      return { x, y };
     })()`);
     for (const type of ['mousePressed', 'mouseReleased']) {
       await command('Input.dispatchMouseEvent', { type, x: rect.x, y: rect.y, button: 'left', clickCount: 1 });
@@ -437,4 +486,158 @@ test('phone taps and composition with real browser events and xterm', {
   await evaluate('testTerminal.focus()');
   await click("document.getElementById('session-strip')");
   assert.equal(await evaluate("!document.getElementById('session-bar').hidden && document.activeElement === testTerminal.textarea"), true);
+
+  // Named sessions use the real picker and two independent browser clients.
+  // Only the transport is simulated; key routing, layout and reloads are real.
+  await evaluate("localStorage.setItem('cc-mobile:keybar', '0')");
+  await load();
+  async function createSession(name, purpose = '') {
+    await click("document.getElementById('sessions-open')");
+    await click("document.getElementById('sessions-new')");
+    await evaluate(`document.getElementById('sessions-name').value = ${JSON.stringify(name)};
+      document.getElementById('sessions-purpose').value = ${JSON.stringify(purpose)};
+      document.getElementById('sessions-provider').value = 'codex'`);
+    await click("document.getElementById('sessions-save')");
+    await until("document.getElementById('sessions-sheet').hidden && testSocket.args[0] === 'codex' && !document.getElementById('overlay').hidden === false");
+    return evaluate('testSocket.args[2]');
+  }
+  const first = await createSession('Dashboard refresh', 'Make the wall tablet easier to read');
+  const second = await createSession('Attic fan');
+  assert.notEqual(first, second, 'same provider and workspace must get separate terminal identities');
+  assert.equal(await evaluate(`testHub.sessions.find(s => s.id === ${JSON.stringify(first)}).running`), true);
+  assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Attic fan');
+
+  async function actions(id) {
+    await click(`document.querySelector('[data-session-action="${id}:actions"]')`);
+  }
+  const sessionAction = text => `[...document.querySelectorAll('.session-actions button')].find(b => b.textContent === ${JSON.stringify(text)})`;
+  await click("document.getElementById('sessions-open')");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.session-workspace')].map(g => g.dataset.workspace)"), ['homeassistant', 'addon']);
+  assert.equal(await evaluate(`document.querySelector('[data-session="${second}"] .session-place').textContent`), 'Current');
+  assert.equal(await evaluate("document.querySelectorAll('.session-choice .provider-mark svg').length === document.querySelectorAll('.session-choice').length"), true);
+  assert.equal(await evaluate("document.querySelector('[data-session=\"agent-homeassistant-shell\"]') === null"), true, 'unused defaults stay out of the main task list');
+  await click("document.getElementById('sessions-unused')");
+  assert.equal(await evaluate("!!document.querySelector('[data-session=\"agent-homeassistant-shell\"]')"), true);
+  await evaluate("document.getElementById('sessions-search').value = 'wall tablet'; document.getElementById('sessions-search').dispatchEvent(new Event('input'))");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.session-choice strong')].map(n => n.textContent)"), ['Dashboard refresh'], 'purpose is searchable');
+  await evaluate("document.getElementById('sessions-search').value = ''; document.getElementById('sessions-search').dispatchEvent(new Event('input'))");
+  if (process.env.WEBUI_SCREENSHOT) {
+    const shot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-groups.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await actions(second);
+  await click(sessionAction('Edit details'));
+  await evaluate("document.getElementById('sessions-name').value = 'Fan tuning'; document.getElementById('sessions-purpose').value = 'Tune the upstairs cooling schedule'");
+  await click("document.getElementById('sessions-save')");
+  await until("document.getElementById('sessions-title').textContent === 'Sessions'");
+  await click("document.getElementById('sessions-done')");
+  assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Fan tuning');
+
+  const side = "document.getElementById('side-terminal').contentWindow";
+  const connections = await evaluate('testTerminalConnections.length');
+  await click("document.getElementById('split-toggle')");
+  await until(`!!document.getElementById('side-terminal') && ${side}.document.getElementById('sessions-title')?.textContent === 'Add a second session' && !!${side}.document.querySelector('.session-choice')`);
+  assert.equal(await evaluate("document.getElementById('sessions-sheet').hidden"), true, 'Split keeps the left terminal visible');
+  assert.equal(await evaluate(`${side}.testTerminalConnections.length`), 0, 'an empty second pane must not attach to or start any agent');
+  assert.equal(await evaluate(`${side}.document.querySelector('[data-session-action="${second}:open"]') === null`), true, 'the left session cannot be selected for both panes');
+  assert.equal(await evaluate('testTerminalConnections.length'), connections);
+  if (process.env.WEBUI_SCREENSHOT) {
+    const shot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-choose-pane.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await click(`${side}.document.getElementById('sessions-done')`);
+  await until("!document.getElementById('side-terminal')");
+  assert.equal(await evaluate('testTerminalConnections.length'), connections, 'cancel only removes the empty pane');
+  await click("document.getElementById('split-toggle')");
+  await until(`!!document.getElementById('side-terminal') && !!${side}.document.querySelector('[data-session-action="${first}:open"]')`);
+  await click(`${side}.document.querySelector('[data-session-action="${first}:open"]')`);
+  await until(`!!document.getElementById('side-terminal') && ${side}.testSocket?.args[2] === ${JSON.stringify(first)} && !!${side}.testTerminal`);
+  assert.equal(await evaluate('testSocket.args[2]'), second);
+  await evaluate(`window.testPackets = []; ${side}.testPackets = []; testTerminal.focus()`);
+  async function letter(key) {
+    for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', {
+      type, key, code: 'Key' + key.toUpperCase(), windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0), ...(type === 'keyDown' ? { text: key } : {}) });
+  }
+  await letter('l');
+  await evaluate(`${side}.testTerminal.focus()`);
+  await letter('r');
+  assert.deepEqual(await packets(), ['l'], 'right-pane typing cannot reach the left session');
+  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r']);
+  const leftWidth = await evaluate("document.getElementById('term').getBoundingClientRect().width");
+  const dividerX = await evaluate("document.getElementById('split-divider').getBoundingClientRect().x + 4");
+  await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: dividerX, y: 300, button: 'left', clickCount: 1 });
+  await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: dividerX + 100, y: 300, button: 'left', buttons: 1 });
+  await command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: dividerX + 100, y: 300, button: 'left', clickCount: 1 });
+  await until(`document.getElementById('term').getBoundingClientRect().width > ${leftWidth + 80}`);
+  assert.equal(await evaluate(`document.getElementById('term').getBoundingClientRect().right < document.getElementById('side-terminal').getBoundingClientRect().left`), true);
+
+  if (process.env.WEBUI_SCREENSHOT) {
+    await evaluate(`testSocket.onmessage({ data: '0Fan tuning\\r\\nReviewing the attic fan controls…\\r\\n' });
+      ${side}.testSocket.onmessage({ data: '0Dashboard refresh\\r\\nWorking on the overview layout…\\r\\n' })`);
+    await delay(100);
+    const shot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-split.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await load();
+  await until(`document.getElementById('side-terminal') && ${side}.testSocket?.args[2] === ${JSON.stringify(first)}`);
+  assert.equal(await evaluate('testSocket.args[2]'), second, 'reload restores the two different sessions');
+  assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Fan tuning');
+  assert.equal(await evaluate(`testHub.sessions.find(s => s.id === ${JSON.stringify(second)}).description`), 'Tune the upstairs cooling schedule', 'purpose survives reload');
+
+  await click("document.getElementById('sessions-open')");
+  assert.equal(await evaluate(`document.querySelector('[data-session="${second}"] .session-place').textContent`), 'Left pane');
+  assert.equal(await evaluate(`document.querySelector('[data-session="${first}"] .session-place').textContent`), 'Right pane');
+  await click(`document.querySelector('[data-session-action="${first}:open"]')`);
+  await until("document.activeElement === document.getElementById('side-terminal')");
+
+  // Stopping through the picker must hold the disconnected view until Start.
+  await click("document.getElementById('sessions-open')");
+  await actions(second);
+  await click(sessionAction('Stop'));
+  await click("document.getElementById('sessions-save')");
+  await until("document.getElementById('overlay-msg').textContent.includes('Session stopped')");
+  assert.equal(await evaluate('testSocket.readyState'), 3);
+  await click(sessionAction('Start'));
+  await until("document.getElementById('sessions-sheet').hidden && !document.getElementById('overlay').hidden === false && testSocket.readyState === 1");
+
+  // A shortcut from inside the other iframe opens its own picker.
+  await evaluate(`${side}.testTerminal.focus()`);
+  for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', {
+    type, key: 'K', code: 'KeyK', modifiers: 10, windowsVirtualKeyCode: 75 });
+  await until(`!${side}.document.getElementById('sessions-sheet').hidden`);
+  assert.equal(await evaluate("document.getElementById('sessions-sheet').hidden"), true);
+  await evaluate(`${side}.document.getElementById('sessions-done').click(); ${side}.testTerminal.focus()`);
+  await delay(50);
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await until("!document.getElementById('side-terminal')");
+  await until(`testSocket.args[2] === ${JSON.stringify(first)}`);
+  assert.equal(await evaluate(`testHub.sessions.find(s => s.id === ${JSON.stringify(second)}).running`), true,
+    'collapsing to one pane keeps the hidden agent running');
+  assert.equal(await evaluate("document.getElementById('split-toggle').hidden"), true);
+  assert.equal(await evaluate("document.getElementById('session-bar').getBoundingClientRect().height <= 110"), true,
+    'a named session keeps the phone header within two rows');
+  await click("document.getElementById('sessions-open')");
+  await evaluate("document.getElementById('sessions-search').value = 'fan'; document.getElementById('sessions-search').dispatchEvent(new Event('input'))");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.session-choice strong')].map(n => n.textContent)"), ['Fan tuning']);
+  if (process.env.WEBUI_SCREENSHOT) {
+    const shot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-sessions.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await click("document.getElementById('sessions-done')");
+  await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await until("!document.getElementById('split-toggle').hidden");
+  await click("document.getElementById('split-toggle')");
+  await until(`!!document.getElementById('side-terminal') && !!${side}.document.querySelector('.session-choice')`);
+  await click(`${side}.document.getElementById('sessions-new')`);
+  await evaluate(`${side}.document.getElementById('sessions-name').value = 'Release notes';
+    ${side}.document.getElementById('sessions-purpose').value = 'Summarize the add-on changes';
+    ${side}.document.getElementById('sessions-workspace').value = 'addon';
+    ${side}.document.getElementById('sessions-provider').value = 'claude'`);
+  await click(`${side}.document.getElementById('sessions-save')`);
+  await until(`${side}.testSocket?.args[0] === 'claude' && ${side}.testSocket.args[1] === 'addon'`);
+  assert.equal(await evaluate('testSocket.args[2]'), first, 'creating on the right does not replace the left session');
+  assert.equal(await evaluate(`${side}.document.getElementById('sessions-sheet').hidden`), true);
+  await click(`${side}.document.getElementById('split-toggle')`);
+  await until("!document.getElementById('side-terminal')");
+  assert.equal(await evaluate("testHub.sessions.find(s => s.name === 'Release notes').running"), true);
 });
