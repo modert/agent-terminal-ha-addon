@@ -75,6 +75,7 @@ window.AgentSessions = function (options) {
     options.focus();
   }
   function choose(record) {
+    if (busy) return;
     if (beside) options.beside(record); else options.select(record);
     close();
   }
@@ -134,6 +135,7 @@ window.AgentSessions = function (options) {
     select.value = value;
   }
   function edit(next, record) {
+    if (busy) return;
     mode = next; editing = record; form.hidden = false; el('sessions-browse').hidden = true;
     el('sessions-title').textContent = next === 'create' ? (beside ? 'New session beside' : 'New session') : next === 'rename' ? 'Rename session' : 'Stop session';
     el('sessions-name-row').hidden = next === 'stop';
@@ -155,6 +157,7 @@ window.AgentSessions = function (options) {
     message(''); render(); search.focus();
   }
   function open(openBeside) {
+    if (busy) return;
     beside = !!openBeside; sheet.hidden = false; search.value = ''; expanded = null;
     el('sessions-open').setAttribute('aria-expanded', 'true'); browse();
     if (socket && socket.readyState === WebSocket.OPEN) send('list').then(function (snapshot) { receive(Object.assign({ type: 'sessions' }, snapshot)); }, fail);
@@ -192,7 +195,9 @@ window.AgentSessions = function (options) {
       var choices = Array.prototype.slice.call(list.querySelectorAll('.session-choice'));
       if (!choices.length) return;
       var at = choices.indexOf(document.activeElement);
-      event.preventDefault(); choices[(at + (event.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length].focus();
+      var next = at < 0 ? (event.key === 'ArrowDown' ? 0 : choices.length - 1) :
+        (at + (event.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length;
+      event.preventDefault(); choices[next].focus();
     }
   });
   window.addEventListener('keydown', function (event) {

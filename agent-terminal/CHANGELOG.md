@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.7.0
+- Create and rename independent sessions of the same provider and workspace.
+  Existing provider buttons keep their Main sessions and persistent logins.
+- Find sessions by task, provider, or workspace with Sessions or Ctrl+Shift+K
+  (⌘Shift+K on a Mac). Session names and stop state are shared across browsers.
+- Open two sessions side by side on wide screens, resize the divider, and
+  restore the split after reloading. Narrow screens show one session.
+  Closing a pane leaves its agent running.
+- Stop a session from its menu without another browser reconnecting and
+  restarting it. Start explicitly launches a fresh process.
+- Preserve independent terminal input, clipboard actions and mobile controls
+  in each pane. Add lifecycle, concurrency, browser and ttyd integration checks.
+
 ## 2.6.1
 - Update the Codex CLI to 0.159.3.
 

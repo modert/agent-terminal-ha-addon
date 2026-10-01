@@ -288,12 +288,6 @@ body { position: fixed; inset: 0; }
 #sessions-open, #split-toggle { padding: 0 10px; }
 #sessions-open { white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 #split-toggle[hidden] { display: none; }
-body.split #session-bar { flex-wrap: wrap; }
-body.split #workspace-label { display: none; }
-body.split #workspace { max-width: none; }
-body.split #agents { order: 2; flex: 1; }
-body.split #agents .agent-button { flex: 1; }
-body.split #sessions-open, body.split #split-toggle { order: 2; }
 @media (max-width: 560px) {
   #agents { flex-basis: auto; flex: 1; }
   #sessions-open, #split-toggle { order: 2; }
@@ -304,6 +298,7 @@ body.split #sessions-open, body.split #split-toggle { order: 2; }
 }
 #sessions-sheet { z-index: 10; padding: 16px; overflow-y: auto; touch-action: auto; }
 #sessions-sheet header { display: flex; align-items: center; gap: 10px; }
+#sessions-sheet .agent-button { flex: 0 0 auto; min-height: 44px; }
 #sessions-title { flex: 1; margin: 0; font-size: 19px; }
 #sessions-sheet input, #sessions-sheet select {
   width: 100%; min-height: 44px; margin-top: 6px; padding: 9px;
@@ -314,6 +309,7 @@ body.split #sessions-open, body.split #split-toggle { order: 2; }
 .sessions-toolbar input { min-width: 0; margin: 0 !important; }
 .sessions-toolbar button { flex: 0 0 auto; min-height: 44px; }
 .session-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.session-row > .agent-button { width: 44px; padding: 0; align-self: center; }
 .session-choice {
   flex: 1; min-width: 0; padding: 9px; border: 1px solid transparent; border-radius: 6px;
   background: transparent; color: var(--fg); text-align: left; font: inherit; cursor: pointer;
@@ -335,6 +331,21 @@ body.split #sessions-open, body.split #split-toggle { order: 2; }
 }
 #split-divider:hover, #split-divider:focus-visible { background: var(--accent); outline: none; }
 body.resizing #side-terminal { pointer-events: none; }
+body.split #session-bar, body.side-pane #session-bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px;
+}
+body.split #workspace-label, body.side-pane #workspace-label { display: none; }
+body.split #workspace, body.side-pane #workspace { grid-column: 1; grid-row: 1; width: 100%; max-width: none; }
+body.split #keys-switch, body.side-pane #keys-switch { grid-column: 2; grid-row: 1; justify-self: end; margin-left: 0; }
+body.split #top-collapse, body.side-pane #top-collapse { grid-column: 3; grid-row: 1; justify-self: end; }
+body.split #agents, body.side-pane #agents { grid-column: 1; grid-row: 2; min-width: 0; }
+body.split #agents .agent-button, body.side-pane #agents .agent-button { flex: 1; min-width: 0; padding: 0 6px; font-size: 12px; }
+body.split #sessions-open, body.side-pane #sessions-open { grid-column: 2; grid-row: 2; min-width: 0; max-width: 125px; }
+body.split #split-toggle, body.side-pane #split-toggle { grid-column: 3; grid-row: 2; padding: 0 8px; }
+body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button { min-height: 36px; }
+@media (pointer: coarse) {
+  body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button { min-height: 44px; }
+}
 </style>
 </head>
 <body>
@@ -646,7 +657,7 @@ body.resizing #side-terminal { pointer-events: none; }
       s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
       if (sessionManager) sessionManager.connect(token);
       doFit();
-      term.focus();
+      if (document.getElementById('sessions-sheet').hidden) term.focus();
     };
 
     s.onmessage = function (ev) {
@@ -1693,13 +1704,16 @@ body.resizing #side-terminal { pointer-events: none; }
   }
   function fitSplit() {
     if (!sideFrame) return;
-    splitRatio = Math.max(340 / window.innerWidth, Math.min(1 - 340 / window.innerWidth, splitRatio));
+    var minimum = Math.max(0.3, 380 / window.innerWidth);
+    splitRatio = Math.max(minimum, Math.min(1 - minimum, splitRatio));
     var percent = (splitRatio * 100) + '%';
     app.style.width = 'calc(' + percent + ' - 4px)';
     sideFrame.style.left = 'calc(' + percent + ' + 4px)';
     sideFrame.style.width = 'calc(' + ((1 - splitRatio) * 100) + '% - 4px)';
     divider.style.left = 'calc(' + percent + ' - 4px)';
     divider.setAttribute('aria-valuenow', String(Math.round(splitRatio * 100)));
+    divider.setAttribute('aria-valuemin', String(Math.round(minimum * 100)));
+    divider.setAttribute('aria-valuemax', String(Math.round((1 - minimum) * 100)));
     scheduleFit();
   }
   function closeSplit() {
@@ -1759,7 +1773,7 @@ body.resizing #side-terminal { pointer-events: none; }
   app.addEventListener('focusin', function () { sideFocused = false; postParent({ type: 'focus' }); });
   function updateSplitButton() {
     splitButton.hidden = !sidePane && !canSplit();
-    if (sidePane) { splitButton.textContent = 'Close pane'; splitButton.title = 'Hide this pane; its session keeps running'; }
+    if (sidePane) { document.body.classList.add('side-pane'); splitButton.textContent = 'Close'; splitButton.setAttribute('aria-label', 'Close pane'); splitButton.title = 'Hide this pane; its session keeps running'; }
     if (sideFrame && !canSplit()) {
       var selected = sideFocused ? peer : null;
       closeSplit();
@@ -1776,7 +1790,7 @@ body.resizing #side-terminal { pointer-events: none; }
   updateSplitButton();
   if (window.AgentSessions) sessionManager = new window.AgentSessions({
     base: base, tokenUrl: tokenUrl, config: sessionConfig, current: currentSession,
-    focus: function () { term.focus(); }, canSplit: canSplit, beside: openBeside,
+    focus: function () { if (!pasteEl.hidden) pasteBox.focus(); else term.focus(); }, canSplit: canSplit, beside: openBeside,
     select: function (record) { switchSession(record.agent, record.workspace, record.id); },
     changed: function (records) {
       updateSessionControls();
