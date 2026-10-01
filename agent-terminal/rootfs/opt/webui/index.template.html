@@ -284,6 +284,57 @@ body { position: fixed; inset: 0; }
   padding: 6px 12px; border-radius: 6px; background: var(--key-down); color: var(--fg);
   font-size: 13px; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+/* Session controls remain usable inside a narrow split pane. */
+#sessions-open, #split-toggle { padding: 0 10px; }
+#sessions-open { white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+#split-toggle[hidden] { display: none; }
+body.split #session-bar { flex-wrap: wrap; }
+body.split #workspace-label { display: none; }
+body.split #workspace { max-width: none; }
+body.split #agents { order: 2; flex: 1; }
+body.split #agents .agent-button { flex: 1; }
+body.split #sessions-open, body.split #split-toggle { order: 2; }
+@media (max-width: 560px) {
+  #agents { flex-basis: auto; flex: 1; }
+  #sessions-open, #split-toggle { order: 2; }
+  #sessions-open { flex: 0 0 auto; }
+  #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
+  #app.compact-height #workspace { width: 0; }
+  #app.compact-height #agents .agent-button { padding: 0 5px; font-size: 12px; }
+}
+#sessions-sheet { z-index: 10; padding: 16px; overflow-y: auto; touch-action: auto; }
+#sessions-sheet header { display: flex; align-items: center; gap: 10px; }
+#sessions-title { flex: 1; margin: 0; font-size: 19px; }
+#sessions-sheet input, #sessions-sheet select {
+  width: 100%; min-height: 44px; margin-top: 6px; padding: 9px;
+  background: var(--key); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 16px;
+}
+#sessions-sheet [hidden] { display: none !important; }
+.sessions-toolbar { display: flex; align-items: center; gap: 8px; margin: 14px 0; }
+.sessions-toolbar input { min-width: 0; margin: 0 !important; }
+.sessions-toolbar button { flex: 0 0 auto; min-height: 44px; }
+.session-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.session-choice {
+  flex: 1; min-width: 0; padding: 9px; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--fg); text-align: left; font: inherit; cursor: pointer;
+}
+.session-choice strong, .session-choice span { display: block; overflow-wrap: anywhere; }
+.session-choice span { margin-top: 5px; color: #aeb4bf; font-size: 12px; }
+.session-choice[aria-current="true"] { border-color: var(--accent); }
+.session-choice:focus-visible { outline: 2px solid var(--accent); }
+.session-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; padding: 6px; }
+#sessions-form label { display: block; margin: 16px 0; }
+#sessions-explanation, #sessions-status { color: #aeb4bf; line-height: 1.5; }
+#sessions-status { min-height: 24px; }
+#sessions-form footer { display: flex; justify-content: flex-end; gap: 8px; }
+#sessions-save { background: var(--accent); color: var(--bg); }
+#side-terminal { position: fixed; top: 0; height: 100%; border: 0; background: var(--bg); }
+#split-divider {
+  position: fixed; top: 0; bottom: 0; width: 8px; background: var(--line);
+  cursor: col-resize; touch-action: none; z-index: 12;
+}
+#split-divider:hover, #split-divider:focus-visible { background: var(--accent); outline: none; }
+body.resizing #side-terminal { pointer-events: none; }
 </style>
 </head>
 <body>
@@ -292,6 +343,9 @@ body { position: fixed; inset: 0; }
     <label id="workspace-label" for="workspace">Workspace</label>
     <select id="workspace" title="Task folder and instructions"></select>
     <div id="agents" role="group" aria-label="Agent"></div>
+    <button type="button" class="agent-button" id="sessions-open" aria-haspopup="dialog" aria-controls="sessions-sheet"
+            aria-expanded="false" title="Sessions (Ctrl+Shift+K)">Sessions</button>
+    <button type="button" class="agent-button" id="split-toggle" title="Open another session beside this one" hidden>Split</button>
     <button type="button" class="agent-button" id="keys-switch" aria-label="On-screen keys"
             aria-controls="bar" aria-pressed="false" title="Show on-screen keys">
       <svg viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
@@ -350,10 +404,29 @@ body { position: fixed; inset: 0; }
     </div>
   </div>
   <div id="toast" role="status" hidden></div>
+  <section id="sessions-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sessions-title" hidden>
+    <header><h2 id="sessions-title">Sessions</h2><button type="button" class="agent-button" id="sessions-done">Done</button></header>
+    <div id="sessions-browse">
+      <div class="sessions-toolbar">
+        <input id="sessions-search" type="search" placeholder="Find a session…" aria-label="Find a session" autocomplete="off">
+        <button type="button" class="agent-button" id="sessions-new">+ New</button>
+      </div>
+      <div id="sessions-list"></div>
+    </div>
+    <form id="sessions-form" hidden>
+      <label id="sessions-name-row">Session name<input id="sessions-name" required maxlength="80" autocomplete="off" placeholder="Dashboard refresh"></label>
+      <label id="sessions-provider-row">Provider<select id="sessions-provider"></select></label>
+      <label id="sessions-workspace-row">Workspace<select id="sessions-workspace"></select></label>
+      <p id="sessions-explanation"></p>
+      <footer><button type="button" class="agent-button" id="sessions-back">Back</button><button type="submit" class="agent-button" id="sessions-save">Create session</button></footer>
+    </form>
+    <p id="sessions-status" role="status"></p>
+  </section>
 </div>
 
 <script>/*{{XTERM_JS}}*/</script>
 <script>/*{{FIT_JS}}*/</script>
+<script>/*{{SESSIONS_JS}}*/</script>
 <script>
 /* Mobile-friendly ttyd client for the Agent Terminal add-on.
  *
@@ -399,7 +472,8 @@ body { position: fixed; inset: 0; }
   var sessionBar = document.getElementById('session-bar');
   var sessionStrip = document.getElementById('session-strip');
   var topCollapse = document.getElementById('top-collapse');
-  var sessionKey = 'session:' + base;
+  var sidePane = new URLSearchParams(location.search).get('pane') === 'side';
+  var sessionKey = 'session:' + base + (sidePane ? ':side' : '');
   var savedSession = {};
   try { savedSession = JSON.parse(lsGet(sessionKey, '{}')) || {}; } catch (e) {}
   var queryArgs = new URLSearchParams(location.search).getAll('arg');
@@ -410,12 +484,19 @@ body { position: fixed; inset: 0; }
   if (!hasAgent(selectedAgent)) selectedAgent = sessionConfig.agents[0].id;
   var selectedWorkspace = queryArgs[1] || savedSession.workspace || 'homeassistant';
   if (!hasWorkspace(selectedWorkspace)) selectedWorkspace = 'homeassistant';
+  var selectedSession = queryArgs.length ? (queryArgs[2] || '') : (savedSession.id || '');
+  if (!/^session-[a-f0-9]{32}$/.test(selectedSession)) selectedSession = '';
+  var sessionManager = null, sessionStopped = false;
+  function currentSession() {
+    return { id: selectedSession || 'agent-' + selectedWorkspace + '-' + selectedAgent, agent: selectedAgent, workspace: selectedWorkspace };
+  }
 
   function sessionQuery() {
     var query = new URLSearchParams(location.search);
     query.delete('arg');
     query.append('arg', selectedAgent);
     query.append('arg', selectedWorkspace);
+    if (selectedSession) query.append('arg', selectedSession);
     return '?' + query.toString();
   }
   function updateSessionControls() {
@@ -426,21 +507,32 @@ body { position: fixed; inset: 0; }
     var agent = sessionConfig.agents.find(function (a) { return a.id === selectedAgent; });
     var workspace = sessionConfig.workspaces.find(function (w) { return w.id === selectedWorkspace; });
     workspaceEl.title = workspace.directory;
-    document.getElementById('session-summary').textContent = agent.name + ' · ' + workspace.name;
-    document.title = agent.name + ' · ' + workspace.name + ' · Agent Terminal';
-    lsSet(sessionKey, JSON.stringify({ agent: selectedAgent, workspace: selectedWorkspace }));
+    var record = sessionManager && sessionManager.records().find(function (r) { return r.id === currentSession().id; });
+    var title = (record ? record.name + ' · ' : selectedSession ? 'Session · ' : '') + agent.name + ' · ' + workspace.name;
+    document.getElementById('session-summary').textContent = title;
+    document.title = title + ' · Agent Terminal';
+    document.getElementById('sessions-open').title = title + ' (Ctrl+Shift+K)';
+    document.getElementById('sessions-open').textContent = record && record.name !== 'Main' ? record.name : 'Sessions';
+    lsSet(sessionKey, JSON.stringify({ agent: selectedAgent, workspace: selectedWorkspace, id: selectedSession }));
   }
-  function switchSession(agent, workspace) {
+  function switchSession(agent, workspace, session) {
     if (!hasAgent(agent) || !hasWorkspace(workspace)) return;
-    if (agent === selectedAgent && workspace === selectedWorkspace) { term.focus(); return; }
+    session = /^session-[a-f0-9]{32}$/.test(session || '') ? session : '';
+    var id = session || 'agent-' + workspace + '-' + agent;
+    if (focusOtherSession(id)) return;
+    if (id === currentSession().id) { term.focus(); return; }
     selectedAgent = agent;
     selectedWorkspace = workspace;
+    selectedSession = session;
+    var record = sessionManager && sessionManager.records().find(function (r) { return r.id === id; });
+    sessionStopped = !!(record && record.stopped);
     hideMenu(); closePaste(); closeSelect(); setKeysOpen(false);
     term.clearSelection();
     updateSessionControls();
     // Preserve keys/debug parameters; explicit session URLs survive reloads.
     try { history.replaceState(null, '', location.pathname + sessionQuery() + location.hash); } catch (e) {}
     retry = 500;
+    notifySelection();
     connect();
   }
   sessionConfig.workspaces.forEach(function (workspace) {
@@ -517,6 +609,7 @@ body { position: fixed; inset: 0; }
     // The tmux session continues running when this websocket detaches.
     var previous = sock; sock = null;
     if (previous) previous.close();
+    if (sessionStopped) { showOverlay('Session stopped. Open Sessions to start it.'); return; }
     showOverlay('Connecting…');
     // Drain queued output with input disconnected before reusing the terminal.
     // Escape-sequence replies from the old session cannot reach the new one.
@@ -551,6 +644,7 @@ body { position: fixed; inset: 0; }
       if (opened) { term.reset(); }
       opened = true;
       s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
+      if (sessionManager) sessionManager.connect(token);
       doFit();
       term.focus();
     };
@@ -1527,7 +1621,7 @@ body { position: fixed; inset: 0; }
     // A phone on its side: wider than the tallest it has been since turning,
     // and short. Comparing with that height, not the current one, keeps the
     // on-screen keyboard from flipping an upright phone into this layout.
-    app.classList.toggle('side-keys', touch && window.innerWidth > maxH && maxH < 520);
+    app.classList.toggle('side-keys', touch && (app.clientWidth || window.innerWidth) > maxH && maxH < 520);
     app.style.transform = top ? 'translateY(' + top + 'px)' : '';
     // Drop the home-indicator gutter while the keyboard is covering it anyway.
     var keyboardUp = (maxH - h) > 120;
@@ -1567,7 +1661,7 @@ body { position: fixed; inset: 0; }
   });
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
 
-  overlay.addEventListener('click', function () { retry = 500; connect(); });
+  overlay.addEventListener('click', function () { if (sessionStopped && sessionManager) sessionManager.open(); else { retry = 500; connect(); } });
   // A phone suspends a page in the background, where the retry delay can grow
   // to its maximum. Coming back to it, or back online, retries at once.
   function reconnectNow() {
@@ -1577,6 +1671,129 @@ body { position: fixed; inset: 0; }
   }
   document.addEventListener('visibilitychange', reconnectNow);
   window.addEventListener('online', reconnectNow);
+
+  // A second full client gives each pane its own input, clipboard, connection
+  // generation and mobile draft. Removing the iframe only detaches tmux.
+  var sideFrame = null, divider = null, peer = null, parentSession = null, sideFocused = false;
+  var splitButton = document.getElementById('split-toggle');
+  var splitRatio = Math.max(0.3, Math.min(0.7, Number(lsGet('split-ratio', '0.5')) || 0.5));
+  var splitKey = 'split:' + base;
+  function canSplit() { return !sidePane && window.innerWidth >= 960; }
+  function postParent(message) {
+    if (sidePane && window.parent !== window) window.parent.postMessage(Object.assign({ source: 'agent-terminal' }, message), location.origin);
+  }
+  function notifySelection() {
+    postParent({ type: 'selection', session: currentSession() });
+    if (sideFrame) sideFrame.contentWindow.postMessage({ source: 'agent-terminal', type: 'other-session', session: currentSession() }, location.origin);
+  }
+  function focusOtherSession(id) {
+    if (sideFrame && peer && peer.id === id) { sideFrame.contentWindow.focus(); return true; }
+    if (sidePane && parentSession && parentSession.id === id) { postParent({ type: 'focus-other' }); return true; }
+    return false;
+  }
+  function fitSplit() {
+    if (!sideFrame) return;
+    splitRatio = Math.max(340 / window.innerWidth, Math.min(1 - 340 / window.innerWidth, splitRatio));
+    var percent = (splitRatio * 100) + '%';
+    app.style.width = 'calc(' + percent + ' - 4px)';
+    sideFrame.style.left = 'calc(' + percent + ' + 4px)';
+    sideFrame.style.width = 'calc(' + ((1 - splitRatio) * 100) + '% - 4px)';
+    divider.style.left = 'calc(' + percent + ' - 4px)';
+    divider.setAttribute('aria-valuenow', String(Math.round(splitRatio * 100)));
+    scheduleFit();
+  }
+  function closeSplit() {
+    if (!sideFrame) return;
+    sideFrame.remove(); divider.remove(); sideFrame = divider = null; peer = null;
+    document.body.classList.remove('split'); app.style.width = '';
+    lsSet(splitKey, ''); splitButton.textContent = 'Split'; splitButton.title = 'Open another session beside this one';
+    layout(); term.focus();
+  }
+  function openBeside(record) {
+    if (!canSplit()) { toast('Split view needs a wider screen.'); return; }
+    if (record.id === currentSession().id) { toast('Choose a different session for the second pane.'); return; }
+    if (sideFrame && peer && peer.id === record.id) { sideFrame.contentWindow.focus(); return; }
+    if (sideFrame) closeSplit();
+    peer = record;
+    var query = new URLSearchParams(location.search); query.delete('arg');
+    query.append('arg', record.agent); query.append('arg', record.workspace);
+    if (/^session-/.test(record.id)) query.append('arg', record.id);
+    query.set('pane', 'side');
+    sideFrame = document.createElement('iframe'); sideFrame.id = 'side-terminal';
+    sideFrame.title = 'Second terminal session'; sideFrame.allow = 'clipboard-read; clipboard-write';
+    sideFrame.src = location.pathname + '?' + query.toString();
+    divider = document.createElement('div'); divider.id = 'split-divider'; divider.tabIndex = 0;
+    divider.setAttribute('role', 'separator'); divider.setAttribute('aria-label', 'Resize terminal panes');
+    divider.setAttribute('aria-orientation', 'vertical'); divider.setAttribute('aria-valuemin', '30'); divider.setAttribute('aria-valuemax', '70');
+    var dragging = false;
+    divider.addEventListener('pointerdown', function (event) {
+      event.preventDefault(); dragging = true; divider.setPointerCapture(event.pointerId); document.body.classList.add('resizing');
+    });
+    divider.addEventListener('pointermove', function (event) { if (dragging) { splitRatio = event.clientX / window.innerWidth; fitSplit(); } });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (name) {
+      divider.addEventListener(name, function () { dragging = false; document.body.classList.remove('resizing'); lsSet('split-ratio', String(splitRatio)); });
+    });
+    divider.addEventListener('keydown', function (event) {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault(); splitRatio += event.key === 'ArrowLeft' ? -0.05 : 0.05; fitSplit(); lsSet('split-ratio', String(splitRatio));
+    });
+    divider.addEventListener('dblclick', function () { splitRatio = 0.5; fitSplit(); lsSet('split-ratio', '0.5'); });
+    document.body.appendChild(sideFrame); document.body.appendChild(divider); document.body.classList.add('split');
+    splitButton.textContent = 'Unsplit'; splitButton.title = 'Hide the second pane; its session keeps running';
+    lsSet(splitKey, JSON.stringify(record)); fitSplit();
+  }
+  window.addEventListener('message', function (event) {
+    if (event.origin !== location.origin || !event.data || event.data.source !== 'agent-terminal') return;
+    var data = event.data;
+    if (sidePane && event.source === window.parent) {
+      if (data.type === 'other-session') parentSession = data.session;
+      return;
+    }
+    if (!sideFrame || event.source !== sideFrame.contentWindow) return;
+    if (data.type === 'selection') { peer = data.session; lsSet(splitKey, JSON.stringify(peer)); notifySelection(); }
+    else if (data.type === 'close-pane') closeSplit();
+    else if (data.type === 'focus') sideFocused = true;
+    else if (data.type === 'focus-other') term.focus();
+  });
+  app.addEventListener('pointerdown', function () { sideFocused = false; postParent({ type: 'focus' }); }, true);
+  app.addEventListener('focusin', function () { sideFocused = false; postParent({ type: 'focus' }); });
+  function updateSplitButton() {
+    splitButton.hidden = !sidePane && !canSplit();
+    if (sidePane) { splitButton.textContent = 'Close pane'; splitButton.title = 'Hide this pane; its session keeps running'; }
+    if (sideFrame && !canSplit()) {
+      var selected = sideFocused ? peer : null;
+      closeSplit();
+      if (selected) switchSession(selected.agent, selected.workspace, selected.id);
+    }
+    fitSplit();
+  }
+  splitButton.addEventListener('click', function () {
+    if (sidePane) postParent({ type: 'close-pane' });
+    else if (sideFrame) closeSplit();
+    else if (sessionManager) sessionManager.open(true);
+  });
+  window.addEventListener('resize', updateSplitButton);
+  updateSplitButton();
+  if (window.AgentSessions) sessionManager = new window.AgentSessions({
+    base: base, tokenUrl: tokenUrl, config: sessionConfig, current: currentSession,
+    focus: function () { term.focus(); }, canSplit: canSplit, beside: openBeside,
+    select: function (record) { switchSession(record.agent, record.workspace, record.id); },
+    changed: function (records) {
+      updateSessionControls();
+      var record = records.find(function (r) { return r.id === currentSession().id; });
+      var stopped = !record || record.stopped;
+      if (stopped) {
+        sessionStopped = true; ++connectionId;
+        clearTimeout(retryTimer); retryTimer = null;
+        var previous = sock; sock = null; if (previous) previous.close();
+        showOverlay(record ? 'Session stopped. Open Sessions to start it.' : 'Session unavailable. Choose another in Sessions.');
+      } else if (sessionStopped) { sessionStopped = false; retry = 500; connect(); }
+    }
+  });
+  notifySelection();
+  if (canSplit()) {
+    try { var savedSplit = JSON.parse(lsGet(splitKey, 'null')); if (savedSplit && hasAgent(savedSplit.agent) && hasWorkspace(savedSplit.workspace)) openBeside(savedSplit); } catch (e) {}
+  }
 
   layout();
   doFit();
