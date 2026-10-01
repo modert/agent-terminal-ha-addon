@@ -8,7 +8,7 @@ import vm from 'node:vm';
 // browser or a connection to the user's tmux session.
 const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
   import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
-const script = [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
+const script = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
 async function page({ touch = true, search = '', saved = [] } = {}) {
   const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
@@ -29,6 +29,7 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
       getAttribute(k) { return this.attributes[k]; },
       removeAttribute(k) { delete this.attributes[k]; },
       querySelector() { return terminal.textarea; },
+      querySelectorAll() { return []; },
       focus() { document.activeElement = this; },
       blur() { if (document.activeElement === this) document.activeElement = null; this.fire('blur'); },
       addEventListener(k, fn) {
@@ -46,12 +47,12 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
     getElementById(id) {
       if (!ids.has(id)) {
         const el = element();
-        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast'].includes(id);
+        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast', 'sessions-sheet'].includes(id);
         ids.set(id, el);
       }
       return ids.get(id);
     },
-    createElement: element, addEventListener() {}, documentElement: element(),
+    createElement: element, addEventListener() {}, documentElement: element(), body: element(),
     execCommand(command, _ui, text) {
       assert.equal(command, 'insertText');
       const box = document.activeElement;
@@ -85,7 +86,7 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
   class WebSocket {
     static OPEN = 1;
     readyState = 1;
-    constructor() { socket = this; }
+    constructor(url) { if (!url.includes('?arg=sessions')) socket = this; }
     send(data) { packets.push(new TextDecoder().decode(data)); }
     close() { this.readyState = 3; if (this.onclose) this.onclose(); }
   }

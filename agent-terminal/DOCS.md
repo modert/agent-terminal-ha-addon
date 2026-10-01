@@ -137,6 +137,55 @@ same workspace and agent reconnects to that live process, including its
 conversation. Conversations are separate; switching does not transfer chat
 history between providers. Sign in to each provider once.
 
+### Named sessions and split view
+
+Open **Sessions** (or **Ctrl+Shift+K**, **⌘Shift+K** on a Mac), then **+ New session**.
+Give the session a task name and optional short purpose, choose its provider and workspace, and click
+**Create session**. You can run several ChatGPT or Claude sessions in the same
+workspace with separate conversations. They share that workspace's files and
+the provider's saved login. The existing provider buttons return to each
+provider's original session, shown as **General session** in the picker until
+you rename it; existing running sessions are preserved.
+
+The picker groups tasks by workspace, with a provider icon and label on each
+row. **Current**, **Left pane**, and **Right pane** show where a session is
+visible. Search by task name, purpose, provider, or workspace; arrow keys and
+Enter choose a result. Unused default sessions are hidden until you choose
+**Show unused sessions** or search for them.
+
+Use **••• → Edit details** to change a task name or purpose without restarting
+it. The menu also offers **Stop** and **Start**. **Running** means the terminal
+process exists; it does not indicate whether the model is working or waiting
+for input. **Ready to start** sessions start when opened. Names, purpose notes,
+and stop state are shared between browsers and saved
+under `/data/agent-terminal/sessions/`.
+
+On screens at least 960 pixels wide, **Split view** immediately opens a second
+pane while keeping your current terminal visible on the left. Choose an
+existing task or **+ New session** in the right pane; nothing attaches or starts
+there until you choose. **Cancel** removes the empty pane. You can also choose
+**Open beside** from a session's menu to open that session directly. Drag the
+divider to resize the panes, or focus it and use the left/right arrow keys.
+Each pane has independent typing, clipboard, and helper-key controls. The
+browser remembers both selections and the divider position across reloads.
+**Unsplit** or **Close** hides the second pane and leaves its agent running.
+Narrowing the screen returns to one pane, keeping the focused session visible.
+
+**Stop** ends the running process after confirmation. Automatic reconnects
+from other browsers cannot restart it; **Start** explicitly allows a fresh
+process. Closing a pane, switching sessions, and closing the browser only
+detach. A full add-on restart still ends running processes; named session
+metadata and provider-saved conversations survive, but running tasks do not.
+
+Sessions in the same workspace can edit the same files. Use separate folders
+or Git worktrees when independent coding tasks need separate working copies.
+
+SSH can attach to a named session using its ID (the third `arg` in its URL):
+
+```sh
+agent-session --session session-0123456789abcdef0123456789abcdef
+```
+
 The browser remembers your selection. The `agent` option supplies the first
 choice in a new browser. An existing `web_command` adds a **Custom** button
 and supplies the initial choice; the Claude, ChatGPT, and Shell buttons still
@@ -151,10 +200,9 @@ agent-session --agent shell --workspace automations
 ```
 
 Closing the page or switching away only detaches. Exiting the CLI ends its
-process; an open panel reconnects and starts a fresh one. To stop a session
-without relaunching it, switch to Shell, then use `tmux kill-session -t
-=agent-WORKSPACE-AGENT` with the relevant IDs. A full add-on restart stops all
-live sessions.
+process; an open panel reconnects and starts a fresh one. Use **Sessions →
+••• → Stop** to stop it without automatic relaunch. A full add-on restart
+stops all live sessions.
 
 ### Task workspaces and skills
 
@@ -377,8 +425,9 @@ that file through this contract:
 2. Add the name to `ARG AGENTS` in the Dockerfile (or pass it via
    `build.yaml` args) so the CLI is installed.
 3. Add it to the `agent` schema in `config.yaml`: `list(claude|<agent>)`.
-4. Add its ID to `agent-session`'s validated mode list and the agent metadata
-   in `workspaces.mjs` (and the fallback in `index.template.html`). The first
+4. Add its ID to `agent-session`'s validated mode list, the session validators
+   and metadata in `sessions.mjs`, and the metadata in `workspaces.mjs` (and
+   the fallback in `index.template.html`). The first
    three toolbar entries have Ctrl+Shift+1 / 2 / 3 shortcuts.
 
 Switching `agent` keeps each agent's data in its own `AGENT_DATA`, so logins
@@ -410,6 +459,11 @@ out-of-order browser connections and clipboard input, and real ttyd WebSocket
 sessions with stub provider commands. They verify that switching preserves
 processes, separates workspaces, keeps login-shell working directories, and
 serves newly created workspaces without restarting ttyd.
+`tests/test_sessions.mjs` uses a separate temporary tmux server to check named
+process isolation, persisted stop state, input validation, and concurrent
+launch/stop operations. It requires tmux and `flock` (both supplied by the
+add-on). The container integration test exercises management requests through
+the real ttyd WebSocket and PTY, alongside named provider terminals.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.
@@ -434,6 +488,14 @@ then point the test at Chromium and the resulting bundle:
 ```sh
 CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_webui_browser.mjs
 ```
+
+The browser suite also creates and renames sessions, routes real keystrokes
+to separate split panes, resizes and restores the split, stops and restarts
+a session, and checks workspace groups, purpose search, and the picker on a
+narrow screen. It also verifies that opening or canceling an empty second pane
+never connects to an agent, and that creating a task there preserves the left
+terminal. Its management transport
+is simulated; it does not send keys or lifecycle operations to live agents.
 
 The browser test uses real touch activation and composition events with the
 bundled xterm, including repeated word replacement, Korean composition, and

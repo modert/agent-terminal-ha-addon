@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const template = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/index.template.html', import.meta.url), 'utf8');
-const source = template.split('<script>').at(-1).split('</script>')[0];
+const source = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client(search = '') {
@@ -18,6 +18,7 @@ function client(search = '') {
     addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
     emit(type, event = {}) { for (const callback of this.listeners[type] || []) callback({ preventDefault() {}, ...event }); }
     querySelector() { return null; }
+    querySelectorAll() { return []; }
     focus() {} blur() {} contains() { return false; }
   }
   const elements = {};
@@ -31,7 +32,7 @@ function client(search = '') {
   window.getSelection = () => ({ removeAllRanges() {} });
   const location = new URL('https://example.test/api/hassio_ingress/test/' + search);
   const storage = new Map(), fetches = [], sockets = [], timers = new Map(), copies = [];
-  let timerId = 0, terminal, clipboardResolve;
+  let timerId = 0, terminal, clipboardResolve, control;
   class Terminal {
     constructor(options) { this.options = options; terminal = this; }
     cols = 100; rows = 30; output = []; pastes = []; resets = 0; selection = '';
@@ -52,7 +53,8 @@ function client(search = '') {
   }
   class WebSocket {
     static OPEN = 1;
-    constructor(url) { this.url = new URL(url); this.sent = []; this.readyState = 0; sockets.push(this); }
+    constructor(url) { this.url = new URL(url); this.sent = []; this.readyState = 0;
+      if (this.url.searchParams.get('arg') === 'sessions') control = this; else sockets.push(this); }
     send(bytes) { this.sent.push(new TextDecoder().decode(bytes)); }
     open() { this.readyState = 1; this.onopen(); }
     close() { this.readyState = 3; this.onclose?.(); }
@@ -74,7 +76,7 @@ function client(search = '') {
     clearInterval: id => timers.delete(id),
   });
   const select = agent => elements.agents.children.find(b => b.dataset.agent === agent).emit('click');
-  return { elements, document, window, location, fetches, sockets, terminal, timers, select, copies,
+  return { elements, document, window, location, fetches, sockets, terminal, timers, select, copies, control: () => control,
     resolveClipboard: text => clipboardResolve(text),
     settle: () => { const id = [...timers.keys()].at(-1); const callback = timers.get(id); timers.delete(id); callback(); },
     async connect(index = fetches.length - 1) { fetches[index](); await tick(); sockets.at(-1).open(); },
@@ -99,6 +101,30 @@ test('latest selection wins while token requests and old sockets complete out of
   assert.equal(c.sockets[1].sent.at(-1), '0shell input');
   assert.equal(old.sent.includes('0shell input'), false);
   assert.equal(c.elements.agents.children[2].attributes['aria-pressed'], 'true');
+});
+
+test('named session URLs survive reload and remote stops cancel every terminal reconnect', async () => {
+  const id = 'session-' + 'a'.repeat(32);
+  const c = client('?arg=codex&arg=homeassistant&arg=' + id);
+  await tick(); await c.connect();
+  assert.deepEqual(c.sockets[0].url.searchParams.getAll('arg'), ['codex', 'homeassistant', id]);
+  const control = c.control(); control.open();
+  const snapshot = stopped => JSON.stringify({ type: 'sessions',
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+    workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
+    sessions: [{ id, name: 'Dashboard refresh', agent: 'codex', workspace: 'homeassistant', stopped, running: !stopped }] }) + '\n';
+  control.output(snapshot(false));
+  assert.equal(c.elements['sessions-open'].textContent, 'Dashboard refresh');
+  control.output(snapshot(true));
+  assert.equal(c.sockets[0].readyState, 3);
+  assert.match(c.elements['overlay-msg'].textContent, /Session stopped/);
+  const requests = c.fetches.length;
+  c.sockets[0].onclose(); c.window.emit('online'); await tick();
+  assert.equal(c.fetches.length, requests, 'a stopped session cannot auto-reconnect');
+  control.output(snapshot(false)); await tick();
+  assert.equal(c.fetches.length, requests + 1, 'an explicit start observed from another browser reconnects');
+  await c.connect();
+  assert.deepEqual(c.sockets.at(-1).url.searchParams.getAll('arg'), ['codex', 'homeassistant', id]);
 });
 
 test('shortcuts change agents and delayed clipboard input stays with its original session', async () => {
