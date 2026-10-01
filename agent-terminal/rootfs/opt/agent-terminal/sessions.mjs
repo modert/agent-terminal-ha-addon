@@ -30,6 +30,12 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
     }
     return value.trim();
   }
+  function description(value = '') {
+    if (typeof value !== 'string' || value.length > 160 || /[\x00-\x1f\x7f]/.test(value)) {
+      throw new Error('Purpose must be at most 160 printable characters.');
+    }
+    return value.trim();
+  }
   function pair(agent, workspace, existing = false) {
     if (!(existing && agent === 'custom') && !agents().some(a => a.id === agent)) throw new Error('Unknown agent.');
     workspaces.get(workspace);
@@ -47,7 +53,7 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
     if (record.id !== id || typeof record.stopped !== 'boolean') throw new Error('Invalid session record.');
     const selection = pair(record.agent, record.workspace, true);
     if (!NAMED.test(id) && id !== `agent-${selection.workspace}-${selection.agent}`) throw new Error('Invalid session record.');
-    return { id, name: name(record.name), ...selection, stopped: record.stopped };
+    return { id, name: name(record.name), description: description(record.description), ...selection, stopped: record.stopped };
   }
   function save(record) {
     mkdirSync(registry, { recursive: true, mode: 0o700 });
@@ -84,12 +90,16 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
   }
   function create(input) {
     const record = { id: 'session-' + randomUUID().replaceAll('-', ''),
-      name: name(input.name), ...pair(input.agent, input.workspace), stopped: false };
+      name: name(input.name), description: description(input.description), ...pair(input.agent, input.workspace), stopped: false };
     return locked(record.id, () => save(record));
   }
-  function rename(id, value) {
+  function rename(id, value, purpose) {
     const label = name(value);
-    return locked(id, () => save({ ...get(id), name: label }));
+    const note = purpose === undefined ? undefined : description(purpose);
+    return locked(id, () => {
+      const record = get(id);
+      return save({ ...record, name: label, description: note === undefined ? record.description : note });
+    });
   }
   function stop(id) {
     return locked(id, () => {
@@ -121,7 +131,7 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
     switch (input.method) {
       case 'list': return snapshot();
       case 'create': return create(input);
-      case 'rename': return rename(input.session, input.name);
+      case 'rename': return rename(input.session, input.name, input.description);
       case 'stop': return stop(input.session);
       case 'start': return start(input.session);
       default: throw new Error('Unknown session operation.');

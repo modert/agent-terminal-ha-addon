@@ -139,22 +139,32 @@ history between providers. Sign in to each provider once.
 
 ### Named sessions and split view
 
-Open **Sessions** (or **Ctrl+Shift+K**, **⌘Shift+K** on a Mac), then **+ New**.
-Give the session a task name, choose its provider and workspace, and click
+Open **Sessions** (or **Ctrl+Shift+K**, **⌘Shift+K** on a Mac), then **+ New session**.
+Give the session a task name and optional short purpose, choose its provider and workspace, and click
 **Create session**. You can run several ChatGPT or Claude sessions in the same
 workspace with separate conversations. They share that workspace's files and
 the provider's saved login. The existing provider buttons return to each
-provider's **Main** session; existing running sessions are preserved.
+provider's original session, shown as **General session** in the picker until
+you rename it; existing running sessions are preserved.
 
-Search the picker by task name, provider, or workspace. Arrow keys and Enter
-choose a result. The **•••** menu offers **Rename**, **Stop**, and, for a stopped
-session, **Start**. **Running** means the terminal process exists; it does not
-indicate whether the model is working or waiting for input. **Ready** sessions
-start when opened. Names and stop state are shared between browsers and saved
+The picker groups tasks by workspace, with a provider icon and label on each
+row. **Current**, **Left pane**, and **Right pane** show where a session is
+visible. Search by task name, purpose, provider, or workspace; arrow keys and
+Enter choose a result. Unused default sessions are hidden until you choose
+**Show unused sessions** or search for them.
+
+Use **••• → Edit details** to change a task name or purpose without restarting
+it. The menu also offers **Stop** and **Start**. **Running** means the terminal
+process exists; it does not indicate whether the model is working or waiting
+for input. **Ready to start** sessions start when opened. Names, purpose notes,
+and stop state are shared between browsers and saved
 under `/data/agent-terminal/sessions/`.
 
-On screens at least 960 pixels wide, **Split** opens the picker for a second
-session. You can also choose **Open beside** from a session's menu. Drag the
+On screens at least 960 pixels wide, **Split view** immediately opens a second
+pane while keeping your current terminal visible on the left. Choose an
+existing task or **+ New session** in the right pane; nothing attaches or starts
+there until you choose. **Cancel** removes the empty pane. You can also choose
+**Open beside** from a session's menu to open that session directly. Drag the
 divider to resize the panes, or focus it and use the left/right arrow keys.
 Each pane has independent typing, clipboard, and helper-key controls. The
 browser remembers both selections and the divider position across reloads.
@@ -481,7 +491,10 @@ CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_
 
 The browser suite also creates and renames sessions, routes real keystrokes
 to separate split panes, resizes and restores the split, stops and restarts
-a session, and checks the picker on a narrow screen. Its management transport
+a session, and checks workspace groups, purpose search, and the picker on a
+narrow screen. It also verifies that opening or canceling an empty second pane
+never connects to an agent, and that creating a task there preserves the left
+terminal. Its management transport
 is simulated; it does not send keys or lifecycle operations to live agents.
 
 The browser test uses real touch activation and composition events with the

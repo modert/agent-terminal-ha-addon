@@ -25,7 +25,7 @@ function fixture(t) {
 
 test('same provider sessions have independent processes, reattach, and preserve names', t => {
   const { paths, store, pid } = fixture(t);
-  const first = store.create({ name: 'Dashboard refresh', agent: 'codex', workspace: 'homeassistant' });
+  const first = store.create({ name: 'Dashboard refresh', description: 'Make the wall tablet easier to read', agent: 'codex', workspace: 'homeassistant' });
   const second = store.create({ name: 'Attic fan', agent: 'codex', workspace: 'homeassistant' });
   assert.notEqual(first.id, second.id);
   store.ensure('codex', 'homeassistant', first.id, 'exec sleep 120');
@@ -36,6 +36,9 @@ test('same provider sessions have independent processes, reattach, and preserve 
   assert.equal(pid(first.id), original, 'reattach never executes a replacement command');
   store.rename(first.id, 'Review dashboard');
   assert.equal(createSessionStore(paths).get(first.id).name, 'Review dashboard');
+  assert.equal(createSessionStore(paths).get(first.id).description, 'Make the wall tablet easier to read', 'name-only clients preserve the purpose');
+  store.request({ method: 'rename', session: first.id, name: 'Review dashboard', description: 'Check the tablet layout' });
+  assert.equal(createSessionStore(paths).get(first.id).description, 'Check the tablet layout');
   assert.equal(store.list().filter(s => s.running).length, 2);
 });
 
@@ -44,6 +47,8 @@ test('stopping persists before reconnect; starting is explicit, including legacy
   const id = store.ensure('shell', 'homeassistant', '', 'exec sleep 120');
   assert.equal(id, 'agent-homeassistant-shell');
   const original = pid(id);
+  assert.equal(store.get(id).description, '', 'legacy sessions do not need a metadata migration');
+  store.rename(id, 'Maintenance', 'Inspect the automation logs');
   store.stop(id);
   const browser = createSessionStore(paths);
   assert.equal(browser.get(id).stopped, true);
@@ -55,6 +60,7 @@ test('stopping persists before reconnect; starting is explicit, including legacy
   browser.ensure('shell', 'homeassistant', '', 'exec sleep 120');
   assert.notEqual(pid(id), original);
   assert.equal(browser.get(id).name, 'Maintenance');
+  assert.equal(browser.get(id).description, 'Inspect the automation logs', 'stop, start and rename preserve purpose');
 });
 
 test('session operations reject paths, commands, mismatched providers and corrupt records', t => {
@@ -69,6 +75,11 @@ test('session operations reject paths, commands, mismatched providers and corrup
     assert.throws(() => store.create({ name, agent: 'codex', workspace: 'homeassistant' }), /Session name/);
   }
   const record = store.create({ name: '<script>literal</script>', agent: 'codex', workspace: 'homeassistant' });
+  for (const description of ['x'.repeat(161), 'line\nbreak', null, 123]) {
+    assert.throws(() => store.create({ name: 'Purpose', description, agent: 'codex', workspace: 'homeassistant' }), /Purpose/);
+    assert.throws(() => store.rename(record.id, 'Changed', description), /Purpose/);
+    assert.equal(store.get(record.id).name, '<script>literal</script>', 'invalid details cannot partially rename a session');
+  }
   assert.throws(() => store.ensure('shell', 'homeassistant', record.id, 'exec sleep 120'), /does not match/);
   assert.throws(() => store.request({ method: 'exec', command: 'id' }), /Unknown session operation/);
   const file = join(root, 'sessions', record.id + '.json');

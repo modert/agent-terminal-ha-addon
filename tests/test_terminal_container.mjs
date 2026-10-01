@@ -125,7 +125,7 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
     assert.equal(reply.error, undefined);
     return reply.result;
   }
-  const namedA = await manage('create', { name: 'Dashboard refresh', agent: 'codex', workspace: 'web-test' });
+  const namedA = await manage('create', { name: 'Dashboard refresh', description: 'Simplify the tablet overview', agent: 'codex', workspace: 'web-test' });
   const namedB = await manage('create', { name: 'Attic fan', agent: 'codex', workspace: 'web-test' });
   const namedView = await connect('codex', 'web-test', namedA.id);
   const secondView = await connect('codex', 'web-test', namedB.id);
@@ -138,8 +138,9 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   assert.equal(panePid(namedA.id), namedPid);
   run('agent-session', ['--session', namedA.id]);
   assert.equal(panePid(namedA.id), namedPid, 'SSH must resolve the stored provider and workspace');
-  await manage('rename', { session: namedA.id, name: 'Review dashboard' });
+  await manage('rename', { session: namedA.id, name: 'Review dashboard', description: 'Check layout and spacing' });
   assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).name, 'Review dashboard');
+  assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).description, 'Check layout and spacing');
   await manage('stop', { session: namedA.id });
   assert.notEqual(spawnSync('agent-session', ['--web', 'codex', 'web-test', namedA.id]).status, 0);
   assert.notEqual(spawnSync('tmux', ['has-session', '-t', '=' + namedA.id]).status, 0, 'reconnect must not restart a stopped session');
@@ -148,6 +149,7 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const started = await connect('codex', 'web-test', namedA.id);
   await until(() => started.screen().includes('TEST-AGENT:codex:web-test:'), 'explicit start did not work');
   assert.notEqual(panePid(namedA.id), namedPid);
+  assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).description, 'Check layout and spacing');
 
   const before = tmux('list-sessions', '-F', '#{session_name}');
   for (const args of [['--web', 'bash -c id'], ['--web', 'shell', '../../data'], ['--web', 'shell', 'unknown'], ['--web', 'shell', 'homeassistant', 'extra'],

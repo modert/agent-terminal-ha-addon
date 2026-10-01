@@ -47,12 +47,12 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
     getElementById(id) {
       if (!ids.has(id)) {
         const el = element();
-        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast'].includes(id);
+        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast', 'sessions-sheet'].includes(id);
         ids.set(id, el);
       }
       return ids.get(id);
     },
-    createElement: element, addEventListener() {}, documentElement: element(),
+    createElement: element, addEventListener() {}, documentElement: element(), body: element(),
     execCommand(command, _ui, text) {
       assert.equal(command, 'insertText');
       const box = document.activeElement;

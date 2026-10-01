@@ -7,8 +7,25 @@ window.AgentSessions = function (options) {
   var form = el('sessions-form'), status = el('sessions-status');
   var records = [], socket = null, pending = new Map(), serial = 0, retry = null;
   var encoder = new TextEncoder(), decoder = new TextDecoder(), buffer = '';
-  var mode = 'list', editing = null, beside = false, expanded = null, busy = false, generation = 0;
+  var mode = 'list', editing = null, expanded = null, busy = false, generation = 0, showUnused = false;
   var agents = options.config.agents, workspaces = options.config.workspaces;
+  // Small local vector marks; labels carry the provider name as well as color.
+  var icons = {
+    claude: '<path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18"/>',
+    codex: '<rect x="7" y="2.5" width="10" height="19" rx="5"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(60 12 12)"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(120 12 12)"/>',
+    shell: '<path d="m5 6 6 6-6 6m8 0h6"/>',
+    custom: '<path d="M8 4H6v6l-2 2 2 2v6h2m8-16h2v6l2 2-2 2v6h-2"/>'
+  };
+  function mark(agent) {
+    var icon = document.createElement('span');
+    icon.className = 'provider-mark provider-' + (icons[agent] ? agent : 'custom');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + (icons[agent] || icons.custom) + '</svg>';
+    return icon;
+  }
+  function displayName(record) { return record.name === 'Main' && record.id.indexOf('agent-') === 0 ? 'General session' : record.name; }
+  function picking() { return !!(options.choosingPane && options.choosingPane()); }
+  function position(id) { return options.position ? options.position(id) : id === options.current().id ? 'Current' : ''; }
   function label(items, id) { var item = items.find(function (i) { return i.id === id; }); return item ? item.name : id; }
   function message(text) { status.textContent = text || ''; }
   function fail(error) { message(error.message || String(error)); }
@@ -26,7 +43,7 @@ window.AgentSessions = function (options) {
       records = packet.sessions; agents = packet.agents; workspaces = packet.workspaces;
       options.config.agents = agents; options.config.workspaces = workspaces;
       options.changed(records);
-      if (mode === 'list' && !sheet.hidden) { message(''); render(); }
+      if (mode === 'list' && !sheet.hidden) { message(''); refresh(); }
     } else if (pending.has(packet.request)) {
       var task = pending.get(packet.request); pending.delete(packet.request); clearTimeout(task.timer);
       if (packet.error) task.reject(new Error(packet.error)); else task.resolve(packet.result);
@@ -69,15 +86,16 @@ window.AgentSessions = function (options) {
     };
     ws.onerror = function () {};
   }
-  function close() {
+  function close(restoreFocus) {
     if (busy) return;
+    if (picking()) { options.cancelPane(); return; }
     sheet.hidden = true; el('sessions-open').setAttribute('aria-expanded', 'false');
-    options.focus();
+    if (restoreFocus !== false) options.focus();
   }
   function choose(record) {
     if (busy) return;
-    if (beside) options.beside(record); else options.select(record);
-    close();
+    var result = options.select(record);
+    if (result !== false) close(result !== 'other');
   }
   function action(text, title, fn) {
     var button = document.createElement('button');
@@ -89,40 +107,79 @@ window.AgentSessions = function (options) {
     var focused = document.activeElement && document.activeElement.dataset.sessionAction;
     list.textContent = '';
     var query = search.value.trim().toLowerCase(), current = options.current().id;
+    var other = options.other && options.other(), unused = 0;
     var filtered = records.filter(function (r) {
-      return (r.name + ' ' + label(agents, r.agent) + ' ' + label(workspaces, r.workspace)).toLowerCase().includes(query);
+      if (picking() && (r.id === current || other && r.id === other.id)) return false;
+      var unopened = r.id.indexOf('agent-') === 0 && r.name === 'Main' && !r.description && !r.running && !r.stopped && !position(r.id);
+      if (unopened) { unused++; if (!showUnused && !query) return false; }
+      return (displayName(r) + ' ' + (r.description || '') + ' ' + label(agents, r.agent) + ' ' + label(workspaces, r.workspace)).toLowerCase().includes(query);
     }).sort(function (a, b) {
       return Number(b.id === current) - Number(a.id === current) || Number(b.running) - Number(a.running) || a.name.localeCompare(b.name);
     });
-    filtered.forEach(function (record) {
-      var row = document.createElement('div'); row.className = 'session-row';
-      var main = action('', 'Open ' + record.name, function () { choose(record); });
-      main.className = 'session-choice'; main.dataset.sessionAction = record.id + ':open';
-      if (record.id === current) main.setAttribute('aria-current', 'true');
-      var name = document.createElement('strong'); name.textContent = record.name;
-      var detail = document.createElement('span');
-      detail.textContent = label(agents, record.agent) + ' · ' + label(workspaces, record.workspace) + ' · ' +
-        (record.stopped ? 'Stopped' : record.running ? 'Running' : 'Ready');
-      main.appendChild(name); main.appendChild(detail); row.appendChild(main);
-      var more = action('•••', 'Actions for ' + record.name, function () { expanded = expanded === record.id ? null : record.id; render(); });
-      more.dataset.sessionAction = record.id + ':actions'; more.setAttribute('aria-expanded', String(expanded === record.id));
-      row.appendChild(more);
-      if (expanded === record.id) {
-        var actions = document.createElement('div'); actions.className = 'session-actions';
-        if (record.stopped) actions.appendChild(action('Start', 'Start ' + record.name, function () {
-          run('start', { session: record.id }, function (result) { choose(result); });
-        }));
-        if (options.canSplit() && !record.stopped && record.id !== current) actions.appendChild(action('Open beside', 'Open ' + record.name + ' beside this session', function () {
-          options.beside(record); close();
-        }));
-        actions.appendChild(action('Rename', 'Rename ' + record.name, function () { edit('rename', record); }));
-        if (!record.stopped) actions.appendChild(action('Stop', 'Stop ' + record.name, function () { edit('stop', record); }));
-        row.appendChild(actions);
-      }
-      list.appendChild(row);
+    el('sessions-unused').hidden = !unused || !!query;
+    el('sessions-unused').textContent = showUnused ? 'Hide unused sessions' : 'Show unused sessions (' + unused + ')';
+    var groups = workspaces.slice().sort(function (a, b) {
+      return Number(b.id === options.current().workspace) - Number(a.id === options.current().workspace) || a.name.localeCompare(b.name);
+    });
+    groups.forEach(function (workspace) {
+      var members = filtered.filter(function (r) { return r.workspace === workspace.id; });
+      if (!members.length) return;
+      var group = document.createElement('section'); group.className = 'session-workspace'; group.dataset.workspace = workspace.id;
+      var heading = document.createElement('h3'); heading.className = 'workspace-heading'; heading.title = workspace.directory;
+      var folder = document.createElement('span'); folder.className = 'workspace-folder'; folder.setAttribute('aria-hidden', 'true');
+      folder.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Z"/></svg>';
+      var title = document.createElement('span'); title.textContent = workspace.name;
+      var count = document.createElement('span'); count.className = 'workspace-count'; count.textContent = String(members.length);
+      heading.appendChild(folder); heading.appendChild(title); heading.appendChild(count); group.appendChild(heading);
+      members.forEach(function (record) {
+        var row = document.createElement('div'); row.className = 'session-row'; row.dataset.session = record.id;
+        var place = position(record.id);
+        if (place) row.className += ' session-visible';
+        var main = action('', (record.stopped ? 'Start ' : picking() ? 'Open in right pane: ' : 'Switch to ') + displayName(record), function () {
+          if (record.stopped) run('start', { session: record.id }, choose); else choose(record);
+        });
+        main.className = 'session-choice'; main.dataset.sessionAction = record.id + ':open';
+        if (record.id === current) main.setAttribute('aria-current', 'true');
+        main.appendChild(mark(record.agent));
+        var copy = document.createElement('span'); copy.className = 'session-copy';
+        var name = document.createElement('strong'); name.textContent = displayName(record); copy.appendChild(name);
+        if (record.description) {
+          var purpose = document.createElement('span'); purpose.className = 'session-purpose'; purpose.textContent = record.description; copy.appendChild(purpose);
+        }
+        var detail = document.createElement('span'); detail.className = 'session-meta';
+        var provider = document.createElement('span'); provider.textContent = label(agents, record.agent); detail.appendChild(provider);
+        var state = document.createElement('span'); state.className = 'session-state' + (record.running && !record.stopped ? ' is-running' : '');
+        state.textContent = record.stopped ? 'Stopped' : record.running ? 'Running' : 'Ready to start'; detail.appendChild(state);
+        copy.appendChild(detail); main.appendChild(copy);
+        if (place || record.stopped || picking()) {
+          var badge = document.createElement('span'); badge.className = 'session-place';
+          badge.textContent = record.stopped ? 'Start' : place || 'Open →'; main.appendChild(badge);
+        }
+        row.appendChild(main);
+        var more = action('•••', 'Actions for ' + displayName(record), function () { expanded = expanded === record.id ? null : record.id; render(); });
+        more.dataset.sessionAction = record.id + ':actions'; more.setAttribute('aria-expanded', String(expanded === record.id));
+        row.appendChild(more);
+        if (expanded === record.id) {
+          var actions = document.createElement('div'); actions.className = 'session-actions';
+          if (record.stopped) actions.appendChild(action('Start', 'Start ' + record.name, function () {
+            run('start', { session: record.id }, function (result) { choose(result); });
+          }));
+          if (options.canSplit() && !record.stopped && record.id !== current) actions.appendChild(action('Open beside', 'Open ' + record.name + ' beside this session', function () {
+            if (options.beside(record) !== false) close(false);
+          }));
+          actions.appendChild(action('Edit details', 'Edit details for ' + displayName(record), function () { edit('rename', record); }));
+          if (!record.stopped) actions.appendChild(action('Stop', 'Stop ' + record.name, function () { edit('stop', record); }));
+          row.appendChild(actions);
+        }
+        group.appendChild(row);
+      });
+      list.appendChild(group);
     });
     if (!filtered.length) {
-      var empty = document.createElement('p'); empty.textContent = records.length ? 'No matching sessions.' : 'Loading sessions…'; list.appendChild(empty);
+      var empty = document.createElement('p'); empty.className = 'sessions-empty';
+      empty.textContent = !records.length ? 'Loading sessions…' : query ? 'No matching tasks. Try another name or purpose.' :
+        picking() ? 'Create a session for this pane, or show unused sessions below.' : 'Create a named session to give your next task its own space.';
+      list.appendChild(empty);
     }
     if (focused) Array.prototype.some.call(list.querySelectorAll('[data-session-action]'), function (button) {
       if (button.dataset.sessionAction !== focused) return false;
@@ -137,10 +194,14 @@ window.AgentSessions = function (options) {
   function edit(next, record) {
     if (busy) return;
     mode = next; editing = record; form.hidden = false; el('sessions-browse').hidden = true;
-    el('sessions-title').textContent = next === 'create' ? (beside ? 'New session beside' : 'New session') : next === 'rename' ? 'Rename session' : 'Stop session';
+    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'rename' ? 'Edit session details' : 'Stop session';
+    el('sessions-subtitle').textContent = next === 'stop' ? 'This ends the running task.' : 'Give this conversation a clear job.';
+    el('sessions-context').hidden = true;
     el('sessions-name-row').hidden = next === 'stop';
+    el('sessions-purpose-row').hidden = next === 'stop';
     el('sessions-name').disabled = next === 'stop';
     el('sessions-name').value = record ? record.name : '';
+    el('sessions-purpose').value = record && record.description || '';
     el('sessions-provider-row').hidden = el('sessions-workspace-row').hidden = next !== 'create';
     var current = options.current();
     selectOptions(el('sessions-provider'), agents, current.agent);
@@ -148,17 +209,29 @@ window.AgentSessions = function (options) {
     el('sessions-explanation').textContent = next === 'stop'
       ? 'Stop “' + record.name + '” and end its running task? Starting it again launches a fresh process.'
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
-    el('sessions-save').textContent = next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save name' : 'Create session';
+    el('sessions-save').textContent = next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
     message(''); (next === 'stop' ? el('sessions-back') : el('sessions-name')).focus();
   }
   function browse() {
     mode = 'list'; form.hidden = true; el('sessions-browse').hidden = false;
-    el('sessions-title').textContent = beside ? 'Open a session beside' : 'Sessions';
-    message(''); render(); search.focus();
+    message(''); refresh(); search.focus();
   }
-  function open(openBeside) {
+  function refresh() {
+    if (sheet.hidden || mode !== 'list') return;
+    var placing = picking();
+    el('sessions-title').textContent = placing ? 'Add a second session' : 'Sessions';
+    el('sessions-subtitle').textContent = placing ? 'Choose a task to open in the right pane.' : 'Pick a task to continue.';
+    el('sessions-done').textContent = picking() ? 'Cancel' : 'Done';
+    el('sessions-context').hidden = !placing;
+    if (placing) {
+      var other = options.other && options.other(), left = records.find(function (r) { return r.id === (other ? other.id : options.current().id); });
+      el('sessions-context').textContent = 'Left pane · ' + (left ? displayName(left) + ' · ' + label(agents, left.agent) : 'Your current session');
+    }
+    render();
+  }
+  function open() {
     if (busy) return;
-    beside = !!openBeside; sheet.hidden = false; search.value = ''; expanded = null;
+    sheet.hidden = false; search.value = ''; expanded = null; showUnused = false;
     el('sessions-open').setAttribute('aria-expanded', 'true'); browse();
     if (socket && socket.readyState === WebSocket.OPEN) send('list').then(function (snapshot) { receive(Object.assign({ type: 'sessions' }, snapshot)); }, fail);
   }
@@ -174,11 +247,12 @@ window.AgentSessions = function (options) {
   }
   form.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (mode === 'create') run('create', { name: el('sessions-name').value, agent: el('sessions-provider').value, workspace: el('sessions-workspace').value }, choose);
-    else if (mode === 'rename') run('rename', { session: editing.id, name: el('sessions-name').value }, browse);
+    if (mode === 'create') run('create', { name: el('sessions-name').value, description: el('sessions-purpose').value, agent: el('sessions-provider').value, workspace: el('sessions-workspace').value }, choose);
+    else if (mode === 'rename') run('rename', { session: editing.id, name: el('sessions-name').value, description: el('sessions-purpose').value }, browse);
     else if (mode === 'stop') run('stop', { session: editing.id }, browse);
   });
   search.addEventListener('input', render);
+  el('sessions-unused').addEventListener('click', function () { showUnused = !showUnused; render(); });
   el('sessions-new').addEventListener('click', function () { edit('create'); });
   el('sessions-back').addEventListener('click', function () { if (!busy) browse(); });
   el('sessions-done').addEventListener('click', close);
@@ -205,5 +279,5 @@ window.AgentSessions = function (options) {
       event.preventDefault(); event.stopImmediatePropagation(); open(false);
     }
   }, true);
-  return { connect: connect, open: open, records: function () { return records; } };
+  return { connect: connect, open: open, refresh: refresh, records: function () { return records; } };
 };
