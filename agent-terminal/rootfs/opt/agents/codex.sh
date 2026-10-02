@@ -10,7 +10,7 @@ AGENT_DATA="/data/codex"          # persistent: login, settings, and sessions
 # Build time: pin the CLI version verified with this adapter. The npm package
 # includes native Linux binaries for both amd64 and aarch64 (including musl).
 agent_install() {
-    npm install -g @openai/codex@0.159.3
+    npm install -g @openai/codex@0.160.0
     npm cache clean --force
     codex --version
 }
