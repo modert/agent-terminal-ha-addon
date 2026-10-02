@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.7.1
+- Update the Codex CLI to 0.160.0.
+
 ## 2.7.0
 - Create and rename independent sessions of the same provider and workspace.
   Existing provider buttons keep their Main sessions and persistent logins.
