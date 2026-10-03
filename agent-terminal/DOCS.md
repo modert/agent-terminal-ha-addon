@@ -110,6 +110,9 @@ tools."
   a separate tmux session. The panel and SSH can attach to the same pair, so a
   long-running task keeps going if you close the browser tab or your SSH
   connection drops.
+- **Files and images for the agent** - paste a screenshot, drop a file, or
+  pick a photo on your phone, and it lands in the prompt (see
+  [Attaching files and images](#attaching-files-and-images-sidebar-panel)).
 - **Built-in `homeassistant` MCP server** - gives the agent structured tools
   instead of hand-rolled `curl`: `ha_list_entities`, `ha_get_entity_state`,
   `ha_call_service`, `ha_render_template`, `ha_list_services`,
@@ -271,7 +274,7 @@ project folders or Git worktrees when tasks need independent changes.
   suggestion) and it goes straight to the terminal. Typed text needs **Send**.
 - **Esc twice on a phone:** tap **Keys**, then **Esc²**.
 - **On a phone, long-press the terminal** for a menu: Select text…, Copy
-  screen, Paste.
+  screen, Paste, Attach file or photo…
 - **Copy on a phone:** scroll to what you want, then long-press → **Select
   text…** (or tap **Copy** on the key bar). The screen opens as plain text:
   select with your phone's handles and it copies itself once they settle.
@@ -282,6 +285,69 @@ project folders or Git worktrees when tasks need independent changes.
   browser's. Tick **Right-click pastes** in that menu for Windows Terminal
   behaviour: right-click copies the selection, or pastes when nothing is
   selected, and Shift+right-click opens the menu.
+
+### Editing with a desktop keyboard
+
+In Claude, ChatGPT, and Shell sessions, click the terminal and use:
+
+| Shortcut | Action |
+|---|---|
+| **Ctrl+Left / Ctrl+Right** | Move backward / forward by one word. |
+| **Ctrl+Backspace** | Delete the previous word. |
+| **Ctrl+Delete** | Delete the next word. |
+| **Shift+Enter** | Add a line without sending in Claude and ChatGPT prompts. |
+
+On a Mac, **Option** with the arrows, Backspace, or forward Delete uses the
+same word commands. The terminal sends standard readline commands; each
+program defines its word boundaries. Custom sessions retain their original
+terminal key sequences. Shift-modified navigation continues to reach the program,
+including selection shortcuts supported by that program.
+
+Physical **Shift+Enter** sends the agents' newline shortcut, **Ctrl+J**, so it
+works through tmux without extended keyboard support. Plain **Enter** still
+sends or confirms. You can also use **Keys → Edit → ↵ (New line)**; while a
+draft or paste field is open, the helper adds a line there without sending it.
+
+Session search, task names, purpose notes, and the mobile draft are native
+text fields, so they keep the browser's normal editing shortcuts. Only the
+focused terminal receives terminal shortcuts, including in split view.
+
+## Attaching files and images (sidebar panel)
+
+Give the agent a screenshot, a photo, a PDF or a log without leaving the panel:
+
+- **Paste a screenshot:** Ctrl+V / ⌘V with an image on the clipboard.
+  Right-click → Paste does the same over HTTPS.
+- **Drop files** on the terminal. In split view they go to the pane they
+  land on.
+- **Pick files:** right-click → **Attach file…**. On a phone, tap the
+  paperclip beside the draft, long-press → **Attach file or photo…**, or
+  **Keys → Tools → Attach**, and choose the camera, a photo or a file.
+
+The file is saved in the add-on and its path is pasted into the prompt, so you
+can go on typing your question after it. Claude Code and Codex turn the path
+of a PNG, JPEG, GIF or WebP into an attached image, shown as `[Image #1]`.
+Any other file stays a path, which the agent reads once you send the message.
+In a Shell session it is just the path.
+
+- Files go to `/data/agent-terminal/uploads/<date>/`, named with the time and
+  a simplified version of their own name. Each can be up to 50 MB.
+- They are kept for 7 days, then removed when the add-on starts or the next
+  file is attached, and they are left out of the add-on's backups. Ask the
+  agent to copy a file elsewhere if it should stay.
+- Large JPEG, WebP and HEIC photos are sent as a JPEG no more than 2048 pixels
+  on its long side: the agents use no more, and it uploads in a moment from a
+  phone. PNG screenshots and every other file go unchanged.
+- Text wins on paste. A spreadsheet copies cells as text with a picture of
+  them; that pastes the text.
+- A file that finishes uploading after you switched sessions is saved but not
+  typed into the other session; a message shows where it is.
+- So that Claude reads attached files without asking, start-up adds the
+  uploads folder to `permissions.additionalDirectories` in Claude's
+  `settings.json`, once, leaving the rest of the file as it is.
+- Attaching needs the add-on's own page (`mobile_ui: true`, the default). Over
+  SSH, copy the file instead (`scp -P 2202 shot.png root@<ha-host>:/tmp/`) and
+  type its path.
 
 ## Options
 
@@ -312,8 +378,8 @@ Assistant companion app.
   |---|---|
   | Agent | Tab, Mode, Answer, Esc², Ctrl+C, Space |
   | Ctrl | Ctrl, Alt, Shift, tmux |
-  | Edit | Bksp, Home, End, PgUp, PgDn |
-  | Tools | Copy, Paste, Direct, A−, A+ |
+  | Edit | ↵ (New line), Bksp, Home, End, PgUp, PgDn |
+  | Tools | Copy, Paste, Attach, Direct, A−, A+ |
 
   The group button stays put, so tapping it twice returns you to where you
   were. Reloading, switching an agent/workspace, or starting a new draft
@@ -323,7 +389,7 @@ Assistant companion app.
   with the arrows, then **Enter**. Tab moves between fields; Space toggles a choice where supported.
 - **Write a prompt:** tap the terminal to open a compact draft and the phone
   keyboard. The response stays visible and scrollable. **Enter** or **Send**
-  submits; **Shift+Enter** or **↵** beside the draft adds a line. The helper
+  submits; **Shift+Enter**, **↵** beside the draft, or **Keys → Edit → ↵** adds a line. The helper
   Enter button also submits an open draft. Tap **×** to close without sending.
   Autocorrect and composition edits stay in the native draft; Send pastes the
   final value once and submits after composition finishes. Enter used to accept
@@ -382,7 +448,8 @@ the terminal.
 The helper buttons send the same terminal keys for either agent. The running
 program and its keybindings decide the action; these are the default meanings.
 Navigation and shortcut keys act on the terminal even while an unsent native
-draft is open. ↵ beside the draft adds a line to it, and Enter submits it.
+draft is open. The ↵ helpers edit an open draft or paste field locally;
+Enter submits a draft.
 
 | Button | Keys sent | Claude | Codex |
 |---|---|---|---|
@@ -392,11 +459,11 @@ draft is open. ↵ beside the draft adds a line to it, and Enter submits it.
 | Mode | Shift+Tab | Cycle permission modes, including Plan | Toggle Plan mode |
 | Answer | Shift+Left | Ordinary Shift+Left | Open pending questions |
 | Esc² | Escape twice, spaced apart | Rewind with an empty prompt; clear nonempty input | Edit previous message with an empty prompt |
-| ↵ (beside a draft) | Draft newline; Shift then Enter sends Ctrl+J in Direct mode | Newline | Newline |
+| ↵ (Edit keys or beside a draft) | Local newline in an open text field; otherwise Ctrl+J | Newline | Newline |
 | Ctrl+C | Ctrl+C | Clear input / interrupt; twice on an empty prompt exits | Clear input / interrupt; twice on an empty prompt exits |
 
 Arrows and Space keep their normal navigation/selection behavior. The Edit
-group has Backspace (Bksp), Home/End and page scrolling; Tools has Copy/Paste,
+group has Backspace (Bksp), Home/End and page scrolling; Tools has Copy/Paste, Attach,
 Direct and A−/A+.
 See [Claude's shortcut reference](https://code.claude.com/docs/en/interactive-mode),
 [Codex's interactive commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli#interactive-shortcuts),
@@ -462,8 +529,17 @@ serves newly created workspaces without restarting ttyd.
 `tests/test_sessions.mjs` uses a separate temporary tmux server to check named
 process isolation, persisted stop state, input validation, and concurrent
 launch/stop operations. It requires tmux and `flock` (both supplied by the
-add-on). The container integration test exercises management requests through
-the real ttyd WebSocket and PTY, alongside named provider terminals.
+add-on). The container integration test exercises management requests and
+readline word editing through the real ttyd WebSocket, PTY, and tmux,
+alongside named provider terminals. It also sends a file through that PTY
+and compares the saved bytes.
+`tests/test_uploads.mjs` checks the upload receiver on its own: file-name
+cleaning, the size limit, malformed and incomplete uploads, partial files
+removed on disconnect, and the weekly clean-up. `tests/test_webui.mjs` runs
+the page's side of it: pasted, dropped and picked files, chunking, a failed
+file, and a session switched mid-upload. The browser suite repeats paste,
+drop and the phone's Attach button with real events, and checks that a large
+photo arrives as a 2048-pixel JPEG.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.
@@ -492,9 +568,13 @@ CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_
 The browser suite also creates and renames sessions, routes real keystrokes
 to separate split panes, resizes and restores the split, stops and restarts
 a session, and checks workspace groups, purpose search, and the picker on a
-narrow screen. It also verifies that opening or canceling an empty second pane
-never connects to an agent, and that creating a task there preserves the left
-terminal. Its management transport
+narrow screen. Desktop checks exercise Ctrl+Left/Right, Ctrl+Backspace and
+Ctrl+Delete, Shift+Enter, unmodified character editing, native text fields,
+and shortcuts in the focused split pane. It checks the New line helper in
+direct input and an open draft, including its touch target on a narrow phone.
+The suite also verifies that opening or
+canceling an empty second pane never connects to an agent, and that creating
+a task there preserves the left terminal. Its management transport
 is simulated; it does not send keys or lifecycle operations to live agents.
 
 The browser test uses real touch activation and composition events with the
@@ -506,7 +586,8 @@ redraws the rows under it, the keyboard button and top bar collapse on a phone
 and on a desktop, and the side column on a phone turned sideways.
 Its WebSocket is replaced before page
 code runs, so all input stays inside the test. The test skips unless
-`CHROMIUM_BIN` is set. Actual phone keyboard behavior still needs a device check.
+`CHROMIUM_BIN` is set; CI installs Chromium and runs it on both architectures.
+Actual phone keyboard behavior still needs a device check.
 
 ### Exploring the UI with a local vision model
 

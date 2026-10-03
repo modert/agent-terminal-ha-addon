@@ -101,6 +101,11 @@ test('phone taps and composition with real browser events and xterm', {
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter',
       windowsVirtualKeyCode: 13, modifiers });
   }
+  async function shortcut(key, windowsVirtualKeyCode, modifiers = 2) {
+    for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', {
+      type, key, code: key, windowsVirtualKeyCode, modifiers,
+    });
+  }
   const button = label => `[...document.querySelectorAll('#bar button')].find(b => b.dataset.key === ${JSON.stringify(label)})`;
   // The group button, then a group from the list it shows in the same row.
   async function group(id) { await tap(button('Group')); await tap(`document.getElementById('group-${id}')`); }
@@ -229,7 +234,10 @@ test('phone taps and composition with real browser events and xterm', {
   await command('Input.insertText', { text: 'second' });
   await tap("document.getElementById('paste-newline')");
   await command('Input.insertText', { text: 'third' });
-  assert.equal(await evaluate("document.getElementById('paste-text').value"), 'first\nsecond\nthird');
+  await tap(button('Keys')); await group('edit'); await tap(button('↵'));
+  await command('Input.insertText', { text: 'fourth' });
+  assert.equal(await evaluate("document.getElementById('paste-text').value"), 'first\nsecond\nthird\nfourth');
+  assert.equal(await evaluate("document.activeElement.id === 'paste-text'"), true, 'the helper keeps editing the open draft');
   assert.deepEqual(await packets(), []);
   if (process.env.WEBUI_SCREENSHOT) {
     const screenshot = await command('Page.captureScreenshot');
@@ -237,7 +245,7 @@ test('phone taps and composition with real browser events and xterm', {
   }
   await enter();
   await until("document.getElementById('paste').hidden");
-  assert.deepEqual(await packets(), ['\x1b[200~first\rsecond\rthird\x1b[201~', '\r']);
+  assert.deepEqual(await packets(), ['\x1b[200~first\rsecond\rthird\rfourth\x1b[201~', '\r']);
 
   await load();
   await tap("document.getElementById('term')");
@@ -280,8 +288,9 @@ test('phone taps and composition with real browser events and xterm', {
   await tap(button('Answer')); await tap(button('↓')); await tap(button('Enter'));
   await tap(button('Mode')); await tap(button('Space'));
   await tap(button('Esc²')); await delay(160);
+  await group('edit'); await tap(button('↵')); await enter(8);
   await group('ctrl'); await tap(button('tmux')); await tap(button('tmux'));
-  assert.deepEqual(await packets(), ['\x0c', '\x1b[1;2D', '\x1b[B', '\r', '\x1b[Z', ' ', '\x1b', '\x1b', '\x02', '\x02'],
+  assert.deepEqual(await packets(), ['\x0c', '\x1b[1;2D', '\x1b[B', '\r', '\x1b[Z', ' ', '\x1b', '\x1b', '\n', '\n', '\x02', '\x02'],
     'retain shared controls, Codex questions and Claude background via tmux');
   // A narrow phone keeps every state of the keys usable, without overflowing
   // labels: 44px tall, and at least 40px wide in the seven-key rows.
@@ -289,7 +298,7 @@ test('phone taps and composition with real browser events and xterm', {
   await until('innerWidth === 320');
   await delay(100);
   for (const step of [() => tap(button('Keys')), () => tap(button('Keys')), () => tap(button('Group')),
-    () => tap("document.getElementById('group-tools')")]) {
+    () => tap("document.getElementById('group-tools')"), () => group('edit')]) {
     await step();
     assert.equal(await evaluate(`[...document.querySelectorAll('#bar button')].filter(b => b.getBoundingClientRect().height).every(b => {
       const r = b.getBoundingClientRect();
@@ -426,6 +435,36 @@ test('phone taps and composition with real browser events and xterm', {
   await click("document.getElementById('session-strip')");
   assert.equal(await evaluate("!document.getElementById('session-bar').hidden && document.activeElement === testTerminal.textarea"), true);
 
+  // Exercise real desktop key events through xterm, including the ^H that
+  // Ctrl+Backspace used to emit and the native text fields outside xterm.
+  for (const agent of ['claude', 'codex']) {
+    await load('?arg=' + agent + '&arg=homeassistant');
+    await evaluate('testTerminal.focus()');
+    await shortcut('ArrowLeft', 37);
+    await shortcut('ArrowRight', 39);
+    await shortcut('Backspace', 8);
+    await shortcut('Delete', 46);
+    assert.deepEqual(await packets(), ['\x1bb', '\x1bf', '\x1b\x7f', '\x1bd'],
+      'desktop word editing reaches ' + agent + ' exactly once per key');
+    await evaluate('window.testPackets = []');
+    await enter(8);
+    await enter();
+    assert.deepEqual(await packets(), ['\n', '\r'], 'Shift+Enter adds a line, and Enter submits in ' + agent);
+    await evaluate('window.testPackets = []');
+    await shortcut('Backspace', 8, 0);
+    await shortcut('Delete', 46, 0);
+    await shortcut('ArrowLeft', 37, 10); // Ctrl+Shift: preserve the native selection sequence
+    assert.deepEqual(await packets(), ['\x7f', '\x1b[3~', '\x1b[1;6D']);
+  }
+  await evaluate('window.testPackets = []');
+  await click("document.getElementById('sessions-open')");
+  await click("document.getElementById('sessions-search')");
+  await command('Input.insertText', { text: 'alpha beta' });
+  await shortcut('Backspace', 8);
+  assert.equal(await evaluate("document.getElementById('sessions-search').value"), 'alpha ');
+  assert.deepEqual(await packets(), [], 'editing a search field must never send terminal input');
+  await click("document.getElementById('sessions-done')");
+
   // Named sessions use the real picker and two independent browser clients.
   // Only the transport is simulated; key routing, layout and reloads are real.
   await evaluate("localStorage.setItem('cc-mobile:keybar', '0')");
@@ -500,8 +539,10 @@ test('phone taps and composition with real browser events and xterm', {
   await letter('l');
   await evaluate(`${side}.testTerminal.focus()`);
   await letter('r');
+  await shortcut('Backspace', 8);
+  await enter(8);
   assert.deepEqual(await packets(), ['l'], 'right-pane typing cannot reach the left session');
-  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r']);
+  assert.deepEqual(await evaluate(`${side}.testPackets.filter(p => p.startsWith('0')).map(p => p.slice(1))`), ['r', '\x1b\x7f', '\n']);
   const leftWidth = await evaluate("document.getElementById('term').getBoundingClientRect().width");
   const dividerX = await evaluate("document.getElementById('split-divider').getBoundingClientRect().x + 4");
   await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: dividerX, y: 300, button: 'left', clickCount: 1 });
@@ -579,4 +620,72 @@ test('phone taps and composition with real browser events and xterm', {
   await click(`${side}.document.getElementById('split-toggle')`);
   await until("!document.getElementById('side-terminal')");
   assert.equal(await evaluate("testHub.sessions.find(s => s.name === 'Release notes').running"), true);
+
+  // Attaching files with real browser events: a pasted screenshot, a drop of
+  // two files, and a large photo picked from the phone draft, which goes as a
+  // 2048-pixel JPEG. Each saved path is pasted on its own, then a typed space.
+  await load();
+  const bracketed = name => '\x1b[200~/data/agent-terminal/uploads/2026-10-02/153012-abc123-' + name + '\x1b[201~';
+  await evaluate(`(() => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: 'image/png' }));
+    testTerminal.textarea.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  })()`);
+  await until('window.testUploaded[0]?.path && window.testPackets.length >= 2');
+  assert.deepEqual(await packets(), [bracketed('image.png'), ' '], 'a pasted screenshot becomes its path');
+  await evaluate('window.testPackets = []');
+  assert.equal(await evaluate(`(() => {
+    const data = new DataTransfer(), term = document.getElementById('term');
+    data.items.add(new File(['kitchen,21.5'], 'temps.csv', { type: 'text/csv' }));
+    data.items.add(new File(['%PDF-1.7'], 'manual.pdf', { type: 'application/pdf' }));
+    term.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+    const highlighted = document.getElementById('app').classList.contains('dropping');
+    return highlighted && !term.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+  })()`), true, 'a file drag is highlighted, and the drop is the page\'s rather than the browser\'s');
+  await until('window.testUploaded.filter(f => f.path).length === 3 && window.testPackets.length >= 4');
+  assert.deepEqual(await packets(), [bracketed('temps.csv'), ' ', bracketed('manual.pdf'), ' ']);
+  assert.equal(await evaluate("document.getElementById('app').classList.contains('dropping')"), false);
+
+  await command('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate("localStorage.removeItem('cc-mobile:keybar')");
+  await load();
+  await tap("document.getElementById('term')");
+  await until("document.activeElement.id === 'paste-text'");
+  assert.equal(await evaluate(`(() => {
+    const attach = document.getElementById('paste-attach').getBoundingClientRect();
+    const text = document.getElementById('paste-text').getBoundingClientRect();
+    return attach.width >= 40 && attach.height >= 44 && text.width >= 150 && text.right <= attach.left;
+  })()`), true, 'Attach sits beside the draft and leaves room to write');
+  const photo = Buffer.from(await evaluate(`(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 2400; canvas.height = 1600;
+    const context = canvas.getContext('2d'), image = context.createImageData(2400, 1600);
+    for (let i = 0; i < image.data.length; i++) image.data[i] = i % 4 === 3 ? 255 : Math.random() * 256;
+    context.putImageData(image, 0, 0);
+    const bytes = new Uint8Array(await (await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8))).arrayBuffer());
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
+    return btoa(text);
+  })()`), 'base64');
+  assert.ok(photo.length > 1572864, 'the test photo is large enough to shrink');
+  writeFileSync(join(profile, 'IMG_0042.jpg'), photo);
+  await command('Page.setInterceptFileChooserDialog', { enabled: true });
+  await evaluate("document.getElementById('upload-input').addEventListener('click', () => { window.testPicker = true; })");
+  await tap("document.getElementById('paste-attach')");
+  await until('window.testPicker');
+  const { root } = await command('DOM.getDocument', { depth: 0 });
+  const { nodeId } = await command('DOM.querySelector', { nodeId: root.nodeId, selector: '#upload-input' });
+  await command('DOM.setFileInputFiles', { nodeId, files: [join(profile, 'IMG_0042.jpg')] });
+  await until('window.testUploaded[0]?.path && window.testPackets.length >= 2');
+  const sent = await evaluate(`(async () => {
+    const file = window.testUploaded[0];
+    const parts = file.chunks.map(chunk => Uint8Array.from(atob(chunk), c => c.charCodeAt(0)));
+    const bitmap = await createImageBitmap(new Blob(parts, { type: 'image/jpeg' }));
+    return { name: file.name, size: file.size, received: parts.reduce((n, p) => n + p.length, 0), width: bitmap.width, height: bitmap.height };
+  })()`);
+  assert.equal(sent.received, sent.size);
+  assert.ok(sent.size < photo.length, 'the photo shrank before upload');
+  assert.deepEqual([sent.name, sent.width, sent.height], ['IMG_0042.jpg', 2048, 1365]);
+  assert.deepEqual(await packets(), [bracketed('IMG_0042.jpg'), ' ']);
+  assert.equal(await evaluate("document.getElementById('paste').hidden"), false, 'the draft stays open to finish the message');
 });

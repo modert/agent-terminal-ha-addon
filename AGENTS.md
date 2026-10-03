@@ -22,7 +22,9 @@ The terminal page is a custom xterm.js client. `agent-terminal/rootfs/opt/webui/
 2. Run `agent-workspace refresh-ui`.
 3. Reload the browser. No restart is needed.
 
-`build.mjs` can't run in the live container, because the image deletes `/opt/webui/node_modules` after building. Recover the inlined xterm CSS and JS from the existing `/opt/webui/index.html` instead: split the *old* template on its `/*{{XTERM_CSS}}*/`, `/*{{XTERM_JS}}*/` and `/*{{FIT_JS}}*/` markers, walk those literal segments through the built file (the text between them is each inlined body), and substitute the bodies into the edited template. Then extract every `<script>` from the result and run `node --check` on it.
+`build.mjs` can't run in the live container, because the image deletes `/opt/webui/node_modules` after building. Recover the inlined xterm CSS and JS from the existing `/opt/webui/index.html` instead: split the *old* template on its `/*{{XTERM_CSS}}*/`, `/*{{XTERM_JS}}*/` and `/*{{FIT_JS}}*/` markers, walk those literal segments through the built file (the text between them is each inlined body), and substitute the bodies into the edited template. The template's other two markers, `/*{{SESSIONS_JS}}*/` and `/*{{UPLOADS_JS}}*/`, take `sessions.js` and `uploads.js` from the checkout, with `</script` escaped the way `build.mjs` does it. Then extract every `<script>` from the result and run `node --check` on it.
+
+ttyd starts `/usr/local/bin/agent-session` for each new connection, and that starts `/opt/agent-terminal/sessions.mjs` or `uploads.mjs` for the control connections, so copying those files into place takes effect on the next connection. To try one before replacing the live copy, run a second ttyd on another port against the checkout's `agent-session`.
 
 tmux options apply live with `tmux set`.
 
@@ -30,7 +32,8 @@ tmux options apply live with `tmux set`.
 
 The container has Node but no Python.
 
-- Runs here: `node --test tests/test_webui.mjs`, `tests/test_webui_keys.mjs`, `tests/test_workspaces.mjs`. Their `Terminal` stub has to gain any new xterm API the page starts calling. `tests/test_webui_browser.mjs` skips unless `CHROMIUM_BIN` is set.
+- Runs here: `node --test tests/test_webui.mjs`, `tests/test_webui_keys.mjs`, `tests/test_workspaces.mjs`, `tests/test_sessions.mjs`, `tests/test_uploads.mjs`. The page tests' `Terminal` stub has to gain any new xterm API the page starts calling. `tests/test_webui_browser.mjs` skips unless `CHROMIUM_BIN` is set; point `WEBUI_BUNDLE` at a bundle built as above.
+- Never set `AGENT_TERMINAL_TEST_CONTAINER=1` here: `tests/test_terminal_container.mjs` then runs and kills the tmux server, and every live session with it.
 - Doesn't run here: `tests/test_codex_adapter.py`, `tests/test_mcp_integration.py` and `tests/container-smoke.sh`. Check adapter shell functions by sourcing `agent-terminal/rootfs/opt/agents/<agent>.sh` with a temporary `AGENT_DATA`; CI runs the full suites.
 
 ## Codex gotcha

@@ -10,7 +10,7 @@ const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
   import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
 const script = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
-async function page({ touch = true, search = '', saved = [] } = {}) {
+async function page({ touch = true, search = '', saved = [], platform = 'Linux', config = null } = {}) {
   const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
   let timerId = 0, terminal, socket, now = 1000;
   function element() {
@@ -81,7 +81,7 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
     write(data, callback) { if (callback) queueMicrotask(callback); }
     paste(text) { this.pastes.push(text); }
     onData(fn) { this.type = fn; }
-    attachCustomKeyEventHandler() {}
+    attachCustomKeyEventHandler(fn) { this.keyEvent = fn; }
   }
   class WebSocket {
     static OPEN = 1;
@@ -93,8 +93,8 @@ async function page({ touch = true, search = '', saved = [] } = {}) {
   const window = Object.assign(element(), { innerHeight: 700, matchMedia: () => ({ matches: touch }) });
   window.top = window;
   window.getSelection = () => ({ removeAllRanges() {} });
-  vm.runInNewContext(script, {
-    Terminal, WebSocket, document, window, navigator: { platform: 'Linux' },
+  vm.runInNewContext(script.replace('/*{{SESSION_CONFIG}}*/ null', JSON.stringify(config)), {
+    Terminal, WebSocket, document, window, navigator: { platform },
     FitAddon: { FitAddon: class { fit() {} } },
     location: { pathname: '/terminal', protocol: 'https:', host: 'example.test', search },
     TextEncoder, TextDecoder, Uint8Array, URLSearchParams,
@@ -160,6 +160,46 @@ test('Keys opens the agent keys, which answer a Codex question', async () => {
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[B', '\r']);
 });
 
+test('desktop word shortcuts emit one editing command on keydown for each provider', async () => {
+  for (const agent of ['claude', 'codex', 'shell']) {
+    const p = await page({ touch: false, search: '?arg=' + agent + '&arg=homeassistant' });
+    for (const [key, command] of [['ArrowLeft', '\x1bb'], ['ArrowRight', '\x1bf'],
+      ['Backspace', '\x1b\x7f'], ['Delete', '\x1bd']]) {
+      let prevented = false;
+      const event = { type: 'keydown', key, ctrlKey: true, preventDefault() { prevented = true; } };
+      assert.equal(p.terminal.keyEvent(event), false);
+      assert.equal(prevented, true, 'the browser must not also edit its hidden textarea');
+      assert.deepEqual(p.input(), [command], agent + ': ' + key);
+      assert.equal(p.terminal.keyEvent({ ...event, type: 'keyup' }), true);
+      assert.deepEqual(p.input(), [], 'releasing the key must not repeat its action');
+    }
+  }
+});
+
+test('word shortcuts preserve composition, selection modifiers, and Mac command keys', async () => {
+  for (const platform of ['Linux', 'MacIntel']) {
+    const p = await page({ touch: false, platform });
+    for (const props of [{}, { ctrlKey: true, shiftKey: true }, { ctrlKey: true, altKey: true },
+      { metaKey: true }, { ctrlKey: true, isComposing: true }, { ctrlKey: true, keyCode: 229 }]) {
+      const event = { type: 'keydown', key: 'Backspace', ...props,
+        preventDefault() { assert.fail('unrelated key combination must pass through'); } };
+      assert.equal(p.terminal.keyEvent(event), true);
+      assert.deepEqual(p.input(), []);
+    }
+    const event = { type: 'keydown', key: 'Delete', altKey: true, preventDefault() {} };
+    assert.equal(p.terminal.keyEvent(event), platform !== 'MacIntel');
+    assert.deepEqual(p.input(), platform === 'MacIntel' ? ['\x1bd'] : []);
+  }
+  const custom = await page({ touch: false, config: {
+    agents: [{ id: 'custom', name: 'Custom' }],
+    workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
+    defaultAgent: 'custom',
+  } });
+  assert.equal(custom.terminal.keyEvent({ type: 'keydown', key: 'Backspace', ctrlKey: true,
+    preventDefault() { assert.fail('Custom terminals retain their original key sequences'); } }), true);
+  assert.deepEqual(custom.input(), []);
+});
+
 test('Shift reaches tmux arrow keys and clears after one press', async () => {
   const p = await page();
   p.tap('Shift');
@@ -169,6 +209,44 @@ test('Shift reaches tmux arrow keys and clears after one press', async () => {
   assert.equal(p.button('Shift').attributes['aria-pressed'], 'false');
   p.tap('Shift'); p.tap('Ctrl'); p.tap('Alt'); p.tap('→');
   assert.deepEqual(p.input(), ['\x1b[1;8C']);
+});
+
+test('physical Shift+Enter inserts one newline in either agent and preserves other Enter shortcuts', async () => {
+  for (const agent of ['claude', 'codex']) {
+    const p = await page({ touch: false, search: '?arg=' + agent + '&arg=homeassistant' });
+    const event = { type: 'keydown', key: 'Enter', shiftKey: true, preventDefault() {} };
+    p.tap('Ctrl'); p.tap('Alt');
+    assert.equal(p.terminal.keyEvent(event), false);
+    assert.deepEqual(p.input(), ['\n']);
+    assert.equal(p.button('Ctrl').attributes['aria-pressed'], 'false');
+    assert.equal(p.terminal.keyEvent({ ...event, type: 'keyup' }), true);
+    for (const props of [{ shiftKey: false }, { ctrlKey: true }, { altKey: true },
+      { metaKey: true }, { isComposing: true }, { keyCode: 229 }]) {
+      assert.equal(p.terminal.keyEvent({ ...event, ...props }), true);
+    }
+    assert.deepEqual(p.input(), [], 'unrelated Enter combinations and IME confirmation pass through');
+  }
+  const shell = await page({ touch: false, search: '?arg=shell&arg=homeassistant' });
+  assert.equal(shell.terminal.keyEvent({ type: 'keydown', key: 'Enter', shiftKey: true }), true);
+  assert.deepEqual(shell.input(), [], 'Shell keeps its own physical Enter bindings');
+});
+
+test('the New line helper edits open text fields without submitting and sends LF in the terminal', async () => {
+  const p = await page();
+  p.tap('Ctrl'); p.tap('Alt'); p.tap('Shift'); p.tap('↵'); p.tap('Enter');
+  assert.deepEqual(p.input(), ['\n', '\r']);
+  for (const open of [() => p.write(), () => p.tap('Paste')]) {
+    open();
+    const box = p.ids.get('paste-text');
+    box.value = 'firstsecond'; box.selectionStart = box.selectionEnd = 5;
+    p.tap('↵'); p.flush();
+    assert.equal(box.value, 'first\nsecond');
+    assert.equal(p.ids.get('paste').hidden, false, 'newline keeps the editor open');
+    assert.equal(p.activeElement(), box);
+    assert.deepEqual(p.input(), []);
+    assert.deepEqual(p.terminal.pastes, []);
+    p.ids.get('paste-cancel').fire('click');
+  }
 });
 
 test('fixed actions clear pending modifiers; Enter and newline are distinct', async () => {

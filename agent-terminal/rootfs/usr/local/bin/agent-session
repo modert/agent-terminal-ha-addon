@@ -8,12 +8,14 @@ set -euo pipefail
 MODE=""; WORKSPACE="homeassistant"; START_CMD=""; WEB=false; SESSION_ID=""
 if [ "${1:-}" = "--web" ]; then
     WEB=true; shift
-    # A separate connection manages metadata and lifecycle. No URL value is
-    # evaluated as a shell command, including on this control connection.
-    if [ "${1:-}" = sessions ]; then
-        [ "$#" -eq 1 ] || { echo 'Too many control arguments' >&2; exit 2; }
-        exec node /opt/agent-terminal/sessions.mjs serve
-    fi
+    # Separate connections manage metadata and lifecycle, and receive files
+    # the page attaches. No URL value is evaluated as a shell command or a
+    # path, including on these control connections.
+    case "${1:-}" in
+        sessions|uploads)
+            [ "$#" -eq 1 ] || { echo 'Too many control arguments' >&2; exit 2; }
+            exec node "/opt/agent-terminal/$1.mjs" serve ;;
+    esac
     [ "$#" -le 3 ] || { echo 'Too many terminal arguments' >&2; exit 2; }
     MODE="${1:-}"; WORKSPACE="${2:-homeassistant}"; SESSION_ID="${3:-}"
 else

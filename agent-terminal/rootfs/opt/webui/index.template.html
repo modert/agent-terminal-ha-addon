@@ -256,10 +256,16 @@ body { position: fixed; inset: 0; }
 #paste.compose .sheet-bar { padding: 0; gap: 4px; }
 #paste.compose .sheet-bar .k { flex: 0 0 auto; width: 44px; }
 #paste.compose #paste-send { width: 56px; }
-/* New line only makes sense in a draft, not in the paste box. */
-#paste-newline { display: none; }
-#paste.compose #paste-newline { display: flex; }
+/* New line and Attach only make sense in a draft, not in the paste box. */
+#paste-newline, #paste-attach { display: none; }
+#paste.compose #paste-newline, #paste.compose #paste-attach { display: flex; }
 #paste-newline svg { width: 16px; height: 14px; }
+#paste-attach svg { width: 17px; height: 17px; }
+#paste.compose .sheet-bar #paste-attach { width: 40px; }
+/* Opened from Attach; kept rendered (if invisible) so phones open the picker. */
+#upload-input { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* Files dragged over the page: dropping them attaches them. */
+#app.dropping #term { outline: 2px dashed var(--accent); outline-offset: -4px; }
 /* Sheet buttons sit at the bottom, in thumb reach, primary action on the right. */
 .sheet-hint {
   flex: 0 0 auto; padding: 6px 10px; text-align: center; font-size: 13px; color: #8b919c;
@@ -448,6 +454,10 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
               autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
     <div class="sheet-hint" id="paste-hint">Pastes go straight in · typed text needs Send</div>
     <div class="sheet-bar">
+      <button type="button" class="k" id="paste-attach" aria-label="Attach a file or photo" title="Attach a file or photo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+      </button>
       <button type="button" class="k" id="paste-newline" aria-label="New line" title="New line (Shift+Enter)">
         <svg viewBox="0 0 16 14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"
              stroke-linejoin="round" aria-hidden="true"><path d="M14 2v5a2 2 0 0 1-2 2H3M6 6L3 9l3 3"/></svg>
@@ -480,6 +490,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     </div>
   </div>
   <div id="toast" role="status" hidden></div>
+  <input type="file" id="upload-input" multiple tabindex="-1" aria-hidden="true">
   <section id="sessions-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sessions-title" aria-describedby="sessions-subtitle" hidden>
     <div class="sessions-dialog">
     <header><div class="sessions-heading"><h2 id="sessions-title">Sessions</h2><p id="sessions-subtitle">Pick a task to continue.</p></div><button type="button" class="agent-button" id="sessions-done">Done</button></header>
@@ -508,6 +519,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 <script>/*{{XTERM_JS}}*/</script>
 <script>/*{{FIT_JS}}*/</script>
 <script>/*{{SESSIONS_JS}}*/</script>
+<script>/*{{UPLOADS_JS}}*/</script>
 <script>
 /* Mobile-friendly ttyd client for the Agent Terminal add-on.
  *
@@ -790,11 +802,11 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
 
-  function toast(msg) {
+  function toast(msg, ms) {
     toastEl.textContent = msg;
     toastEl.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 1600);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, ms || 1600);
   }
 
   // navigator.clipboard only exists over HTTPS. Plain-HTTP LAN access falls
@@ -840,8 +852,23 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     var id = connectionId;
     if (touch || !clipReadOK || !navigator.clipboard || !navigator.clipboard.readText) { openPaste(); return; }
     navigator.clipboard.readText().then(
-      function (t) { if (t && id === connectionId) term.paste(t); },
+      function (t) { if (id !== connectionId) return; if (t) term.paste(t); else pasteClipboardImage(); },
       function () { if (id === connectionId) { clipReadOK = false; openPaste(); } });
+  }
+  // A clipboard without text may hold a screenshot, which is attached.
+  function pasteClipboardImage() {
+    if (!navigator.clipboard.read) return;
+    var id = connectionId;
+    navigator.clipboard.read().then(function (items) {
+      return Promise.all(items.map(function (item) {
+        var type = item.types.filter(function (t) { return /^image\//.test(t); })[0];
+        return type ? item.getType(type).then(function (blob) {
+          return new File([blob], 'image.' + type.slice(6).replace(/\W.*/, ''), { type: type });
+        }) : null;
+      }));
+    }).then(function (files) {
+      if (id === connectionId) attachFiles(files.filter(Boolean));
+    }).catch(function () {});
   }
 
   // OSC 52 is "52;<selection>;<base64>". A "?" payload asks to *read* the
@@ -881,7 +908,30 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   });
 
   term.attachCustomKeyEventHandler(function (e) {
-    if (e.type !== 'keydown' || e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return true;
+    if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
+    // Legacy terminal input loses Shift on Enter. Both agent editors accept
+    // Ctrl+J as a newline, so a physical Shift+Enter must send LF, not CR.
+    if ((selectedAgent === 'claude' || selectedAgent === 'codex') &&
+        e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      fixedKey('\n');
+      return false;
+    }
+    // xterm sends Ctrl+Backspace as ^H (one character), and modified Delete
+    // is not understood consistently by the prompt editors. Use their shared
+    // readline word commands. Keep Shift combinations, AltGr, and Custom
+    // terminals untouched; native input fields never enter this handler.
+    if (selectedAgent !== 'custom' && !e.shiftKey && !e.metaKey &&
+        ((e.ctrlKey && !e.altKey) || (isMac && e.altKey && !e.ctrlKey))) {
+      var wordKey = { ArrowLeft: '\x1bb', ArrowRight: '\x1bf',
+        Backspace: '\x1b\x7f', Delete: '\x1bd' }[e.key];
+      if (wordKey) {
+        e.preventDefault();
+        fixedKey(wordKey);
+        return false;
+      }
+    }
+    if (e.altKey || !(isMac ? e.metaKey : e.ctrlKey)) return true;
     var k = e.key.toLowerCase();
     if (k === 'c') {
       // The selection is already on the clipboard, so Ctrl+C only has to clear
@@ -915,6 +965,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     { l: 'Copy', hint: isMac ? '⌘C' : 'Ctrl+C', when: function () { return term.hasSelection(); },
       go: function () { copyText(term.getSelection()); } },
     { l: 'Paste', hint: isMac ? '⌘V' : 'Ctrl+V', go: pasteText },
+    { l: 'Attach file…', hint: 'or drop / paste', go: pickFiles },
     { l: 'Select all', go: function () { term.selectAll(); } },
     { l: 'Screen as text…', go: openSelect },
     { l: 'Clear selection', when: function () { return term.hasSelection(); },
@@ -937,7 +988,8 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var TOUCH_MENU = [
     { l: 'Select text…', go: openSelect },
     { l: 'Copy screen', go: function () { copyText(screenText()); } },
-    { l: 'Paste', go: pasteText }
+    { l: 'Paste', go: pasteText },
+    { l: 'Attach file or photo…', go: pickFiles }
   ];
 
   function showMenu(x, y, items, tipText) {
@@ -1167,8 +1219,8 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   }
 
   function draftOpen() { return !pasteEl.hidden && !pasteAutoSend; }
-  function newDraftLine() {
-    if (!draftOpen() || pasteSending) return;
+  function newTextLine() {
+    if (pasteEl.hidden || pasteSending) return;
     clearMods();
     // Finish the current word before inserting outside its composing range.
     // Keep blur/focus inside the tap so the phone keyboard can stay open.
@@ -1180,9 +1232,13 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       if (!document.execCommand('insertText', false, '\n')) toast('Use Shift+Enter to add a line');
     } finally { addingDraftLine = false; }
   }
+  function newLineKey() {
+    if (!pasteEl.hidden) newTextLine();
+    else fixedKey('\n');
+  }
   function enterKey() {
     if (!draftOpen()) { key('\r'); return; }
-    if (mods.shift) newDraftLine();
+    if (mods.shift) newTextLine();
     else sendPaste();
   }
 
@@ -1246,8 +1302,124 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   }
 
   selButton('paste-send', sendPaste);
-  selButton('paste-newline', newDraftLine);
+  selButton('paste-newline', newTextLine);
   selButton('paste-cancel', closePaste);
+
+  // ---------------------------------------------------------------- uploads
+  // A file pasted, dropped or picked here is saved in the add-on and its path
+  // goes into the prompt. Claude Code and Codex attach a pasted image path as
+  // the image itself, and read any other file from its path when asked to.
+  var uploads = window.AgentUploads ? new window.AgentUploads({ base: base, tokenUrl: tokenUrl }) : null;
+  var uploadInput = document.getElementById('upload-input');
+  var uploadQueue = [], uploadBusy = false;
+
+  // Files belong to the session that was showing when they were attached.
+  function attachFiles(list) {
+    var files = Array.prototype.slice.call(list || []);
+    if (!files.length) return;
+    if (!uploads || choosingPane) { toast('Choose a session before attaching files'); return; }
+    var session = currentSession().id;
+    files.forEach(function (file) { uploadQueue.push({ file: file, session: session }); });
+    pumpUploads();
+  }
+  function pickFiles() {
+    hideMenu();
+    uploadInput.value = '';
+    uploadInput.click();
+  }
+  uploadInput.addEventListener('change', function () {
+    attachFiles(uploadInput.files);
+    uploadInput.value = '';
+  });
+
+  function pumpUploads() {
+    if (uploadBusy) return;
+    var item = uploadQueue.shift();
+    if (!item) { uploads.close(); return; }
+    uploadBusy = true;
+    var name = item.file.name || 'image', more = uploadQueue.length;
+    shrinkPhoto(item.file).then(function (file) {
+      return uploads.send(file, function (done) {
+        toast('Uploading ' + name + ' · ' + Math.round(done * 100) + '%' + (more ? ' · ' + more + ' more' : ''), 8000);
+      });
+    }).then(function (saved) { insertUpload(item.session, saved); },
+      function (error) { toast('Could not attach ' + name + ': ' + error.message, 5000); })
+      .then(function () { uploadBusy = false; pumpUploads(); });
+  }
+  // One path per paste: Claude Code only attaches a paste that is exactly
+  // one image path. The typed space keeps the next path apart from it.
+  function insertUpload(session, saved) {
+    var why = session !== currentSession().id ? 'the session changed'
+      : !sock || sock.readyState !== WebSocket.OPEN ? 'the terminal is disconnected' : '';
+    if (why) { toast('Saved ' + saved.path + ' - not inserted: ' + why, 8000); return; }
+    clearMods();
+    term.paste(saved.path);
+    send(' ');
+    toast('Attached ' + saved.name);
+  }
+
+  // Phone photos run to megabytes, and agents look at about two megapixels:
+  // large JPEG, WebP and HEIC photos go as a 2048-pixel JPEG. Screenshots
+  // (PNG) keep every pixel, and anything the browser can't decode goes as is.
+  function shrinkPhoto(file) {
+    var heic = /^image\/hei[cf]$/i.test(file.type) || /\.hei[cf]$/i.test(file.name || '');
+    if (!window.createImageBitmap || !document.createElement('canvas').toBlob ||
+        !(heic || (/^image\/(jpeg|webp)$/i.test(file.type) && file.size > 1572864))) return Promise.resolve(file);
+    return window.createImageBitmap(file).then(function (bitmap) {
+      var scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      if (bitmap.close) bitmap.close();
+      return new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.85); });
+    }).then(function (blob) {
+      if (!blob || (!heic && blob.size >= file.size)) return file;
+      return new File([blob], (file.name || 'photo').replace(/\.[^.]*$/, '') + '.jpg', { type: 'image/jpeg' });
+    }).catch(function () { return file; });
+  }
+
+  // Pasting a screenshot attaches it. Office copies cells along with a picture
+  // of them, and a file manager copies a file with its name as text: text
+  // wins, unless it only names the files.
+  function pastedFiles(data) {
+    var files = Array.prototype.slice.call((data && data.files) || []);
+    if (!files.length) return files;
+    var text = (data.getData('text/plain') || '').trim();
+    return !text || files.some(function (f) { return f.name && text.indexOf(f.name) !== -1; }) ? files : [];
+  }
+  document.addEventListener('paste', function (e) {
+    if (document.getElementById('sessions-sheet').contains(e.target)) return;
+    var files = pastedFiles(e.clipboardData);
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!pasteEl.hidden && pasteAutoSend) closePaste();
+    attachFiles(files);
+  }, true);
+
+  // Files dropped anywhere on a pane attach to that pane's session, instead
+  // of the browser opening them.
+  var dropTimer = null;
+  function dragsFiles(e) {
+    return !!e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') !== -1;
+  }
+  window.addEventListener('dragover', function (e) {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    app.classList.add('dropping');
+    clearTimeout(dropTimer);
+    dropTimer = setTimeout(function () { app.classList.remove('dropping'); }, 250);
+  });
+  window.addEventListener('drop', function (e) {
+    if (!dragsFiles(e)) return;
+    e.preventDefault();
+    clearTimeout(dropTimer);
+    app.classList.remove('dropping');
+    attachFiles(e.dataTransfer.files);
+  });
+  selButton('paste-attach', pickFiles);
 
   // ttyd pushes --client-option values here. Only options xterm actually
   // understands are applied, and a font size the user picked on this device wins.
@@ -1518,6 +1690,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } }
     ] },
     { id: 'edit', l: 'Edit', keys: [
+      { l: '↵', t: 'New line (Shift+Enter) — edit the open draft or send Ctrl+J to the terminal', click: true, go: newLineKey },
       { l: 'Bksp', t: 'Backspace in terminal', rep: true, go: function () { key('\x7f'); } },
       { l: 'Home', t: 'Home in terminal', go: function () { arrow('H'); } },
       { l: 'End', t: 'End in terminal', go: function () { arrow('F'); } },
@@ -1527,6 +1700,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     { id: 'tools', l: 'Tools', keys: [
       { l: 'Copy', t: 'Show the screen as selectable text (or long-press)', click: true, go: openSelect },
       { l: 'Paste', t: 'Paste literal text into terminal', click: true, go: pasteText },
+      { l: 'Attach', t: 'Attach a file or photo - its path goes into the prompt', click: true, go: pickFiles },
       { l: 'Direct', t: 'Direct terminal keyboard for shortcuts (disable phone autocorrect)', id: 'direct-keys',
         toggle: true, click: true, go: toggleDirectKeyboard },
       { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },

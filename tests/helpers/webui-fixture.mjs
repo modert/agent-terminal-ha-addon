@@ -1,6 +1,6 @@
 // Shared, inert ttyd/session transport for browser tests and exploratory runs.
 const mock = `<script>
-    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = [];
+    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = []; window.testUploaded = [];
     document.addEventListener('focusin', e => {
       window.testFocus.push({ id: e.target.id, active: navigator.userActivation.isActive });
     });
@@ -26,12 +26,32 @@ const mock = `<script>
       readyState = 1;
       constructor(url) {
         this.url = url; this.args = new URL(url).searchParams.getAll('arg'); this.control = this.args[0] === 'sessions';
-        if (this.control) testHub.controls.push(this); else { window.testSocket = this; window.testTerminalConnections.push(this); }
+        this.upload = this.args[0] === 'uploads';
+        if (this.control) testHub.controls.push(this);
+        else if (!this.upload) { window.testSocket = this; window.testTerminalConnections.push(this); }
         setTimeout(() => this.onopen(), 0);
       }
       packet(value) { this.onmessage({ data: '0' + JSON.stringify(value) + '\\n' }); }
       send(data) {
         const text = new TextDecoder().decode(data);
+        // The add-on's upload receiver: ready after ttyd's handshake, then
+        // one reply per request. Chunks are kept for the test to decode.
+        if (this.upload) {
+          if (text[0] === '{') { setTimeout(() => this.packet({ type: 'ready', maxBytes: 52428800 }), 0); return; }
+          const request = JSON.parse(text.slice(1)), files = window.testUploaded;
+          let result = true;
+          if (request.method === 'begin') {
+            files.push({ name: request.name, size: request.size, chunks: [] }); result = { upload: String(files.length) };
+          } else if (request.method === 'chunk') {
+            files[request.upload - 1].chunks.push(request.data); result = { received: 0 };
+          } else if (request.method === 'finish') {
+            const file = files[request.upload - 1];
+            file.path = '/data/agent-terminal/uploads/2026-10-02/153012-abc123-' + file.name;
+            result = { path: file.path, name: file.path.split('/').pop(), size: file.size };
+          }
+          setTimeout(() => this.packet({ request: request.request, result }), 0);
+          return;
+        }
         if (!this.control) {
           window.testPackets.push(text);
           if (text[0] === '{') {
