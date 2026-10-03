@@ -204,4 +204,7 @@ MOTD
 
 agent-workspace refresh-ui
 
+# Files attached in the web terminal are kept for a week (see DOCS.md).
+node /opt/agent-terminal/uploads.mjs prune || true
+
 echo "[agent-terminal] init complete (ssh port ${SSH_PORT})"

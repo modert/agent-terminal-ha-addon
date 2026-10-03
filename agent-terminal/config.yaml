@@ -1,5 +1,5 @@
 name: "Agent Terminal"
-version: "2.7.1"
+version: "2.8.0"
 slug: "agent_terminal"
 description: "Named Claude, ChatGPT, and Shell sessions - quick switcher, split view, mobile terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"
@@ -25,6 +25,10 @@ map:
   - "ssl:ro"
   - "backup:rw"
   - "media:rw"
+# Files attached in the web terminal (/data/agent-terminal/uploads) are kept
+# for a week and never belong in a backup.
+backup_exclude:
+  - "agent-terminal/uploads"
 ports:
   "2202/tcp": 2202
 ports_description:

@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const template = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/index.template.html', import.meta.url), 'utf8');
-const source = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
+const webui = name => readFileSync(new URL('../agent-terminal/rootfs/opt/webui/' + name, import.meta.url), 'utf8');
+const source = webui('sessions.js') + '\n' + webui('uploads.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client(search = '') {
@@ -20,6 +21,7 @@ function client(search = '') {
     querySelector() { return null; }
     querySelectorAll() { return []; }
     focus() {} blur() {} contains() { return false; }
+    click() { this.clicks = (this.clicks || 0) + 1; }
   }
   const elements = {};
   const document = new Element();
@@ -31,7 +33,7 @@ function client(search = '') {
   window.isSecureContext = true;                   // as Ingress serves the page
   window.getSelection = () => ({ removeAllRanges() {} });
   const location = new URL('https://example.test/api/hassio_ingress/test/' + search);
-  const storage = new Map(), fetches = [], sockets = [], timers = new Map(), copies = [];
+  const storage = new Map(), fetches = [], sockets = [], uploads = [], timers = new Map(), copies = [];
   let timerId = 0, terminal, clipboardResolve, control;
   class Terminal {
     constructor(options) { this.options = options; terminal = this; }
@@ -54,14 +56,15 @@ function client(search = '') {
   class WebSocket {
     static OPEN = 1;
     constructor(url) { this.url = new URL(url); this.sent = []; this.readyState = 0;
-      if (this.url.searchParams.get('arg') === 'sessions') control = this; else sockets.push(this); }
+      const arg = this.url.searchParams.get('arg');
+      if (arg === 'sessions') control = this; else if (arg === 'uploads') uploads.push(this); else sockets.push(this); }
     send(bytes) { this.sent.push(new TextDecoder().decode(bytes)); }
     open() { this.readyState = 1; this.onopen(); }
     close() { this.readyState = 3; this.onclose?.(); }
     output(text) { this.onmessage({ data: '0' + text }); }
   }
   vm.runInNewContext(source, { document, window, location, Terminal, WebSocket,
-    TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Promise,
+    TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Promise, Blob, File, btoa,
     FitAddon: { FitAddon: class { fit() {} } },
     navigator: { platform: 'Linux', clipboard: {
       readText: () => new Promise(resolve => { clipboardResolve = resolve; }),
@@ -76,7 +79,7 @@ function client(search = '') {
     clearInterval: id => timers.delete(id),
   });
   const select = agent => elements.agents.children.find(b => b.dataset.agent === agent).emit('click');
-  return { elements, document, window, location, fetches, sockets, terminal, timers, select, copies, control: () => control,
+  return { elements, document, window, location, fetches, sockets, uploads, terminal, timers, select, copies, control: () => control,
     resolveClipboard: text => clipboardResolve(text),
     settle: () => { const id = [...timers.keys()].at(-1); const callback = timers.get(id); timers.delete(id); callback(); },
     async connect(index = fetches.length - 1) { fetches[index](); await tick(); sockets.at(-1).open(); },
@@ -194,4 +197,127 @@ test('coming back to the page reconnects at once instead of waiting out the back
   c.sockets.at(-1).close();
   c.window.emit('online'); await tick();
   assert.equal(c.fetches.length, waiting + 2, 'so is coming back online');
+});
+
+async function until(check, message) {
+  for (let i = 0; i < 200 && !check(); i++) await tick();
+  assert.ok(check(), message);
+}
+// Plays the add-on's upload receiver behind ttyd: says it is ready, then
+// answers each request as it arrives, as the client waits for every reply.
+async function receiver(c, handlers = {}) {
+  const before = c.uploads.length;
+  await until(() => c.fetches.length > 1, 'the upload never asked for a token');
+  c.fetches.at(-1)();
+  await until(() => c.uploads.length > before, 'no upload connection opened');
+  const socket = c.uploads.at(-1);
+  assert.deepEqual(socket.url.searchParams.getAll('arg'), ['uploads']);
+  socket.open();
+  assert.match(socket.sent[0], /^\{"AuthToken"/, 'ttyd handshake comes first');
+  assert.equal(socket.sent.length, 1, 'nothing is sent before the receiver is ready');
+  socket.output(JSON.stringify({ type: 'ready', maxBytes: 1048576 }) + '\n');
+  const files = new Map(), saved = [], requests = [];
+  let serial = 0, index = 1, idle = 0;
+  const defaults = {
+    begin: r => { const id = String(++serial); files.set(id, { name: r.name, size: r.size, data: [] }); return { upload: id }; },
+    chunk: r => { files.get(r.upload).data.push(Buffer.from(r.data, 'base64')); return { received: 0 }; },
+    finish: r => {
+      const file = files.get(r.upload), path = '/data/agent-terminal/uploads/2026-10-02/153012-abc123-' + file.name;
+      saved.push({ path, bytes: Buffer.concat(file.data), chunks: file.data.length });
+      return { path, name: path.split('/').pop(), size: file.size };
+    },
+    cancel: () => true,
+  };
+  while (idle < 50) {
+    await tick();
+    if (index >= socket.sent.length) { idle++; continue; }
+    idle = 0;
+    const text = socket.sent[index++];
+    assert.equal(text[0], '0'); assert.ok(text.endsWith('\n'), 'one request per line');
+    const request = JSON.parse(text.slice(1));
+    requests.push(request);
+    let reply;
+    try { reply = { request: request.request, result: (handlers[request.method] || defaults[request.method])(request, defaults) }; }
+    catch (error) { reply = { request: request.request, error: error.message }; }
+    socket.output(JSON.stringify(reply) + '\n');
+  }
+  return { socket, saved, requests };
+}
+function paste(c, files, text = '') {
+  const event = { clipboardData: { files, getData: () => text }, prevented: false, stopped: false,
+    preventDefault() { event.prevented = true; }, stopPropagation() { event.stopped = true; } };
+  c.document.emit('paste', event);
+  return event;
+}
+
+test('a pasted screenshot uploads in acknowledged chunks and its path goes into the prompt', async () => {
+  const c = client(); await tick(); await c.connect();
+  const bytes = Buffer.from(Array.from({ length: 150000 }, (_, i) => i % 251));
+  const event = paste(c, [new File([bytes], 'image.png', { type: 'image/png' })]);
+  assert.equal(event.prevented && event.stopped, true, 'xterm must not also paste the empty text');
+  const { socket, saved, requests } = await receiver(c);
+  assert.deepEqual(requests.map(r => r.method), ['begin', 'chunk', 'chunk', 'chunk', 'finish']);
+  assert.deepEqual(requests[0], { request: 1, method: 'begin', name: 'image.png', size: 150000 });
+  assert.deepEqual(saved[0].bytes, bytes, 'chunks reassemble to the original file');
+  assert.deepEqual(c.terminal.pastes, [saved[0].path], 'the path is pasted on its own');
+  assert.deepEqual(c.sockets[0].sent.slice(-2), ['0' + saved[0].path, '0 ']);
+  assert.equal(socket.readyState, 3, 'the receiver only runs while uploading');
+  assert.equal(c.elements.toast.textContent, 'Attached 153012-abc123-image.png');
+});
+
+test('copied cells paste as text despite their picture; a file copied with its name attaches', async () => {
+  const c = client(); await tick(); await c.connect();
+  const fetches = c.fetches.length;
+  const cells = paste(c, [new File(['png'], 'image.png', { type: 'image/png' })], 'Kitchen\t21.5\n');
+  for (let i = 0; i < 10; i++) await tick();
+  assert.equal(cells.prevented, false, 'xterm pastes the text as usual');
+  assert.equal(c.fetches.length, fetches, 'no upload starts');
+  const copied = paste(c, [new File(['%PDF'], 'report.pdf', { type: 'application/pdf' })], 'report.pdf');
+  assert.equal(copied.prevented, true);
+  const { saved } = await receiver(c);
+  assert.deepEqual(c.terminal.pastes, [saved[0].path]);
+  assert.equal(saved[0].bytes.toString(), '%PDF');
+});
+
+test('a file that finishes after switching sessions is never typed into the new one', async () => {
+  const c = client(); await tick(); await c.connect();
+  paste(c, [new File(['notes'], 'notes.txt', { type: 'text/plain' })]);
+  const terminal = c.sockets[0];
+  await receiver(c, { finish(request, defaults) { c.select('codex'); return defaults.finish(request); } });
+  assert.deepEqual(c.terminal.pastes, []);
+  assert.equal(terminal.sent.some(text => text.includes('notes.txt')), false);
+  assert.match(c.elements.toast.textContent, /^Saved \/data\/agent-terminal\/uploads\/.*notes\.txt - not inserted: the session changed$/);
+});
+
+test('dropped files go one at a time; a failed one is cancelled and the next still attaches', async () => {
+  const c = client(); await tick(); await c.connect();
+  const toasts = [];
+  Object.defineProperty(c.elements.toast, 'textContent', { set(value) { toasts.push(value); }, get() { return toasts.at(-1); } });
+  let prevented = false;
+  c.window.emit('drop', { preventDefault() { prevented = true; }, dataTransfer: { types: ['Files'],
+    files: [new File(['x'.repeat(10)], 'broken.bin'), new File(['fine'], 'fine.txt', { type: 'text/plain' })] } });
+  assert.equal(prevented, true, 'the browser must not open the dropped file');
+  const { requests, saved } = await receiver(c, { chunk(request, defaults) {
+    if (request.upload === '1') throw new Error('File is larger than announced.');
+    return defaults.chunk(request);
+  } });
+  assert.deepEqual(requests.map(r => r.method + (r.upload ? ':' + r.upload : '')),
+    ['begin', 'chunk:1', 'cancel:1', 'begin', 'chunk:2', 'finish:2']);
+  assert.ok(toasts.includes('Could not attach broken.bin: File is larger than announced.'));
+  assert.deepEqual(c.terminal.pastes, [saved[0].path]);
+  assert.equal(toasts.at(-1), 'Attached 153012-abc123-fine.txt');
+});
+
+test('Attach opens the file picker from the keys and the draft, and a pick uploads', async () => {
+  const c = client(); await tick(); await c.connect();
+  const input = c.elements['upload-input'];
+  c.elements['keys-tools'].children.find(b => b.textContent === 'Attach').emit('click', { detail: 1 });
+  assert.equal(input.clicks, 1);
+  c.elements['paste-attach'].emit('click', { detail: 1 });
+  assert.equal(input.clicks, 2);
+  input.files = [new File(['csv'], 'energy.csv', { type: 'text/csv' })];
+  input.emit('change');
+  assert.equal(input.value, '', 'the same file can be picked again');
+  const { saved } = await receiver(c);
+  assert.deepEqual(c.terminal.pastes, [saved[0].path]);
 });
