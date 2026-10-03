@@ -18,7 +18,7 @@ test('phone taps and composition with real browser events and xterm', {
   const bundle = process.env.WEBUI_BUNDLE || resolve(import.meta.dirname,
     '../agent-terminal/rootfs/opt/webui/index.html');
   const mock = `<script>
-    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = [];
+    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = []; window.testUploaded = [];
     document.addEventListener('focusin', e => {
       window.testFocus.push({ id: e.target.id, active: navigator.userActivation.isActive });
     });
@@ -44,12 +44,32 @@ test('phone taps and composition with real browser events and xterm', {
       readyState = 1;
       constructor(url) {
         this.url = url; this.args = new URL(url).searchParams.getAll('arg'); this.control = this.args[0] === 'sessions';
-        if (this.control) testHub.controls.push(this); else { window.testSocket = this; window.testTerminalConnections.push(this); }
+        this.upload = this.args[0] === 'uploads';
+        if (this.control) testHub.controls.push(this);
+        else if (!this.upload) { window.testSocket = this; window.testTerminalConnections.push(this); }
         setTimeout(() => this.onopen(), 0);
       }
       packet(value) { this.onmessage({ data: '0' + JSON.stringify(value) + '\\n' }); }
       send(data) {
         const text = new TextDecoder().decode(data);
+        // The add-on's upload receiver: ready after ttyd's handshake, then
+        // one reply per request. Chunks are kept for the test to decode.
+        if (this.upload) {
+          if (text[0] === '{') { setTimeout(() => this.packet({ type: 'ready', maxBytes: 52428800 }), 0); return; }
+          const request = JSON.parse(text.slice(1)), files = window.testUploaded;
+          let result = true;
+          if (request.method === 'begin') {
+            files.push({ name: request.name, size: request.size, chunks: [] }); result = { upload: String(files.length) };
+          } else if (request.method === 'chunk') {
+            files[request.upload - 1].chunks.push(request.data); result = { received: 0 };
+          } else if (request.method === 'finish') {
+            const file = files[request.upload - 1];
+            file.path = '/data/agent-terminal/uploads/2026-10-02/153012-abc123-' + file.name;
+            result = { path: file.path, name: file.path.split('/').pop(), size: file.size };
+          }
+          setTimeout(() => this.packet({ request: request.request, result }), 0);
+          return;
+        }
         if (!this.control) {
           window.testPackets.push(text);
           if (text[0] === '{') {
@@ -681,4 +701,72 @@ test('phone taps and composition with real browser events and xterm', {
   await click(`${side}.document.getElementById('split-toggle')`);
   await until("!document.getElementById('side-terminal')");
   assert.equal(await evaluate("testHub.sessions.find(s => s.name === 'Release notes').running"), true);
+
+  // Attaching files with real browser events: a pasted screenshot, a drop of
+  // two files, and a large photo picked from the phone draft, which goes as a
+  // 2048-pixel JPEG. Each saved path is pasted on its own, then a typed space.
+  await load();
+  const bracketed = name => '\x1b[200~/data/agent-terminal/uploads/2026-10-02/153012-abc123-' + name + '\x1b[201~';
+  await evaluate(`(() => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: 'image/png' }));
+    testTerminal.textarea.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  })()`);
+  await until('window.testUploaded[0]?.path && window.testPackets.length >= 2');
+  assert.deepEqual(await packets(), [bracketed('image.png'), ' '], 'a pasted screenshot becomes its path');
+  await evaluate('window.testPackets = []');
+  assert.equal(await evaluate(`(() => {
+    const data = new DataTransfer(), term = document.getElementById('term');
+    data.items.add(new File(['kitchen,21.5'], 'temps.csv', { type: 'text/csv' }));
+    data.items.add(new File(['%PDF-1.7'], 'manual.pdf', { type: 'application/pdf' }));
+    term.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }));
+    const highlighted = document.getElementById('app').classList.contains('dropping');
+    return highlighted && !term.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }));
+  })()`), true, 'a file drag is highlighted, and the drop is the page\'s rather than the browser\'s');
+  await until('window.testUploaded.filter(f => f.path).length === 3 && window.testPackets.length >= 4');
+  assert.deepEqual(await packets(), [bracketed('temps.csv'), ' ', bracketed('manual.pdf'), ' ']);
+  assert.equal(await evaluate("document.getElementById('app').classList.contains('dropping')"), false);
+
+  await command('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate("localStorage.removeItem('cc-mobile:keybar')");
+  await load();
+  await tap("document.getElementById('term')");
+  await until("document.activeElement.id === 'paste-text'");
+  assert.equal(await evaluate(`(() => {
+    const attach = document.getElementById('paste-attach').getBoundingClientRect();
+    const text = document.getElementById('paste-text').getBoundingClientRect();
+    return attach.width >= 40 && attach.height >= 44 && text.width >= 150 && text.right <= attach.left;
+  })()`), true, 'Attach sits beside the draft and leaves room to write');
+  const photo = Buffer.from(await evaluate(`(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 2400; canvas.height = 1600;
+    const context = canvas.getContext('2d'), image = context.createImageData(2400, 1600);
+    for (let i = 0; i < image.data.length; i++) image.data[i] = i % 4 === 3 ? 255 : Math.random() * 256;
+    context.putImageData(image, 0, 0);
+    const bytes = new Uint8Array(await (await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8))).arrayBuffer());
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
+    return btoa(text);
+  })()`), 'base64');
+  assert.ok(photo.length > 1572864, 'the test photo is large enough to shrink');
+  writeFileSync(join(profile, 'IMG_0042.jpg'), photo);
+  await command('Page.setInterceptFileChooserDialog', { enabled: true });
+  await evaluate("document.getElementById('upload-input').addEventListener('click', () => { window.testPicker = true; })");
+  await tap("document.getElementById('paste-attach')");
+  await until('window.testPicker');
+  const { root } = await command('DOM.getDocument', { depth: 0 });
+  const { nodeId } = await command('DOM.querySelector', { nodeId: root.nodeId, selector: '#upload-input' });
+  await command('DOM.setFileInputFiles', { nodeId, files: [join(profile, 'IMG_0042.jpg')] });
+  await until('window.testUploaded[0]?.path && window.testPackets.length >= 2');
+  const sent = await evaluate(`(async () => {
+    const file = window.testUploaded[0];
+    const parts = file.chunks.map(chunk => Uint8Array.from(atob(chunk), c => c.charCodeAt(0)));
+    const bitmap = await createImageBitmap(new Blob(parts, { type: 'image/jpeg' }));
+    return { name: file.name, size: file.size, received: parts.reduce((n, p) => n + p.length, 0), width: bitmap.width, height: bitmap.height };
+  })()`);
+  assert.equal(sent.received, sent.size);
+  assert.ok(sent.size < photo.length, 'the photo shrank before upload');
+  assert.deepEqual([sent.name, sent.width, sent.height], ['IMG_0042.jpg', 2048, 1365]);
+  assert.deepEqual(await packets(), [bracketed('IMG_0042.jpg'), ' ']);
+  assert.equal(await evaluate("document.getElementById('paste').hidden"), false, 'the draft stays open to finish the message');
 });

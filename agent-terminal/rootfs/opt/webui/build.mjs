@@ -17,6 +17,7 @@ const parts = {
   XTERM_JS: readFileSync(mod('@xterm', 'xterm', 'lib', 'xterm.js'), 'utf8'),
   FIT_JS: readFileSync(mod('@xterm', 'addon-fit', 'lib', 'addon-fit.js'), 'utf8'),
   SESSIONS_JS: readFileSync(join(here, 'sessions.js'), 'utf8'),
+  UPLOADS_JS: readFileSync(join(here, 'uploads.js'), 'utf8'),
 };
 
 let html = readFileSync(join(here, 'index.template.html'), 'utf8');

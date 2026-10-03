@@ -110,6 +110,9 @@ tools."
   a separate tmux session. The panel and SSH can attach to the same pair, so a
   long-running task keeps going if you close the browser tab or your SSH
   connection drops.
+- **Files and images for the agent** - paste a screenshot, drop a file, or
+  pick a photo on your phone, and it lands in the prompt (see
+  [Attaching files and images](#attaching-files-and-images-sidebar-panel)).
 - **Built-in `homeassistant` MCP server** - gives the agent structured tools
   instead of hand-rolled `curl`: `ha_list_entities`, `ha_get_entity_state`,
   `ha_call_service`, `ha_render_template`, `ha_list_services`,
@@ -271,7 +274,7 @@ project folders or Git worktrees when tasks need independent changes.
   suggestion) and it goes straight to the terminal. Typed text needs **Send**.
 - **Esc twice on a phone:** tap **Keys**, then **Esc²**.
 - **On a phone, long-press the terminal** for a menu: Select text…, Copy
-  screen, Paste.
+  screen, Paste, Attach file or photo…
 - **Copy on a phone:** scroll to what you want, then long-press → **Select
   text…** (or tap **Copy** on the key bar). The screen opens as plain text:
   select with your phone's handles and it copies itself once they settle.
@@ -309,6 +312,43 @@ Session search, task names, purpose notes, and the mobile draft are native
 text fields, so they keep the browser's normal editing shortcuts. Only the
 focused terminal receives terminal shortcuts, including in split view.
 
+## Attaching files and images (sidebar panel)
+
+Give the agent a screenshot, a photo, a PDF or a log without leaving the panel:
+
+- **Paste a screenshot:** Ctrl+V / ⌘V with an image on the clipboard.
+  Right-click → Paste does the same over HTTPS.
+- **Drop files** on the terminal. In split view they go to the pane they
+  land on.
+- **Pick files:** right-click → **Attach file…**. On a phone, tap the
+  paperclip beside the draft, long-press → **Attach file or photo…**, or
+  **Keys → Tools → Attach**, and choose the camera, a photo or a file.
+
+The file is saved in the add-on and its path is pasted into the prompt, so you
+can go on typing your question after it. Claude Code and Codex turn the path
+of a PNG, JPEG, GIF or WebP into an attached image, shown as `[Image #1]`.
+Any other file stays a path, which the agent reads once you send the message.
+In a Shell session it is just the path.
+
+- Files go to `/data/agent-terminal/uploads/<date>/`, named with the time and
+  a simplified version of their own name. Each can be up to 50 MB.
+- They are kept for 7 days, then removed when the add-on starts or the next
+  file is attached, and they are left out of the add-on's backups. Ask the
+  agent to copy a file elsewhere if it should stay.
+- Large JPEG, WebP and HEIC photos are sent as a JPEG no more than 2048 pixels
+  on its long side: the agents use no more, and it uploads in a moment from a
+  phone. PNG screenshots and every other file go unchanged.
+- Text wins on paste. A spreadsheet copies cells as text with a picture of
+  them; that pastes the text.
+- A file that finishes uploading after you switched sessions is saved but not
+  typed into the other session; a message shows where it is.
+- So that Claude reads attached files without asking, start-up adds the
+  uploads folder to `permissions.additionalDirectories` in Claude's
+  `settings.json`, once, leaving the rest of the file as it is.
+- Attaching needs the add-on's own page (`mobile_ui: true`, the default). Over
+  SSH, copy the file instead (`scp -P 2202 shot.png root@<ha-host>:/tmp/`) and
+  type its path.
+
 ## Options
 
 | Option | Default | Description |
@@ -339,7 +379,7 @@ Assistant companion app.
   | Agent | Tab, Mode, Answer, Esc², Ctrl+C, Space |
   | Ctrl | Ctrl, Alt, Shift, tmux |
   | Edit | ↵ (New line), Bksp, Home, End, PgUp, PgDn |
-  | Tools | Copy, Paste, Direct, A−, A+ |
+  | Tools | Copy, Paste, Attach, Direct, A−, A+ |
 
   The group button stays put, so tapping it twice returns you to where you
   were. Reloading, switching an agent/workspace, or starting a new draft
@@ -423,7 +463,7 @@ Enter submits a draft.
 | Ctrl+C | Ctrl+C | Clear input / interrupt; twice on an empty prompt exits | Clear input / interrupt; twice on an empty prompt exits |
 
 Arrows and Space keep their normal navigation/selection behavior. The Edit
-group has Backspace (Bksp), Home/End and page scrolling; Tools has Copy/Paste,
+group has Backspace (Bksp), Home/End and page scrolling; Tools has Copy/Paste, Attach,
 Direct and A−/A+.
 See [Claude's shortcut reference](https://code.claude.com/docs/en/interactive-mode),
 [Codex's interactive commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli#interactive-shortcuts),
@@ -491,7 +531,15 @@ process isolation, persisted stop state, input validation, and concurrent
 launch/stop operations. It requires tmux and `flock` (both supplied by the
 add-on). The container integration test exercises management requests and
 readline word editing through the real ttyd WebSocket, PTY, and tmux,
-alongside named provider terminals.
+alongside named provider terminals. It also sends a file through that PTY
+and compares the saved bytes.
+`tests/test_uploads.mjs` checks the upload receiver on its own: file-name
+cleaning, the size limit, malformed and incomplete uploads, partial files
+removed on disconnect, and the weekly clean-up. `tests/test_webui.mjs` runs
+the page's side of it: pasted, dropped and picked files, chunking, a failed
+file, and a session switched mid-upload. The browser suite repeats paste,
+drop and the phone's Attach button with real events, and checks that a large
+photo arrives as a 2048-pixel JPEG.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.

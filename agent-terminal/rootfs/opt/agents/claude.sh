@@ -30,6 +30,30 @@ agent_init() {
     # Point the legacy ~/.claude.json at that same file so both paths agree.
     [ -s "${cc_json}" ] || echo '{}' > "${cc_json}"
     ln -sfn "${cc_json}" /root/.claude.json
+    claude_allow_uploads
+}
+
+# Files attached in the web terminal are saved outside every workspace. Claude
+# attaches a pasted image path by itself, but reads any other file with its
+# Read tool, which asks first outside the working directories. Add the uploads
+# folder to them once; keep the rest of the settings, and never rewrite a file
+# that doesn't parse.
+claude_allow_uploads() {
+    local settings="${AGENT_DATA}/.claude/settings.json" dir="/data/agent-terminal/uploads" tmp
+    [ -s "${settings}" ] || echo '{}' > "${settings}"
+    jq -e 'type == "object"' "${settings}" >/dev/null 2>&1 || return 0
+    if jq -e --arg d "${dir}" '.permissions.additionalDirectories // [] | index($d) != null' \
+          "${settings}" >/dev/null 2>&1; then
+        return 0
+    fi
+    tmp="$(mktemp)"
+    if jq --arg d "${dir}" '.permissions.additionalDirectories = ((.permissions.additionalDirectories // []) + [$d])' \
+          "${settings}" > "${tmp}" 2>/dev/null && [ -s "${tmp}" ]; then
+        chmod --reference="${settings}" "${tmp}" 2>/dev/null || true
+        mv "${tmp}" "${settings}"
+    else
+        rm -f "${tmp}"
+    fi
 }
 
 # agent_register_mcp NAME COMMAND [ARGS...]

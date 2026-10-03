@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 2.8.0
+- Attach files and images in the web terminal. Paste a screenshot with
+  Ctrl+V / ⌘V, drop files on the terminal, or choose **Attach file…** from
+  the right-click menu. On a phone, tap the paperclip beside the draft, or
+  **Attach** in the long-press menu or under Keys → Tools, to send a photo,
+  a camera shot or a file.
+- The file is saved in the add-on and its path is pasted into the prompt.
+  Claude Code and Codex attach an image path as the image (`[Image #1]`) and
+  read any other file from its path.
+- Uploads live in `/data/agent-terminal/uploads`, up to 50 MB each. They are
+  removed after 7 days and left out of backups. Large phone photos are sent
+  as a 2048-pixel JPEG.
+- Claude's settings gain the uploads folder as an additional directory at
+  start-up, so reading an attached file does not ask for permission.
+
 ## 2.7.1
 - Make Ctrl+Left/Right move by word, Ctrl+Backspace delete the previous word,
   and Ctrl+Delete delete the next word in the web terminal. Mac Option uses
