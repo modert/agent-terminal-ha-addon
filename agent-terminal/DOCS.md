@@ -569,12 +569,57 @@ accepts an empty value. The model had clicked behind an open dialog and
 misidentified the required Task name field; those observations did not
 reproduce a functional app defect.
 
-This tool makes requests only when launched explicitly. GitHub runner
-registration and scheduling are separate deployment decisions; see
-[GitHub's guidance on self-hosted runners and public repositories](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
+This tool makes requests only when launched explicitly.
 Run its controller checks with `node --test tests/test_ui_explorer.mjs`.
 On the dedicated machine, also verify Chromium isolation with
 `UI_EXPLORER_BROWSER_TEST=1 node --test tests/test_ui_explorer_browser.mjs`.
+
+#### Running an exploration through GitHub Actions
+
+The **Explore UI with local Ollama** workflow builds the page, checks the
+controller and browser, then lets the vision model choose its actions. It
+uploads screenshots and reports as an Actions artifact retained for 14 days.
+Its green status describes execution of the harness, not completion of the
+model's goal. Review the evidence and preserve useful findings in Git.
+
+Runs are explicit: the repository owner can use `workflow_dispatch`, or push
+a `ui-explore/NAME` tag pointing at a reviewed commit. The tag also works
+before the workflow reaches the default branch. There are no pull-request
+or scheduled triggers. Inputs are passed as quoted environment variables,
+the job token has read-only contents access, and checkout does not retain it.
+Set the repository variable `UI_EXPLORER_OLLAMA_URL` to override the lab's
+default Ollama endpoint.
+
+Each run requires a fresh ephemeral runner on the dedicated tester VM. The
+runner is registered with only `ui-explorer-RUN_ID-ATTEMPT` as its label, so
+ordinary `self-hosted` jobs cannot select it. It accepts one job, unregisters
+afterward, and has a 15-minute service deadline. There is no boot-time service.
+The account has neither sudo nor Docker access; its service protects home
+directories and writes only to its own directory and private temporary files.
+This does not make public pull-request code safe: run reviewed commits only,
+as described in [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
+
+On VM 230, an administrator prepares the pinned, checksum-verified runner with
+`sh tools/ui-explorer/prepare-github-runner.sh`. After queueing the workflow,
+use its numeric run ID and attempt (initially `1`) to register and start it.
+The following runs on the administrator's authenticated machine, with
+`TESTER_SSH_HOST` set to the SSH alias for the VM and `RUN_ID` set to the queued
+run. The alias must use the verified VM host key and the tester SSH identity:
+
+```sh
+gh api --method POST repos/modert/agent-terminal-ha-addon/actions/runners/registration-token \
+  --jq .token | ssh "$TESTER_SSH_HOST" \
+  "sh /opt/agent-ui-tester/repo/tools/ui-explorer/start-github-runner.sh $RUN_ID 1"
+```
+
+The VM receives only the short-lived registration token, not the administrator's
+GitHub credentials. Logs are available with
+`sudo journalctl -u ui-explorer-RUN_ID-ATTEMPT`. After the job, verify it has
+left the repository's runner list. If registration succeeded but the service
+failed or expired before accepting a job, remove that specific runner through
+GitHub's runner settings/API and remove its `.runner`, `.credentials`, and
+`.credentials_rsaparams` files on the VM before registering another run.
+The IP reservation and private infrastructure repository remain host-managed.
 
 ## Known limitations
 
