@@ -581,6 +581,11 @@ controller and browser, then lets the vision model choose its actions. It
 uploads screenshots and reports as an Actions artifact retained for 14 days.
 Its green status describes execution of the harness, not completion of the
 model's goal. Review the evidence and preserve useful findings in Git.
+The [first runner trial](../tests/evidence/ui-explorer/github-runner-trial.json)
+passed all five checks and reached two different ChatGPT sessions side by
+side by action 9. The model kept clicking after achieving that state, so
+the repetition guard ended the exploration at action 14 with `stalled`.
+The reviewed screenshot and findings are kept alongside the trial record.
 
 Runs are explicit: the repository owner can use `workflow_dispatch`, or push
 a `ui-explore/NAME` tag pointing at a reviewed commit. The tag also works
