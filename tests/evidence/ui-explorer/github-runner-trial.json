@@ -1,0 +1,197 @@
+{
+  "kind": "GitHub Actions runner trial with independent screenshot review",
+  "run": "https://github.com/modert/agent-terminal-ha-addon/actions/runs/37104075313",
+  "artifactId": 11267276399,
+  "artifactExpiresAt": "2026-10-17T06:48:43Z",
+  "commit": "c91733f9dd725067a8f5b9640c175da9e8ca559e",
+  "bundleSha256": "3df8173e8d85c47a2c009523b807fb32c4d9fd4288a763a9192a98e337f0a1ee",
+  "started": "2026-10-03T06:46:12.321Z",
+  "runner": {
+    "name": "ui-explorer-37104075313-1",
+    "vm": "agent-ui-tester (VM 230)",
+    "version": "2.337.0",
+    "user": "ui-runner",
+    "ephemeral": true,
+    "removedAfterJob": true,
+    "serviceStoppedAfterJob": true
+  },
+  "workflowConclusion": "success",
+  "controllerAndBrowserChecksPassed": 5,
+  "exploration": {
+    "model": "qwen3-vl:4b-instruct",
+    "goal": "Create a second ChatGPT session named Runner trial, then open two different sessions side by side. Report anything confusing.",
+    "status": "stalled",
+    "decisions": 14,
+    "seconds": 150.9
+  },
+  "review": {
+    "namedSessionCreatedAt": 4,
+    "splitOpenedAt": 5,
+    "distinctSessionsVisibleAt": 9,
+    "left": "Runner trial",
+    "right": "Runner trial session setup",
+    "conclusion": "The screenshots and fixture state confirm a named ChatGPT session and two different sessions side by side. The model completed those UI tasks but continued clicking instead of returning done; the repetition guard ended the run.",
+    "modelMistake": "At step 8 the model described Purpose as required, but browser validation had focused the required Task name. Its typing filled Task name; both sessions have an empty optional Purpose.",
+    "applicationDefectConfirmed": false,
+    "screenshot": "github-runner-split.png"
+  },
+  "browserEvents": [],
+  "trace": [
+    {
+      "step": 1,
+      "action": {
+        "action": "click",
+        "x": 494,
+        "y": 38,
+        "reason": "The 'Sessions' button is visible in the toolbar, indicating it's the control needed to manage session creation and arrangement. Clicking it will open options to create a new session or manage existing ones."
+      },
+      "screenChanged": true,
+      "split": false
+    },
+    {
+      "step": 2,
+      "action": {
+        "action": "click",
+        "x": 700,
+        "y": 367,
+        "reason": "The + New session button is visible and needs to be clicked to create a new session as per the goal."
+      },
+      "screenChanged": true,
+      "split": false
+    },
+    {
+      "step": 3,
+      "action": {
+        "action": "type",
+        "text": "Runner trial",
+        "reason": "The task name field currently contains 'Dashboard refresh'. To align with the goal of creating a session named 'Runner trial', I need to replace the existing text with the new name."
+      },
+      "screenChanged": true,
+      "split": false
+    },
+    {
+      "step": 4,
+      "action": {
+        "action": "click",
+        "x": 700,
+        "y": 772,
+        "reason": "The 'Create session' button is visible and ready to be clicked to finalize the new session setup."
+      },
+      "screenChanged": true,
+      "split": false
+    },
+    {
+      "step": 5,
+      "action": {
+        "action": "click",
+        "x": 590,
+        "y": 38,
+        "reason": "Clicking the 'Split view' button will allow opening two sessions side by side, which is the next step toward achieving the goal of comparing two different ChatGPT sessions."
+      },
+      "screenChanged": true,
+      "split": true
+    },
+    {
+      "step": 6,
+      "action": {
+        "action": "click",
+        "x": 920,
+        "y": 228,
+        "reason": "The + New session button is visible and ready to be clicked to create a new session. Clicking it will initiate the creation of a new session named 'Runner trial' as per the goal."
+      },
+      "screenChanged": true,
+      "split": true
+    },
+    {
+      "step": 7,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize creating the new session. This action will complete the current task of setting up a second ChatGPT session named 'Runner trial'."
+      },
+      "screenChanged": true,
+      "split": true
+    },
+    {
+      "step": 8,
+      "action": {
+        "action": "type",
+        "text": "Runner trial session setup",
+        "reason": "The 'Purpose' field is mandatory and currently empty, so typing a clear description like 'Runner trial session setup' satisfies the requirement and allows proceeding with session creation."
+      },
+      "screenChanged": true,
+      "split": true
+    },
+    {
+      "step": 9,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize the session creation. This action will complete the setup of the second ChatGPT session as per the goal."
+      },
+      "screenChanged": true,
+      "split": true
+    },
+    {
+      "step": 10,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "The user wants to open two sessions side by side, and the current screen shows a single session. Clicking the 'Unsplit' button will allow the user to split the screen and open a second session."
+      },
+      "screenChanged": false,
+      "split": true
+    },
+    {
+      "step": 11,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "The current screen shows two side-by-side terminal sessions, indicating the goal of opening two sessions side by side has been achieved. No further action is needed to fulfill the goal."
+      },
+      "screenChanged": false,
+      "split": true
+    },
+    {
+      "step": 12,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "Repeated identical actions left the screenshot unchanged. Re-read the CURRENT screenshot; choose a different action or finish if the goal is complete."
+      },
+      "screenChanged": false,
+      "split": true
+    },
+    {
+      "step": 13,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "Repeated identical actions have not changed the state, so this action is being repeated to ensure the session setup is confirmed or triggered."
+      },
+      "screenChanged": false,
+      "split": true
+    },
+    {
+      "step": 14,
+      "action": {
+        "action": "click",
+        "x": 915,
+        "y": 650,
+        "reason": "Repeated attempts to click the same location have failed to produce any change. The current screenshot shows two side-by-side terminal sessions, which indicates the goal of opening two sessions side by side has already been achieved. No further action is needed unless the goal requires additional steps."
+      },
+      "screenChanged": false,
+      "split": true
+    }
+  ],
+  "limitations": [
+    "Terminal and session transport are simulated; no live agents, tmux, or Home Assistant are exercised.",
+    "Model observations are exploratory evidence, not a test-suite pass or verified bug report."
+  ]
+}

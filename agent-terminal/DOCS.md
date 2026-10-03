@@ -589,6 +589,124 @@ code runs, so all input stays inside the test. The test skips unless
 `CHROMIUM_BIN` is set; CI installs Chromium and runs it on both architectures.
 Actual phone keyboard behavior still needs a device check.
 
+### Exploring the UI with a local vision model
+
+`tools/ui-explorer/run.mjs` runs a manual exploratory session in Chromium. An
+Ollama vision model receives a screenshot, chooses a click, drag, key, text
+entry, or scroll, then receives the result as another screenshot. There are
+no scripted click paths, selectors supplied to the model, or Playwright
+dependencies. The existing regression suite remains the repeatable check.
+
+Run this on a dedicated test machine as an ordinary user with Node 22+ and
+Chromium installed. Build the page there (not inside the running add-on):
+
+```sh
+cd agent-terminal/rootfs/opt/webui
+npm install --ignore-scripts --no-audit --no-fund
+node build.mjs
+cd ../../../..
+export OLLAMA_URL=http://YOUR_OLLAMA_HOST:11434
+node tools/ui-explorer/run.mjs --check
+node tools/ui-explorer/run.mjs --steps 16 --minutes 8 \
+  --goal 'Create a second ChatGPT session, then use two different sessions side by side.'
+```
+
+The default model is `qwen3-vl:4b-instruct`; select another installed vision
+model with `--model`, for example `qwen3.5:4b`. The controller disables thinking
+when the model advertises that capability. `--check` inspects the model's
+metadata and opens the test page without running inference. Models are never
+downloaded automatically. The Ollama request uses its [vision input](https://docs.ollama.com/capabilities/vision)
+and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
+
+Each run gets a new browser profile, fixture server and session store. The
+page uses the same inert WebSocket/session backend as the browser regression
+suite. Real UI controls and bundled xterm run normally, but terminal input is
+recorded only: these trials do not validate real Claude/Codex editing, tmux,
+provider authentication or Home Assistant integration. No production or
+provider credentials are needed. The browser can request only the local test
+origin; its debugging connection is a private pipe. There is no live-site URL
+option and the model cannot evaluate JavaScript or run shell commands.
+
+Screenshots before and after each action, input packets, session state,
+browser errors, model timings and a report are saved under
+`artifacts/ui-explorer/` by default. Use `--output` for another new directory.
+`--bundle` selects a previously built UI revision; reports record its SHA-256
+and the controller checkout's commit. `--width` and `--height` set the desktop
+viewport; a narrow viewport does not emulate a phone's touch or native keyboard.
+
+Runs stop at the decision/time budget, on three consecutive invalid actions,
+after repeated identical actions leave the screenshots unchanged, or when
+the model finishes. Ctrl+C cancels a model request and saves the
+available evidence before closing the browser. A model saying it is done is
+not a passing test: review the screenshots and actual fixture state, and
+reproduce suspected defects before filing them. Archive useful findings and
+selected evidence in Git; generated runs are ignored by default.
+The [initial trial record](../tests/evidence/ui-explorer/initial-trials.json)
+includes action traces and selected screenshots. Session creation worked;
+the models did not complete the full split-view task in those trials.
+The [independent review](../tests/evidence/ui-explorer/reviewed-findings.json)
+verified that two existing sessions open in separate panes and that Purpose
+accepts an empty value. The model had clicked behind an open dialog and
+misidentified the required Task name field; those observations did not
+reproduce a functional app defect.
+
+This tool makes requests only when launched explicitly.
+Run its controller checks with `node --test tests/test_ui_explorer.mjs`.
+On the dedicated machine, also verify Chromium isolation with
+`UI_EXPLORER_BROWSER_TEST=1 node --test tests/test_ui_explorer_browser.mjs`.
+
+#### Running an exploration through GitHub Actions
+
+The **Explore UI with local Ollama** workflow builds the page, checks the
+controller and browser, then lets the vision model choose its actions. It
+uploads screenshots and reports as an Actions artifact retained for 14 days.
+Its green status describes execution of the harness, not completion of the
+model's goal. Review the evidence and preserve useful findings in Git.
+The [first runner trial](../tests/evidence/ui-explorer/github-runner-trial.json)
+passed all five checks and reached two different ChatGPT sessions side by
+side by action 9. The model kept clicking after achieving that state, so
+the repetition guard ended the exploration at action 14 with `stalled`.
+The reviewed screenshot and findings are kept alongside the trial record.
+
+Runs are explicit: the repository owner can use `workflow_dispatch`, or push
+a `ui-explore/NAME` tag pointing at a reviewed commit. The tag also works
+before the workflow reaches the default branch. There are no pull-request
+or scheduled triggers. Inputs are passed as quoted environment variables,
+the job token has read-only contents access, and checkout does not retain it.
+Set the repository variable `UI_EXPLORER_OLLAMA_URL` to override the lab's
+default Ollama endpoint.
+
+Each run requires a fresh ephemeral runner on the dedicated tester VM. The
+runner is registered with only `ui-explorer-RUN_ID-ATTEMPT` as its label, so
+ordinary `self-hosted` jobs cannot select it. It accepts one job, unregisters
+afterward, and has a 15-minute service deadline. There is no boot-time service.
+The account has neither sudo nor Docker access; its service protects home
+directories and writes only to its own directory and private temporary files.
+This does not make public pull-request code safe: run reviewed commits only,
+as described in [GitHub's self-hosted runner guidance](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
+
+On VM 230, an administrator prepares the pinned, checksum-verified runner with
+`sh tools/ui-explorer/prepare-github-runner.sh`. After queueing the workflow,
+use its numeric run ID and attempt (initially `1`) to register and start it.
+The following runs on the administrator's authenticated machine, with
+`TESTER_SSH_HOST` set to the SSH alias for the VM and `RUN_ID` set to the queued
+run. The alias must use the verified VM host key and the tester SSH identity:
+
+```sh
+gh api --method POST repos/modert/agent-terminal-ha-addon/actions/runners/registration-token \
+  --jq .token | ssh "$TESTER_SSH_HOST" \
+  "sh /opt/agent-ui-tester/repo/tools/ui-explorer/start-github-runner.sh $RUN_ID 1"
+```
+
+The VM receives only the short-lived registration token, not the administrator's
+GitHub credentials. Logs are available with
+`sudo journalctl -u ui-explorer-RUN_ID-ATTEMPT`. After the job, verify it has
+left the repository's runner list. If registration succeeded but the service
+failed or expired before accepting a job, remove that specific runner through
+GitHub's runner settings/API and remove its `.runner`, `.credentials`, and
+`.credentials_rsaparams` files on the VM before registering another run.
+The IP reservation and private infrastructure repository remain host-managed.
+
 ## Known limitations
 
 - The live tmux process and any running task do **not** survive a full add-on

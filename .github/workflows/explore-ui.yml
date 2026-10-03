@@ -1,0 +1,96 @@
+name: Explore UI with local Ollama
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Installed Ollama vision model
+        type: string
+        default: qwen3-vl:4b-instruct
+      goal:
+        description: Task for the model to explore
+        type: string
+        default: Create a second ChatGPT session named Runner trial, then open two different sessions side by side. Report anything confusing.
+      steps:
+        description: Maximum model decisions
+        type: choice
+        options: ['8', '12', '16', '24']
+        default: '16'
+      minutes:
+        description: Exploration time budget
+        type: choice
+        options: ['3', '5', '8']
+        default: '5'
+  # An explicit owner-pushed tag also allows testing this workflow before merge.
+  push:
+    tags: ['ui-explore/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-explorer-vm230
+  cancel-in-progress: false
+
+jobs:
+  explore:
+    # Never run fork pull requests on a machine with access to the home LAN.
+    if: >-
+      github.repository == 'modert/agent-terminal-ha-addon' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner
+    # Register a fresh ephemeral runner for this run AFTER it has queued.
+    runs-on: ui-explorer-${{ github.run_id }}-${{ github.run_attempt }}
+    timeout-minutes: 12
+    env:
+      CHROMIUM_BIN: /usr/bin/chromium
+      WEBUI_BUNDLE: ${{ github.workspace }}/agent-terminal/rootfs/opt/webui/index.html
+      OLLAMA_URL: ${{ vars.UI_EXPLORER_OLLAMA_URL || 'http://YOUR_OLLAMA_HOST:11434' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the test page
+        working-directory: agent-terminal/rootfs/opt/webui
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          node build.mjs
+      - name: Verify controller and browser isolation
+        env:
+          UI_EXPLORER_BROWSER_TEST: '1'
+        run: node --test tests/test_ui_explorer.mjs tests/test_ui_explorer_browser.mjs tests/test_webui_browser.mjs
+      - name: Explore the UI from screenshots
+        env:
+          EXPLORER_MODEL: ${{ inputs.model || 'qwen3-vl:4b-instruct' }}
+          EXPLORER_GOAL: ${{ inputs.goal || 'Create a second ChatGPT session named Runner trial, then open two different sessions side by side. Report anything confusing.' }}
+          EXPLORER_STEPS: ${{ inputs.steps || '16' }}
+          EXPLORER_MINUTES: ${{ inputs.minutes || '5' }}
+        run: |
+          node tools/ui-explorer/run.mjs \
+            --model "$EXPLORER_MODEL" --goal "$EXPLORER_GOAL" \
+            --steps "$EXPLORER_STEPS" --minutes "$EXPLORER_MINUTES" \
+            --output artifacts/ui-explorer/run
+      - name: Summarize the exploration
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import { existsSync, readFileSync, appendFileSync } from 'node:fs';
+          const path = 'artifacts/ui-explorer/run/report.json';
+          let text = '## Local Ollama UI exploration\n\n';
+          if (existsSync(path)) {
+            const r = JSON.parse(readFileSync(path, 'utf8'));
+            text += `Status: **${r.status}** · Decisions: ${r.decisions.length} · Duration: ${r.durationSeconds}s\n\n`;
+            text += `Tested commit: \`${r.commit}\`\n\n`;
+          } else text += 'The exploration did not produce a report. Check the preceding steps.\n\n';
+          text += 'Download the evidence artifact for screenshots, actions and fixture state. A successful job means the harness ran; it does not certify that the model completed its goal. Review the evidence before calling anything a bug.\n\n';
+          text += 'This uses the isolated UI fixture, not live agents or Home Assistant.\n';
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
+          NODE
+      - name: Upload screenshots and report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-exploration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ui-explorer/
+          if-no-files-found: warn
+          retention-days: 14
