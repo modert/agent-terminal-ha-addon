@@ -1,0 +1,502 @@
+{
+  "scope": "Initial exploratory trials during controller development; these are observations, not a controlled model benchmark or acceptance-test pass.",
+  "applicationCommit": "038bcbb6934e573825ee8e09803d4121302ff587",
+  "bundleSha256": "3df8173e8d85c47a2c009523b807fb32c4d9fd4288a763a9192a98e337f0a1ee",
+  "environment": {
+    "os": "Debian 13",
+    "node": "24.21.0",
+    "chromium": "154.0.8037.92",
+    "ollama": "0.34.2",
+    "browserVM": {
+      "vcpus": 4,
+      "ramGiB": 8
+    }
+  },
+  "verified": [
+    "The model selected coordinates from screenshots and created a named ChatGPT session without a scripted click path.",
+    "The model opened split view and the new-session form in the right pane.",
+    "The controller enforced decision limits and saved evidence on operator interruption.",
+    "No page JavaScript exceptions were observed in these trials."
+  ],
+  "limitations": [
+    "Session and terminal transport are simulated. Live provider CLIs and Home Assistant were not exercised.",
+    "Neither split-view trial completed its full goal. Human review is needed for model conclusions.",
+    "Different controller prompts/history formats were used while calibrating the trials; timings include model loading."
+  ],
+  "observations": [
+    {
+      "classification": "usability hypothesis, not a verified defect",
+      "description": "Submitting an empty Task name in the right-pane form shows the native required-field bubble near the optional Purpose label. The model repeatedly called Purpose mandatory and failed to fill Task name.",
+      "reproduction": [
+        "Open Split view",
+        "Choose New session in the right pane",
+        "Leave Task name blank",
+        "Press Create in right pane"
+      ],
+      "evidence": "split-required-name.png",
+      "expectedBehavior": "The blank required Task name is correctly rejected; clearer field-specific wording might help recovery."
+    },
+    {
+      "classification": "model limitation",
+      "description": "qwen3.5:4b spent several actions entering irrelevant shell commands in the passive terminal; the trial was stopped after 11 decisions."
+    }
+  ],
+  "runs": [
+    {
+      "name": "qwen-vl-session-trial-2",
+      "started": "2026-10-03T04:43:06.835Z",
+      "model": "qwen3-vl:4b-instruct",
+      "status": "step_limit",
+      "goal": "Create a new ChatGPT session named UI exploration, then stop and describe whether that was clear. Use the visible session controls.",
+      "seconds": 88.2,
+      "decisionCount": 12,
+      "sessionCountBefore": 4,
+      "sessionCountAfter": 5,
+      "createdSessionAt": 4,
+      "splitOpenedAt": null,
+      "trace": [
+        {
+          "step": 1,
+          "action": {
+            "action": "click",
+            "x": 500,
+            "y": 38,
+            "reason": "The 'Sessions' button is visible in the toolbar and likely leads to session management options, including creating a new session."
+          },
+          "seconds": 14.1
+        },
+        {
+          "step": 2,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 366,
+            "reason": "The '+ New session' button is visible and should be clicked to initiate the creation of a new session."
+          },
+          "seconds": 11.8
+        },
+        {
+          "step": 3,
+          "action": {
+            "action": "type",
+            "text": "UI exploration",
+            "reason": "The 'Task name' field is active and ready for input. Typing 'UI exploration' fulfills the goal of naming the new session appropriately."
+          },
+          "seconds": 12.1
+        },
+        {
+          "step": 4,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 12.4
+        },
+        {
+          "step": 5,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 12.7
+        },
+        {
+          "step": 6,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 2.3
+        },
+        {
+          "step": 7,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 2.5
+        },
+        {
+          "step": 8,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 2.7
+        },
+        {
+          "step": 9,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 3
+        },
+        {
+          "step": 10,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 3.3
+        },
+        {
+          "step": 11,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 3.4
+        },
+        {
+          "step": 12,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and should be clicked to finalize the creation of the new session with the specified name and settings."
+          },
+          "seconds": 3.7
+        }
+      ]
+    },
+    {
+      "name": "qwen35-session-split-trial",
+      "started": "2026-10-03T04:48:08.602Z",
+      "model": "qwen3.5:4b",
+      "status": "interrupted",
+      "goal": "Create a second ChatGPT session named UI exploration, then open two different sessions side by side. Explore switching sessions and report anything confusing.",
+      "seconds": 193.1,
+      "decisionCount": 11,
+      "sessionCountBefore": 4,
+      "sessionCountAfter": 4,
+      "createdSessionAt": null,
+      "splitOpenedAt": null,
+      "trace": [
+        {
+          "step": 1,
+          "action": {
+            "action": "click",
+            "x": 372,
+            "y": 26,
+            "reason": "Click the ChatGPT tab to switch to that model for creating a new session."
+          },
+          "seconds": 29.7,
+          "screenChanged": false
+        },
+        {
+          "step": 2,
+          "action": {
+            "action": "type",
+            "text": "cd /homeassistant",
+            "reason": "Navigating to the homeassistant directory as part of the test session workflow."
+          },
+          "seconds": 14.2,
+          "screenChanged": true
+        },
+        {
+          "step": 3,
+          "action": {
+            "action": "type",
+            "text": "ls -la",
+            "reason": "Execute a directory listing command to verify the current working directory and check for any existing files or folders in Home Assistant."
+          },
+          "seconds": 14.3,
+          "screenChanged": true
+        },
+        {
+          "step": 4,
+          "action": {
+            "action": "click",
+            "x": 372,
+            "y": 26,
+            "reason": "Click the 'ChatGPT' button to switch to a ChatGPT session for creating the new session named UI exploration."
+          },
+          "seconds": 14.8,
+          "screenChanged": true
+        },
+        {
+          "step": 5,
+          "action": {
+            "action": "click",
+            "x": 418,
+            "y": 26,
+            "reason": "Click the 'Shell' button to switch to a shell session for further exploration."
+          },
+          "seconds": 14.7,
+          "screenChanged": true
+        },
+        {
+          "step": 6,
+          "action": {
+            "action": "type",
+            "text": "cd /homeassistant",
+            "reason": "Navigate to the home assistant directory as part of the terminal exploration task."
+          },
+          "seconds": 14.7,
+          "screenChanged": false
+        },
+        {
+          "step": 7,
+          "action": {
+            "action": "click",
+            "x": 372,
+            "y": 26,
+            "reason": "Click the ChatGPT button to switch to that model for creating a new session."
+          },
+          "seconds": 14.7,
+          "screenChanged": true
+        },
+        {
+          "step": 8,
+          "action": {
+            "action": "click",
+            "x": 418,
+            "y": 26,
+            "reason": "Click the ChatGPT button to switch to that model for the session management task."
+          },
+          "seconds": 14.9,
+          "screenChanged": true
+        },
+        {
+          "step": 9,
+          "action": {
+            "action": "type",
+            "text": "ls -la",
+            "reason": "Execute the ls command to list directory contents in the Home Assistant shell session."
+          },
+          "seconds": 14.9,
+          "screenChanged": false
+        },
+        {
+          "step": 10,
+          "action": {
+            "action": "click",
+            "x": 497,
+            "y": 26,
+            "reason": "Click the Sessions dropdown to access session management options for creating a new session."
+          },
+          "seconds": 14.9,
+          "screenChanged": true
+        },
+        {
+          "step": 11,
+          "action": {
+            "action": "click",
+            "x": 705,
+            "y": 314,
+            "reason": "Click the 'General session' ChatGPT entry to open it in a new tab or window for side-by-side comparison."
+          },
+          "seconds": 15.4,
+          "screenChanged": true
+        }
+      ]
+    },
+    {
+      "name": "qwen-vl-session-split-trial",
+      "started": "2026-10-03T04:52:08.002Z",
+      "model": "qwen3-vl:4b-instruct",
+      "status": "step_limit",
+      "goal": "Using the visible session controls, create a new ChatGPT session named UI exploration, then open two different sessions side by side. Describe what you can verify. The terminal is a passive input recorder; use the session controls, not shell commands.",
+      "seconds": 196.4,
+      "decisionCount": 16,
+      "sessionCountBefore": 4,
+      "sessionCountAfter": 5,
+      "createdSessionAt": 4,
+      "splitOpenedAt": 5,
+      "trace": [
+        {
+          "step": 1,
+          "action": {
+            "action": "click",
+            "x": 497,
+            "y": 37,
+            "reason": "The 'Sessions' button in the toolbar is visible and accessible. Clicking it will open the session management menu, allowing creation of a new session as required by the goal."
+          },
+          "seconds": 30.1,
+          "screenChanged": true
+        },
+        {
+          "step": 2,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 367,
+            "reason": "The + New session button is visible and needs to be clicked to initiate creating a new session as per the goal."
+          },
+          "seconds": 11.9,
+          "screenChanged": true
+        },
+        {
+          "step": 3,
+          "action": {
+            "action": "type",
+            "text": "UI exploration",
+            "reason": "The Task name field is active and ready for input. Entering 'UI exploration' aligns with the goal of creating a new session with this specific name."
+          },
+          "seconds": 12.2,
+          "screenChanged": true
+        },
+        {
+          "step": 4,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 772,
+            "reason": "The 'Create session' button is visible and ready to be clicked to finalize the new session setup. This action will complete the creation of the ChatGPT session named 'UI exploration' as per the goal."
+          },
+          "seconds": 12.4,
+          "screenChanged": true
+        },
+        {
+          "step": 5,
+          "action": {
+            "action": "click",
+            "x": 600,
+            "y": 40,
+            "reason": "The 'Split view' button is visible and needs to be clicked to open two sessions side by side as per the goal."
+          },
+          "seconds": 12.2,
+          "screenChanged": true
+        },
+        {
+          "step": 6,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 226,
+            "reason": "Clicking the + New session button will create a new session named 'UI exploration' as per the previous action, fulfilling the goal of creating a new ChatGPT session."
+          },
+          "seconds": 12.5,
+          "screenChanged": true
+        },
+        {
+          "step": 7,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 650,
+            "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize the new session creation. This action will complete the current step of creating a new session named 'UI exploration'."
+          },
+          "seconds": 13,
+          "screenChanged": true
+        },
+        {
+          "step": 8,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 296,
+            "reason": "The 'Purpose' field is mandatory and currently empty, indicated by an orange warning icon. Filling this field is required before proceeding to create the session."
+          },
+          "seconds": 12.8,
+          "screenChanged": true
+        },
+        {
+          "step": 9,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 650,
+            "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize creating the new session. This action aligns with the goal of setting up a new ChatGPT session named 'UI exploration'."
+          },
+          "seconds": 13.2,
+          "screenChanged": true
+        },
+        {
+          "step": 10,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 296,
+            "reason": "The 'Purpose' field is mandatory and currently empty, indicated by an orange warning icon. Filling this field is required before proceeding to create the session."
+          },
+          "seconds": 12.9,
+          "screenChanged": true
+        },
+        {
+          "step": 11,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 650,
+            "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize the new session creation."
+          },
+          "seconds": 2.3,
+          "screenChanged": true
+        },
+        {
+          "step": 12,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 650,
+            "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize the new session creation. This action will complete the current step of creating a new session named 'UI exploration'."
+          },
+          "seconds": 13.3,
+          "screenChanged": true
+        },
+        {
+          "step": 13,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 296,
+            "reason": "The 'Purpose' field is mandatory as indicated by the warning icon, and it must be filled out before proceeding to create the session."
+          },
+          "seconds": 13.3,
+          "screenChanged": true
+        },
+        {
+          "step": 14,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 650,
+            "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize the new session setup."
+          },
+          "seconds": 2.6,
+          "screenChanged": true
+        },
+        {
+          "step": 15,
+          "action": {
+            "action": "click",
+            "x": 700,
+            "y": 296,
+            "reason": "The 'Purpose' field is highlighted with an error message indicating it must be filled out, so clicking it to activate the input field is necessary before typing."
+          },
+          "seconds": 13.4,
+          "screenChanged": true
+        },
+        {
+          "step": 16,
+          "action": {
+            "action": "click",
+            "x": 925,
+            "y": 650,
+            "reason": "The 'Create in right pane' button is visible and ready to be clicked to finalize the new session setup."
+          },
+          "seconds": 2.6,
+          "screenChanged": true
+        }
+      ]
+    }
+  ]
+}

@@ -508,6 +508,69 @@ Its WebSocket is replaced before page
 code runs, so all input stays inside the test. The test skips unless
 `CHROMIUM_BIN` is set. Actual phone keyboard behavior still needs a device check.
 
+### Exploring the UI with a local vision model
+
+`tools/ui-explorer/run.mjs` runs a manual exploratory session in Chromium. An
+Ollama vision model receives a screenshot, chooses a click, drag, key, text
+entry, or scroll, then receives the result as another screenshot. There are
+no scripted click paths, selectors supplied to the model, or Playwright
+dependencies. The existing regression suite remains the repeatable check.
+
+Run this on a dedicated test machine as an ordinary user with Node 22+ and
+Chromium installed. Build the page there (not inside the running add-on):
+
+```sh
+cd agent-terminal/rootfs/opt/webui
+npm install --ignore-scripts --no-audit --no-fund
+node build.mjs
+cd ../../../..
+export OLLAMA_URL=http://YOUR_OLLAMA_HOST:11434
+node tools/ui-explorer/run.mjs --check
+node tools/ui-explorer/run.mjs --steps 16 --minutes 8 \
+  --goal 'Create a second ChatGPT session, then use two different sessions side by side.'
+```
+
+The default model is `qwen3-vl:4b-instruct`; select another installed vision
+model with `--model`, for example `qwen3.5:4b`. The controller disables thinking
+when the model advertises that capability. `--check` inspects the model's
+metadata and opens the test page without running inference. Models are never
+downloaded automatically. The Ollama request uses its [vision input](https://docs.ollama.com/capabilities/vision)
+and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
+
+Each run gets a new browser profile, fixture server and session store. The
+page uses the same inert WebSocket/session backend as the browser regression
+suite. Real UI controls and bundled xterm run normally, but terminal input is
+recorded only: these trials do not validate real Claude/Codex editing, tmux,
+provider authentication or Home Assistant integration. No production or
+provider credentials are needed. The browser can request only the local test
+origin; its debugging connection is a private pipe. There is no live-site URL
+option and the model cannot evaluate JavaScript or run shell commands.
+
+Screenshots before and after each action, input packets, session state,
+browser errors, model timings and a report are saved under
+`artifacts/ui-explorer/` by default. Use `--output` for another new directory.
+`--bundle` selects a previously built UI revision; reports record its SHA-256
+and the controller checkout's commit. `--width` and `--height` set the desktop
+viewport; a narrow viewport does not emulate a phone's touch or native keyboard.
+
+Runs stop at the decision/time budget, on three consecutive invalid actions,
+after repeated identical actions leave the screenshots unchanged, or when
+the model finishes. Ctrl+C cancels a model request and saves the
+available evidence before closing the browser. A model saying it is done is
+not a passing test: review the screenshots and actual fixture state, and
+reproduce suspected defects before filing them. Archive useful findings and
+selected evidence in Git; generated runs are ignored by default.
+The [initial trial record](../tests/evidence/ui-explorer/initial-trials.json)
+includes action traces and selected screenshots. Session creation worked;
+the models did not complete the full split-view task in those trials.
+
+This tool makes requests only when launched explicitly. GitHub runner
+registration and scheduling are separate deployment decisions; see
+[GitHub's guidance on self-hosted runners and public repositories](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
+Run its controller checks with `node --test tests/test_ui_explorer.mjs`.
+On the dedicated machine, also verify Chromium isolation with
+`UI_EXPLORER_BROWSER_TEST=1 node --test tests/test_ui_explorer_browser.mjs`.
+
 ## Known limitations
 
 - The live tmux process and any running task do **not** survive a full add-on

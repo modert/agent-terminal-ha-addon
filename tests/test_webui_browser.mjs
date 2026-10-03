@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
+import { fixtureHtml } from './helpers/webui-fixture.mjs';
 
 // Opt in with CHROMIUM_BIN and WEBUI_BUNDLE. The real bundled xterm runs in
 // Chromium, but its ttyd transport is replaced before any page code executes.
@@ -17,69 +18,7 @@ test('phone taps and composition with real browser events and xterm', {
 }, async t => {
   const bundle = process.env.WEBUI_BUNDLE || resolve(import.meta.dirname,
     '../agent-terminal/rootfs/opt/webui/index.html');
-  const mock = `<script>
-    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = [];
-    document.addEventListener('focusin', e => {
-      window.testFocus.push({ id: e.target.id, active: navigator.userActivation.isActive });
-    });
-    window.fetch = async () => ({ json: async () => ({ token: '' }) });
-    window.testHub = window.parent !== window && window.parent.testHub || {
-      workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' },
-        { id: 'addon', name: 'Agent Terminal', directory: '/addons/agent-terminal' }],
-      sessions: JSON.parse(localStorage.getItem('test-sessions') || 'null') || [
-        ...['claude', 'codex', 'shell'].map(agent =>
-          ({ id: 'agent-homeassistant-' + agent, name: 'Main', workspace: 'homeassistant', agent, stopped: false, running: false })),
-        { id: 'session-' + 'b'.repeat(32), name: 'Session navigation', description: 'Polish the provider chooser',
-          workspace: 'addon', agent: 'claude', stopped: false, running: false }],
-      controls: [],
-      publish() {
-        localStorage.setItem('test-sessions', JSON.stringify(this.sessions));
-        for (const socket of this.controls) if (socket.readyState === 1) socket.packet({ type: 'sessions', sessions: this.sessions,
-          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
-          workspaces: this.workspaces });
-      }
-    };
-    window.WebSocket = class {
-      static OPEN = 1;
-      readyState = 1;
-      constructor(url) {
-        this.url = url; this.args = new URL(url).searchParams.getAll('arg'); this.control = this.args[0] === 'sessions';
-        if (this.control) testHub.controls.push(this); else { window.testSocket = this; window.testTerminalConnections.push(this); }
-        setTimeout(() => this.onopen(), 0);
-      }
-      packet(value) { this.onmessage({ data: '0' + JSON.stringify(value) + '\\n' }); }
-      send(data) {
-        const text = new TextDecoder().decode(data);
-        if (!this.control) {
-          window.testPackets.push(text);
-          if (text[0] === '{') {
-            const id = this.args[2] || 'agent-' + this.args[1] + '-' + this.args[0];
-            const record = testHub.sessions.find(s => s.id === id);
-            if (record && !record.stopped) record.running = true;
-          }
-          return;
-        }
-        if (text[0] === '{') { testHub.publish(); return; }
-        const request = JSON.parse(text.slice(1));
-        let record = testHub.sessions.find(s => s.id === request.session);
-        if (request.method === 'create') {
-          record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: request.name, description: request.description || '',
-            agent: request.agent, workspace: request.workspace, running: false, stopped: false };
-          testHub.sessions.push(record);
-        } else if (request.method === 'rename') { record.name = request.name; record.description = request.description ?? record.description; }
-        else if (request.method === 'stop') { record.stopped = true; record.running = false; }
-        else if (request.method === 'start') record.stopped = false;
-        if (request.method !== 'list') this.packet({ request: request.request, result: record });
-        else this.packet({ request: request.request, result: { sessions: testHub.sessions,
-          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
-          workspaces: testHub.workspaces } });
-        testHub.publish();
-      }
-      close() { this.readyState = 3; if (this.onclose) this.onclose(); }
-    };
-  </script>`;
-  const html = readFileSync(bundle, 'utf8').replace('<head>', '<head>' + mock)
-    .replace('term.open(termEl);', 'term.open(termEl); window.testTerminal = term;');
+  const html = fixtureHtml(readFileSync(bundle, 'utf8'));
   assert.ok(!html.includes('/*{{XTERM_JS}}*/'), 'build the web UI before running the browser test');
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
