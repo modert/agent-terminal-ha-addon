@@ -16,8 +16,6 @@
   as a 2048-pixel JPEG.
 - Claude's settings gain the uploads folder as an additional directory at
   start-up, so reading an attached file does not ask for permission.
-
-## 2.7.1
 - Make Ctrl+Left/Right move by word, Ctrl+Backspace delete the previous word,
   and Ctrl+Delete delete the next word in the web terminal. Mac Option uses
   the same word shortcuts. Preserve text-field editing and navigation modifiers.
@@ -26,6 +24,9 @@
   an open draft or paste field locally and adds a line to a direct agent prompt.
 - Run the real Chromium interaction suite in CI on both architectures, with
   word-editing, split-pane routing, and real ttyd/tmux/readline coverage.
+
+## 2.7.1
+- Update the Codex CLI to 0.160.0.
 
 ## 2.7.0
 - Create and rename independent sessions of the same provider and workspace.
