@@ -1,0 +1,181 @@
+{
+  "kind": "independent reviewer checks, not model-chosen exploration",
+  "checkedAt": "2026-10-03T05:31:01.170Z",
+  "modalBlocksBackgroundSplitButton": true,
+  "panes": {
+    "left": [
+      "codex",
+      "homeassistant"
+    ],
+    "right": [
+      "claude",
+      "addon",
+      "session-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+  },
+  "validation": {
+    "nameMissing": true,
+    "purposeValid": true,
+    "purposeRequired": false,
+    "focusedField": "sessions-name"
+  },
+  "blankPurposeAccepted": true,
+  "browserErrors": [],
+  "conclusion": "Existing sessions open in distinct panes after closing the picker. Task name is required; Purpose is optional. The recorded model failures do not establish an application defect.",
+  "controllerCommit": "00b8033a5e137258270488060afc625ae796cecf",
+  "bundleSha256": "3df8173e8d85c47a2c009523b807fb32c4d9fd4288a763a9192a98e337f0a1ee",
+  "exploration": {
+    "goal": "Explore switching between existing sessions and workspaces, then use split view to display two existing sessions. Try the visible interface and report what you can verify. Use the existing session choices; creating a new session is outside this task.",
+    "status": "step_limit",
+    "model": "qwen3-vl:4b-instruct",
+    "seconds": 93.1,
+    "decisions": 12,
+    "confirmed": [
+      "Step 4 switched from ChatGPT/Home Assistant to Session navigation in Claude/Agent Terminal."
+    ],
+    "failureAnalysis": "The later clicks targeted the dimmed background toolbar while the session dialog was open. Background controls correctly ignored those clicks. The model did not close the dialog before trying Split view.",
+    "trace": [
+      {
+        "step": 1,
+        "action": {
+          "action": "click",
+          "x": 499,
+          "y": 35,
+          "reason": "The 'Sessions' button in the toolbar is visible and accessible, indicating the next logical step to explore existing sessions. Clicking it will reveal a dropdown menu with available sessions, allowing verification of session switching functionality."
+        },
+        "screenChanged": true,
+        "split": false
+      },
+      {
+        "step": 2,
+        "action": {
+          "action": "click",
+          "x": 499,
+          "y": 478,
+          "reason": "The 'General session' is currently running and visible in the list, making it the logical choice to select for switching between sessions as per the goal."
+        },
+        "screenChanged": true,
+        "split": false
+      },
+      {
+        "step": 3,
+        "action": {
+          "action": "click",
+          "x": 500,
+          "y": 35,
+          "reason": "The user is in a terminal session and needs to switch between existing sessions or workspaces. Clicking the 'Sessions' dropdown will reveal available session options, allowing the user to explore and select a different session as required by the goal."
+        },
+        "screenChanged": true,
+        "split": false
+      },
+      {
+        "step": 4,
+        "action": {
+          "action": "click",
+          "x": 499,
+          "y": 628,
+          "reason": "The 'Session navigation' session under 'Agent Terminal' is ready to start and is a valid option to select for switching sessions as per the goal."
+        },
+        "screenChanged": true,
+        "split": false
+      },
+      {
+        "step": 5,
+        "action": {
+          "action": "click",
+          "x": 500,
+          "y": 35,
+          "reason": "Clicking the 'Session navigation' dropdown is necessary to access existing sessions and workspaces, which aligns with the goal of exploring session switching and split view functionality."
+        },
+        "screenChanged": true,
+        "split": false
+      },
+      {
+        "step": 6,
+        "action": {
+          "action": "click",
+          "x": 500,
+          "y": 35,
+          "reason": "Clicking the center of the visible control area is a safe default action when no specific task is highlighted or when navigating through the interface. This action may help confirm the current state or initiate a default interaction, such as selecting a session or returning to a main view."
+        },
+        "screenChanged": true,
+        "split": false
+      },
+      {
+        "step": 7,
+        "action": {
+          "action": "click",
+          "x": 500,
+          "y": 35,
+          "reason": "Clicking the top bar's 'Workspace' dropdown is necessary to explore switching between workspaces, as the goal involves exploring workspace navigation and session switching."
+        },
+        "screenChanged": false,
+        "split": false
+      },
+      {
+        "step": 8,
+        "action": {
+          "action": "click",
+          "x": 500,
+          "y": 35,
+          "reason": "Clicking the 'Session navigation' option is necessary to proceed with exploring session switching and split view functionality as per the goal."
+        },
+        "screenChanged": false,
+        "split": false
+      },
+      {
+        "step": 9,
+        "action": {
+          "action": "click",
+          "x": 625,
+          "y": 35,
+          "reason": "The 'Split view' button is visible and accessible, which is necessary to achieve the goal of displaying two existing sessions side by side. Clicking it will enable the split view functionality."
+        },
+        "screenChanged": false,
+        "split": false
+      },
+      {
+        "step": 10,
+        "action": {
+          "action": "click",
+          "x": 625,
+          "y": 35,
+          "reason": "The current session is 'Session navigation' and the goal is to explore switching between sessions. Clicking the 'Done' button will likely close the session selection dialog and return to the main terminal interface, allowing further exploration of session switching and split view functionality."
+        },
+        "screenChanged": false,
+        "split": false
+      },
+      {
+        "step": 11,
+        "action": {
+          "action": "click",
+          "x": 625,
+          "y": 35,
+          "reason": "Repeated identical actions left the screenshot unchanged. Re-read the CURRENT screenshot; choose a different action or finish if the goal is complete."
+        },
+        "screenChanged": false,
+        "split": false
+      },
+      {
+        "step": 12,
+        "action": {
+          "action": "click",
+          "x": 625,
+          "y": 35,
+          "reason": "Repeated identical actions left the screenshot unchanged. Re-read the CURRENT screenshot; choose a different action or finish if the goal is complete."
+        },
+        "screenChanged": false,
+        "split": false
+      }
+    ]
+  },
+  "validationFinding": {
+    "status": "No functional validation defect reproduced",
+    "details": "Task name is the invalid required field and receives focus. Purpose is valid when empty, and creating a session with empty Purpose succeeds. The bubble placement can still be reviewed as a usability concern."
+  },
+  "screenshot": "reviewed-split.png",
+  "limitations": [
+    "These checks use the same isolated UI fixture, not live provider CLIs or Home Assistant.",
+    "Reviewer checks are separate from the model-chosen exploration."
+  ]
+}

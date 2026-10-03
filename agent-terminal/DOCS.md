@@ -563,6 +563,11 @@ selected evidence in Git; generated runs are ignored by default.
 The [initial trial record](../tests/evidence/ui-explorer/initial-trials.json)
 includes action traces and selected screenshots. Session creation worked;
 the models did not complete the full split-view task in those trials.
+The [independent review](../tests/evidence/ui-explorer/reviewed-findings.json)
+verified that two existing sessions open in separate panes and that Purpose
+accepts an empty value. The model had clicked behind an open dialog and
+misidentified the required Task name field; those observations did not
+reproduce a functional app defect.
 
 This tool makes requests only when launched explicitly. GitHub runner
 registration and scheduling are separate deployment decisions; see
