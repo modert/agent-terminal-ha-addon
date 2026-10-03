@@ -61,7 +61,7 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
     const query = new URLSearchParams();
     if (agent) {
       query.append('arg', agent);
-      if (agent !== 'sessions') query.append('arg', workspace);
+      if (agent !== 'sessions' && agent !== 'uploads') query.append('arg', workspace);
       if (session) query.append('arg', session);
     }
     const socket = new WebSocket('ws://127.0.0.1:8099/ws?' + query, ['tty']);
@@ -108,6 +108,23 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const custom = await connect();
   await until(() => custom.screen().includes('TEST-AGENT:trusted-custom:homeassistant:'), 'configured default custom command did not start');
 
+  // Exercise the word-editing commands against real Bash readline, through
+  // ttyd's PTY and tmux. The text is consumed by read, never run as a command.
+  for (const [name, input, expected] of [
+    ['word-backspace', 'alpha beta\x1b\x7f', 'alpha '],
+    ['word-boundary', 'alpha foo/bar\x1b\x7f', 'alpha foo/'],
+    ['word-delete', 'alpha beta gamma\x01\x1bf\x1bd', 'alpha gamma'],
+    ['word-left-right', 'alpha beta gamma\x1bbX\x01\x1bfY', 'alphaY beta Xgamma'],
+  ]) {
+    const output = join(root, name);
+    shell.socket.send('0printf \'%s%s\' \'editing-ready-\' \'' + name +
+      '\'; IFS= read -r -e WORD_TEST; printf \'%s\' "$WORD_TEST" > ' + output + '\r');
+    await until(() => shell.screen().includes('editing-ready-' + name), 'word editor did not open');
+    shell.socket.send('0' + input + '\r');
+    await until(() => existsSync(output), 'word editor did not receive input');
+    assert.equal(readFileSync(output, 'utf8'), expected, name);
+  }
+
   // The actual ttyd PTY carries a raw JSON control stream, independently of
   // terminal input. Metadata updates must not enter either provider's stdin.
   const control = await connect('sessions');
@@ -151,9 +168,34 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   assert.notEqual(panePid(namedA.id), namedPid);
   assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).description, 'Check layout and spacing');
 
+  // Files travel on their own connection through a real ttyd PTY, in lines
+  // far longer than a cooked terminal accepts; the reply is the saved path.
+  const receiver = await connect('uploads');
+  await until(() => receiver.screen().includes('"type":"ready"'), 'upload receiver did not start');
+  const upload = Buffer.from(Array.from({ length: 200000 }, (_, i) => (i * 7) % 256));
+  let uploadRequest = 0;
+  async function attach(method, fields = {}) {
+    const id = ++uploadRequest;
+    receiver.socket.send('0' + JSON.stringify({ request: id, method, ...fields }) + '\n');
+    let reply;
+    await until(() => (reply = receiver.screen().split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } })
+      .find(packet => packet.request === id)), 'upload request did not complete: ' + method);
+    assert.equal(reply.error, undefined);
+    return reply.result;
+  }
+  const { upload: uploadId } = await attach('begin', { name: 'ttyd check.bin', size: upload.length });
+  for (let offset = 0; offset < upload.length; offset += 65536) {
+    await attach('chunk', { upload: uploadId, data: upload.subarray(offset, offset + 65536).toString('base64') });
+  }
+  const saved = await attach('finish', { upload: uploadId });
+  assert.match(saved.path, /^\/data\/agent-terminal\/uploads\/\d{4}-\d{2}-\d{2}\/\d{6}-[0-9a-f]{6}-ttyd-check\.bin$/);
+  assert.deepEqual(readFileSync(saved.path), upload, 'bytes arrive unchanged through the PTY');
+  assert.equal(receiver.screen().includes(upload.subarray(0, 48).toString('base64')), false, 'the PTY must not echo input back');
+  rmSync(saved.path);
+
   const before = tmux('list-sessions', '-F', '#{session_name}');
   for (const args of [['--web', 'bash -c id'], ['--web', 'shell', '../../data'], ['--web', 'shell', 'unknown'], ['--web', 'shell', 'homeassistant', 'extra'],
-    ['--web', 'sessions', 'homeassistant'], ['--web', 'shell', 'web-test', namedA.id]]) {
+    ['--web', 'sessions', 'homeassistant'], ['--web', 'uploads', 'homeassistant'], ['--web', 'shell', 'web-test', namedA.id]]) {
     assert.notEqual(spawnSync('agent-session', args).status, 0, 'invalid web selection was accepted');
   }
   assert.equal(tmux('list-sessions', '-F', '#{session_name}'), before, 'invalid requests must not create sessions');

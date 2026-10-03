@@ -30,6 +30,9 @@ test -s /data/codex/config.toml
 # aborts when it dies, so the auto-start must be off from the first boot.
 grep -qx 'features\.daemon_auto_start = false' /data/codex/config.toml
 test -s /data/claude/.claude/.claude.json
+# Claude reads files attached in the web terminal without asking first.
+jq -e '.permissions.additionalDirectories == ["/data/agent-terminal/uploads"]' \
+    /data/claude/.claude/settings.json >/dev/null
 test -s /run/agent-terminal/index.html
 test "$(bash -lc 'printf %s "$AGENT"')" = codex
 test "$(bash -lc 'printf %s "$CODEX_HOME"')" = /data/codex
@@ -59,6 +62,13 @@ jq '.mcpServers.homeassistant = {type:"stdio",command:"custom-ha-server",args:["
     /data/claude/.claude/.claude.json > /tmp/claude-config-test.json
 mv /tmp/claude-config-test.json /data/claude/.claude/.claude.json
 claude_config_before="$(sha256sum /data/claude/.claude/.claude.json)"
+# So must Claude's settings, once the uploads folder is in them.
+jq '.model = "opus" | .permissions.additionalDirectories += ["/share"]' \
+    /data/claude/.claude/settings.json > /tmp/claude-settings-test.json
+mv /tmp/claude-settings-test.json /data/claude/.claude/settings.json
+claude_settings_before="$(sha256sum /data/claude/.claude/settings.json)"
+# Attached files are kept for a week: a boot drops older days, not recent ones.
+mkdir -p /data/agent-terminal/uploads/2000-01-01 "/data/agent-terminal/uploads/$(date +%F)"
 sed -i 's/"agent": "codex"/"agent": "claude"/' /data/options.json
 bash /etc/cont-init.d/10-init.sh
 test "$(bash -lc 'printf %s "$AGENT"')" = claude
@@ -68,6 +78,9 @@ bash /etc/cont-init.d/10-init.sh
 test "$(bash -lc 'printf %s "$AGENT"')" = codex
 test "$(sha256sum /data/codex/config.toml)" = "${codex_config_before}"
 test "$(sha256sum /data/claude/.claude/.claude.json)" = "${claude_config_before}"
+test "$(sha256sum /data/claude/.claude/settings.json)" = "${claude_settings_before}"
+test ! -e /data/agent-terminal/uploads/2000-01-01
+test -d "/data/agent-terminal/uploads/$(date +%F)"
 test "$(cat /data/codex/auth.json)" = '{"test_credentials":"unchanged"}'
 test "$(cat /data/codex/sessions/test.jsonl)" = 'saved session'
-echo 'Container smoke checks passed: imported agent, login environments, tmux, switching, and persistence.'
+echo 'Container smoke checks passed: imported agent, login environments, tmux, switching, persistence, and uploads.'
