@@ -14,6 +14,28 @@ A checkout under `/addons` also shows up in Home Assistant as a local add-on wit
 
 The user also pushes to this repo from other machines, so `git fetch` before committing.
 
+## A pull request you open waits unseen
+
+Agents here push with the owner's GitHub login, and GitHub sends nobody a notification about their own pull request. Only the daily Codex update merges itself. Anything else you open stays open, with green checks and no one told, until the owner happens to look. So never leave one without doing one of these:
+
+- **Asked to ship it:** turn on auto-merge once the PR is ready, `gh pr merge <number> --auto --squash`. It merges when "Validate add-on" passes. Check that it did, or say that it hasn't.
+- **It needs the owner** (a draft, something to try on a phone, a decision): send an alert to their phone. One tag per PR, so a later call replaces the alert instead of stacking another:
+
+  ```sh
+  curl -sf -X POST -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" -H 'Content-Type: application/json' \
+    http://supervisor/core/api/services/notify/notifications_adam -d '{
+      "title": "Agent Terminal: PR #<number> is waiting on you",
+      "message": "<title>. <the one thing they need to do>",
+      "data": {"tag": "agent_terminal_pr_<number>", "group": "system", "channel": "system",
+               "clickAction": "https://github.com/modert/agent-terminal-ha-addon/pull/<number>"}}'
+  ```
+
+  `notify.notifications_adam` is the owner's own group in the Home Assistant config (`/homeassistant/notify.yaml`). Clear the alert when the PR merges or closes: the same call with `"message": "clear_notification"` and only the `tag` in `data`.
+
+Whenever something merges to `master`, run `gh pr list` afterwards. A merge can leave another open PR conflicting, most often over `version` and the changelog: the Codex update takes the next patch version on `master` every time Codex releases, so a PR that bumps the version too goes stale within a day. Bump the version last, and merge `master` into the branch before asking for a merge.
+
+End your report with what is still open and the one thing the owner has to do about each.
+
 ## Hot-deploying the web UI
 
 The terminal page is a custom xterm.js client. `agent-terminal/rootfs/opt/webui/index.template.html` is built by `build.mjs` into `/opt/webui/index.html`; ttyd serves `/run/agent-terminal/index.html`, which `agent-workspace refresh-ui` renders from the built file. ttyd re-reads the page on every request, so the deploy loop is:
