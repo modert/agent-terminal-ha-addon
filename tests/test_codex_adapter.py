@@ -87,6 +87,16 @@ class CodexAdapterTests(unittest.TestCase):
         self.assertEqual(appended["model_reasoning_effort"], "high")
         self.assertIs(appended["features"]["daemon_auto_start"], False)
 
+    def test_new_config_turns_off_paste_guessing_so_a_quick_enter_sends(self):
+        self.assertIs(tomllib.loads(self.config.read_text())["disable_paste_burst"], True)
+
+    def test_an_empty_config_gets_both_settings(self):
+        self.config.write_text("")
+        self.run_adapter("agent_init")
+        config = tomllib.loads(self.config.read_text())
+        self.assertIs(config["features"]["daemon_auto_start"], False)
+        self.assertIs(config["disable_paste_burst"], True)
+
     def test_existing_config_gets_the_setting_once(self):
         original = (
             "# Keep my preferences.\n"
@@ -100,7 +110,9 @@ class CodexAdapterTests(unittest.TestCase):
         patched = self.config.read_text()
         config = tomllib.loads(patched)
         self.assertIs(config["features"]["daemon_auto_start"], False)
-        self.assertIs(config["tui"]["screen_reader_detection_done"], True)
+        # Above the first table: a top-level key after [tui] would belong to it.
+        self.assertIs(config["disable_paste_burst"], True)
+        self.assertEqual(config["tui"], {"screen_reader_detection_done": True})
         self.assertIn("# Keep my preferences.", patched)
         self.run_adapter("agent_init")
         self.assertEqual(self.config.read_text(), patched)
@@ -114,8 +126,8 @@ class CodexAdapterTests(unittest.TestCase):
         self.assertIs(config["features"]["daemon_auto_start"], False)
         self.assertIs(config["features"]["apps"], True)
 
-    def test_a_chosen_daemon_auto_start_is_left_alone(self):
-        original = "features.daemon_auto_start = true\n"
+    def test_chosen_values_are_left_alone(self):
+        original = "disable_paste_burst = false\nfeatures.daemon_auto_start = true\n"
         self.config.write_text(original)
         self.run_adapter("agent_init")
         self.assertEqual(self.config.read_text(), original)
