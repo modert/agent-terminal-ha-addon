@@ -63,7 +63,7 @@ else
         shell) START_CMD='bash -l' ;;
         custom) START_CMD="$(jq -r '.web_command // empty' /data/options.json)"
                 [ -n "${START_CMD}" ] || { echo 'No custom command configured' >&2; exit 2; } ;;
-        *) START_CMD="${AGENT_COMMAND}" ;;
+        *) START_CMD='agent-run' ;;
     esac
 fi
 # No URL argument is ever interpreted as a command or a filesystem path.

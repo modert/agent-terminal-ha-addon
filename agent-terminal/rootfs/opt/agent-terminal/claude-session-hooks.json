@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "node /opt/agent-terminal/session-hook.mjs claude", "timeout": 5}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "node /opt/agent-terminal/session-hook.mjs claude", "timeout": 5}]}]
+  }
+}
