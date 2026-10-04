@@ -23,6 +23,99 @@ function fixture(t) {
   return { root, paths, store, run, pid };
 }
 
+test('each named task remembers its exact conversation across stops, restarts and renames', t => {
+  const { paths, store, run, root } = fixture(t);
+  const a = store.create({ name: 'First task', agent: 'codex', workspace: 'homeassistant' });
+  const b = store.create({ name: 'Second task', agent: 'codex', workspace: 'homeassistant' });
+  const aID = '01990000-0000-7000-8000-000000000001', bID = '01990000-0000-7000-8000-000000000002';
+  const env = (id, key) => run('show-environment', '-t', '=' + id, key).slice(key.length + 1);
+  const event = session_id => ({ hook_event_name: 'SessionStart', source: 'startup', session_id });
+  for (const [record, conversationId] of [[a, aID], [b, bID]]) {
+    store.ensure('codex', 'homeassistant', record.id, 'exec sleep 120');
+    assert.equal(env(record.id, 'AGENT_CONVERSATION_ID'), '');
+    assert.equal(env(record.id, 'AGENT_TERMINAL_SESSION_ID'), record.id);
+    assert.equal(store.remember(record.id, 'codex', env(record.id, 'AGENT_TERMINAL_LAUNCH_ID'), event(conversationId)), true);
+  }
+  const firstLaunch = env(a.id, 'AGENT_TERMINAL_LAUNCH_ID');
+  store.rename(a.id, 'Renamed task');
+  store.stop(a.id);
+  const restarted = createSessionStore(paths);
+  assert.equal(restarted.get(a.id).conversationId, aID);
+  assert.equal(restarted.get(b.id).conversationId, bID);
+  restarted.start(a.id);
+  restarted.ensure('codex', 'homeassistant', a.id, 'exec sleep 120');
+  assert.equal(env(a.id, 'AGENT_CONVERSATION_ID'), aID);
+  assert.notEqual(env(a.id, 'AGENT_TERMINAL_LAUNCH_ID'), firstLaunch);
+  assert.equal(restarted.remember(a.id, 'codex', firstLaunch, { ...event(bID), source: 'resume' }), false, 'late callback cannot redirect a new launch');
+  assert.equal(restarted.get(a.id).conversationId, aID);
+  const resumeFile = join(root, 'conversations', a.id + '.json');
+  // Simulate a pre-upgrade control connection writing only the old fields.
+  writeFileSync(join(root, 'sessions', a.id + '.json'), JSON.stringify({ ...a, name: 'Old client rename' }));
+  assert.equal(restarted.get(a.id).conversationId, aID);
+  restarted.remove(a.id);
+  assert.equal(existsSync(resumeFile), false);
+  assert.throws(() => restarted.remember(a.id, 'codex', firstLaunch, event(aID)), /Unknown session/);
+  assert.equal(restarted.get(b.id).conversationId, bID);
+});
+
+test('conversation hooks validate launch ownership, track explicit conversation switches and stop failures', t => {
+  const { store, run, root, paths } = fixture(t);
+  const id = 'agent-homeassistant-claude';
+  store.ensure('claude', 'homeassistant', id, 'exec sleep 120');
+  const token = run('show-environment', '-t', '=' + id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+  const a = '550e8400-e29b-41d4-a716-446655440000', b = '550e8400-e29b-41d4-a716-446655440001';
+  const transcript = join(root, a + '.jsonl');
+  const event = { hook_event_name: 'SessionStart', source: 'startup', session_id: a, transcript_path: transcript };
+  assert.equal(store.remember(id, 'codex', token, event), false);
+  assert.equal(store.remember(id, 'claude', 'wrong-launch', event), false);
+  assert.equal(store.remember(id, 'claude', token, { ...event, session_id: '../../data' }), false);
+  assert.equal(store.remember(id, 'claude', token, event), true);
+  assert.equal(store.remember(id, 'claude', token, { ...event, session_id: b }), false, 'an unrelated nested startup cannot claim the terminal');
+  writeFileSync(transcript, 'saved history');
+  assert.equal(store.remember(id, 'claude', token, { ...event, hook_event_name: 'Stop' }), true);
+  assert.equal(JSON.parse(readFileSync(join(root, 'conversations', id + '.json'))).hasTranscript, true);
+  assert.equal(store.remember(id, 'claude', token, { ...event, source: 'clear', session_id: b, transcript_path: null }), true);
+  assert.equal(createSessionStore(paths).get(id).conversationId, b);
+  assert.equal(store.remember(id, 'claude', token, { ...event, hook_event_name: 'Stop' }), false);
+  assert.equal(store.failed(id, 'stale-launch'), false);
+  assert.equal(store.get(id).stopped, false);
+  assert.equal(store.failed(id, token), true);
+  assert.equal(store.get(id).stopped, true);
+  assert.equal(store.remember(id, 'claude', token, event), false, 'stopped sessions stay stopped');
+  assert.throws(() => store.ensure('claude', 'homeassistant', id, 'exec sleep 120'), /Session stopped/);
+  assert.throws(() => store.request({ method: 'remember', session: id, conversationId: a }), /Unknown session operation/, 'the browser cannot forge hook callbacks');
+});
+
+test('provider launchers resume only their assigned conversation and preserve argument boundaries', t => {
+  const root = mkdtempSync(join(tmpdir(), 'resume-adapters-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const output = join(root, 'args');
+  for (const agent of ['codex', 'claude']) {
+    writeFileSync(join(root, agent), '#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURE_ARGS"\n', { mode: 0o755 });
+    const adapter = new URL('../agent-terminal/rootfs/opt/agents/' + agent + '.sh', import.meta.url).pathname;
+    const invoke = extra => {
+      execFileSync('bash', ['-c', '. "$1"; agent_run', 'bash', adapter], {
+        env: { PATH: root + ':' + process.env.PATH, CAPTURE_ARGS: output, ...extra },
+      });
+      return readFileSync(output, 'utf8').trim().split('\n');
+    };
+    const id = '550e8400-e29b-41d4-a716-446655440000';
+    if (agent === 'codex') {
+      assert.deepEqual(invoke({}), ['--no-daemon']);
+      assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id }), ['--no-daemon', 'resume', id]);
+    } else {
+      const settings = ['--settings', '/opt/agent-terminal/claude-session-hooks.json'];
+      assert.deepEqual(invoke({}), settings);
+      assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id }), [...settings, '--resume', id]);
+      const transcript = join(root, 'empty conversation.jsonl');
+      assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id, AGENT_CONVERSATION_TRANSCRIPT: transcript }), [...settings, '--session-id', id]);
+      assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id, AGENT_CONVERSATION_TRANSCRIPT: transcript, AGENT_CONVERSATION_SAVED: 'true' }), [...settings, '--resume', id], 'a previously saved transcript must not silently reset');
+      writeFileSync(transcript, 'history');
+      assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id, AGENT_CONVERSATION_TRANSCRIPT: transcript }), [...settings, '--resume', id]);
+    }
+  }
+});
+
 test('same provider sessions have independent processes, reattach, and preserve names', t => {
   const { paths, store, pid } = fixture(t);
   const first = store.create({ name: 'Dashboard refresh', description: 'Make the wall tablet easier to read', agent: 'codex', workspace: 'homeassistant' });

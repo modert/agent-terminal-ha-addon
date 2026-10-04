@@ -95,7 +95,8 @@ Without it Codex treats keys that arrive close together as a paste and an
 Enter right after them as a line break, so a prompt sent in one motion stays
 in the composer. Real pastes are unaffected. A Codex already running picks
 the setting up when it is restarted; set it to `false` to keep Codex's default.
-Run `codex resume` to reopen a saved conversation after restarting. Click
+The terminal automatically resumes its saved conversation after restarting.
+Use `/resume` inside Codex to select an older conversation explicitly. Click
 **Claude** to return to Claude's live session with its own login intact.
 
 The built-in MCP server uses the add-on's Supervisor token at runtime; no HA
@@ -171,7 +172,18 @@ it. The menu also offers **Stop** and **Start**. **Running** means the terminal
 process exists; it does not indicate whether the model is working or waiting
 for input. **Ready to start** sessions start when opened. Names, purpose notes,
 and stop state are shared between browsers and saved
-under `/data/agent-terminal/sessions/`.
+under `/data/agent-terminal/sessions/`. Each Claude and ChatGPT terminal also
+remembers its own conversation ID under `/data/agent-terminal/conversations/`.
+Opening it after an exit, Stop/Start, or add-on update resumes that exact
+conversation, even when several tasks share a provider and workspace. A
+**Ready to resume** label identifies saved conversations whose process is gone.
+Choose **+ New session** for a separate conversation. The provider's own
+`/resume` or `/clear` (Codex: `/new`) commands update the association too.
+
+Sessions created before this feature have no recorded conversation ID. After
+upgrading, select their previous conversation once with the provider's
+`/resume` command; the terminal remembers that choice afterwards. It never
+guesses from the most recent conversation in a shared workspace.
 
 On screens at least 960 pixels wide, **Split view** immediately opens a second
 pane while keeping your current terminal visible on the left. Choose an
@@ -189,9 +201,10 @@ Narrowing the screen returns to one pane, keeping the focused session visible.
 
 **Stop** ends the running process after confirmation. Automatic reconnects
 from other browsers cannot restart it; **Start** explicitly allows a fresh
-process. Closing a pane, switching sessions, and closing the browser only
-detach. A full add-on restart still ends running processes; named session
-metadata and provider-saved conversations survive, but running tasks do not.
+process and resumes the saved conversation. Closing a pane, switching
+sessions, and closing the browser only detach. A full add-on restart still
+ends running processes; named session metadata and provider-saved
+conversations survive, but running tasks do not.
 
 For a temporary session you no longer need, choose **Sessions → ••• → Delete**
 and confirm. This ends its task and removes the added session from every
@@ -223,9 +236,11 @@ agent-session --agent shell --workspace automations
 ```
 
 Closing the page or switching away only detaches. Exiting the CLI ends its
-process; an open panel reconnects and starts a fresh one. Use **Sessions →
-••• → Stop** to stop it without automatic relaunch. A full add-on restart
-stops all live sessions.
+process; an open panel reconnects and resumes that conversation in a new
+process. A launch error stops the terminal instead of repeatedly relaunching
+it; resolve the error, then choose **Start**. Use **Sessions → ••• → Stop**
+to stop it without automatic relaunch. A full add-on restart stops all live
+sessions.
 
 ### Task workspaces and skills
 
@@ -506,6 +521,7 @@ that file through this contract:
 | `AGENT_DATA` | variable | Directory under `/data` holding the login and settings. |
 | `agent_install` | function | Build time: install the CLI into the image. |
 | `agent_env` | function | Print `NAME=value` lines the CLI needs (config dir, etc.). |
+| `agent_run` | optional function | Run the interactive CLI, resuming `AGENT_CONVERSATION_ID` when set. Called inside the tmux pane by `agent-run`; adapters without it use `AGENT_COMMAND`. |
 | `agent_init` | function | Boot time: point the CLI's config at `AGENT_DATA`. |
 | `agent_register_mcp NAME CMD [ARGS...]` | function | Register a stdio MCP server in the CLI's own config format. Must be idempotent and must never overwrite a file it can't parse. |
 | `agent_login_help` | function | Print first-run login steps for the motd. |
@@ -739,8 +755,9 @@ The IP reservation and private infrastructure repository remain host-managed.
 ## Known limitations
 
 - The live tmux process and any running task do **not** survive a full add-on
-  restart or update. Login and settings persist; Codex's saved conversations
-  can be reopened with `codex resume`. Detach/reattach across browser or SSH
+  restart or update. Login, settings and recorded conversation IDs persist;
+  reopening a terminal resumes its conversation but does not automatically
+  retry an interrupted action. Detach/reattach across browser or SSH
   drops keeps the live process running.
 - The first `http://supervisor/core/api/...` call right after boot can return
   `502` for a few seconds while the proxy warms up - retry.

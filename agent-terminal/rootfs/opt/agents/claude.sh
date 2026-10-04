@@ -21,6 +21,23 @@ agent_env() {
     echo "CLAUDE_CONFIG_DIR=${AGENT_DATA}/.claude"
 }
 
+# Session hooks capture the actual ID, including /clear and /resume changes.
+# Additional CLI settings merge with the user's existing settings and hooks.
+agent_run() {
+    local args=(--settings /opt/agent-terminal/claude-session-hooks.json)
+    if [ -n "${AGENT_CONVERSATION_ID:-}" ]; then
+        # Claude does not save an empty conversation. Reuse its allocated ID
+        # until it has a transcript; never replace a previously saved chat.
+        if [ "${AGENT_CONVERSATION_SAVED:-false}" != true ] && \
+           [ -n "${AGENT_CONVERSATION_TRANSCRIPT:-}" ] && [ ! -f "${AGENT_CONVERSATION_TRANSCRIPT}" ]; then
+            args+=(--session-id "${AGENT_CONVERSATION_ID}")
+        else
+            args+=(--resume "${AGENT_CONVERSATION_ID}")
+        fi
+    fi
+    exec claude "${args[@]}"
+}
+
 # Boot time: point the CLI's config at persistent storage.
 agent_init() {
     local cc_json="${AGENT_DATA}/.claude/.claude.json"

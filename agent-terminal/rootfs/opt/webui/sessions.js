@@ -149,7 +149,7 @@ window.AgentSessions = function (options) {
         var detail = document.createElement('span'); detail.className = 'session-meta';
         var provider = document.createElement('span'); provider.textContent = label(agents, record.agent); detail.appendChild(provider);
         var state = document.createElement('span'); state.className = 'session-state' + (record.running && !record.stopped ? ' is-running' : '');
-        state.textContent = record.stopped ? 'Stopped' : record.running ? 'Running' : 'Ready to start'; detail.appendChild(state);
+        state.textContent = record.stopped ? 'Stopped' : record.running ? 'Running' : record.conversationId ? 'Ready to resume' : 'Ready to start'; detail.appendChild(state);
         copy.appendChild(detail); main.appendChild(copy);
         if (place || record.stopped || picking()) {
           var badge = document.createElement('span'); badge.className = 'session-place';
@@ -214,7 +214,8 @@ window.AgentSessions = function (options) {
     el('sessions-explanation').textContent = next === 'delete'
       ? 'Delete “' + record.name + '” from ' + label(workspaces, record.workspace) + ' · ' + label(agents, record.agent) + '? This ends its running task and removes it from Sessions in every browser. Terminal scrollback is lost. Workspace files and provider-saved conversations are kept. This cannot be undone.'
       : next === 'stop'
-      ? 'Stop “' + record.name + '” and end its running task? Starting it again launches a fresh process.'
+      ? 'Stop “' + record.name + '” and end its running task? ' +
+        (record.agent === 'claude' || record.agent === 'codex' ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
     el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
     el('sessions-save').classList.toggle('session-danger', next === 'delete');

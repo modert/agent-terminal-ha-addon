@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Runs inside the tmux pane. The session store supplies an exact conversation
+# ID, never a workspace-wide "last conversation" that another task can change.
+set -uo pipefail
+. /usr/local/lib/agent.sh
+if declare -F agent_run >/dev/null; then
+    ( agent_run )
+else
+    ( exec bash -c "${AGENT_COMMAND}" )
+fi
+status=$?
+if [ "${status}" -ne 0 ] && [ -n "${AGENT_TERMINAL_SESSION_ID:-}" ] && [ -n "${AGENT_TERMINAL_LAUNCH_ID:-}" ]; then
+    # A missing saved conversation or launch error must not cause ttyd to
+    # repeatedly start the failed command on every browser reconnect.
+    node /opt/agent-terminal/sessions.mjs failed "${AGENT_TERMINAL_SESSION_ID}" "${AGENT_TERMINAL_LAUNCH_ID}" || true
+fi
+exit "${status}"

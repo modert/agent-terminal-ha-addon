@@ -79,7 +79,7 @@ RUN cd /opt/webui \
     && npm cache clean --force \
     && test -s index.html
 
-RUN chmod +x /usr/local/bin/agent-session /usr/local/bin/agent-install \
+RUN chmod +x /usr/local/bin/agent-session /usr/local/bin/agent-run /usr/local/bin/agent-install \
     /opt/agent-terminal/workspaces.mjs \
     && ln -sfn /opt/agent-terminal/workspaces.mjs /usr/local/bin/agent-workspace \
     && ln -sfn agent-session /usr/local/bin/claude-session \

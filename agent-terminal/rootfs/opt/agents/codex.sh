@@ -20,6 +20,15 @@ agent_env() {
     echo "CODEX_HOME=${AGENT_DATA}"
 }
 
+agent_run() {
+    # Each terminal owns its process/environment so lifecycle hooks identify
+    # the right named session, even when several use the same workspace.
+    if [ -n "${AGENT_CONVERSATION_ID:-}" ]; then
+        exec codex --no-daemon resume "${AGENT_CONVERSATION_ID}"
+    fi
+    exec codex --no-daemon
+}
+
 # File-based credentials survive container replacement along with config and
 # conversation history. Only seed a new config; preserve existing settings.
 agent_init() {

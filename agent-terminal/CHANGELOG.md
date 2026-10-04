@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.8.3
+- Claude and ChatGPT terminals remember their own conversation and resume it
+  after Stop/Start, a CLI exit, or an add-on update. Tasks in the same workspace
+  keep separate conversations. Choose **+ New session** to start another chat.
+- Selecting a conversation with `/resume`, or clearing it with `/clear`
+  (ChatGPT: `/new`), updates the terminal's saved conversation. Older terminals
+  need one `/resume` selection to associate their previous conversation.
+- Show **Ready to resume** for saved conversations without a running process.
+  Failed launches stop instead of repeatedly reconnecting and failing again.
+
 ## 2.8.2
 - Fix prompts that were typed or pasted and then left unsent when Enter
   followed at once.
