@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 2.8.2
+- Fix prompts that were typed or pasted and then left unsent when Enter
+  followed at once.
+- In split view the keyboard stays with the pane you are typing in. A pane
+  that loaded, switched session or reconnected used to take it, so the rest
+  of a prompt and its Enter went to the other session.
+- Keys typed while a session is still connecting are kept and typed into it
+  once it is on screen. They used to be dropped, or arrive with Enter turned
+  into a line break.
+- Enter pressed while an attachment is uploading waits for it instead of
+  sending the prompt without it. A failed upload leaves the prompt unsent.
+- ChatGPT (Codex): start-up adds `disable_paste_burst = true` when the setting
+  is missing, so an Enter that arrives together with the last key sends the
+  prompt instead of adding a line. Restart a running Codex to pick it up.
+
 ## 2.8.1
 - Delete added sessions from **Sessions → ••• → Delete**, with confirmation.
   This ends the task and removes the session from all browsers while keeping

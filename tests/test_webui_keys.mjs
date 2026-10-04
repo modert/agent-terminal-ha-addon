@@ -109,6 +109,7 @@ async function page({ touch = true, search = '', saved = [], platform = 'Linux',
   await new Promise(setImmediate);
   assert.ok(socket, 'page creates its ttyd connection');
   socket.onopen();
+  socket.onmessage({ data: '0' });                 // tmux draws the session; keys wait for that
   packets.length = 0;
   const buttons = ['key-rail', 'keys-agent', 'keys-ctrl', 'keys-edit', 'keys-tools', 'key-row'].flatMap(id => ids.get(id).children);
   const button = label => {

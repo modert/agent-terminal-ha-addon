@@ -27,10 +27,22 @@ agent_init() {
     chmod 700 "${AGENT_DATA}"
     if [ ! -e "${AGENT_DATA}/config.toml" ]; then
         (umask 077; printf '%s\n' 'cli_auth_credentials_store = "file"' \
+            'disable_paste_burst = true' \
             'features.daemon_auto_start = false' \
             > "${AGENT_DATA}/config.toml")
     fi
     codex_disable_daemon_auto_start
+    codex_disable_paste_burst
+}
+
+# A line placed first in the config belongs to no table.
+codex_config_prepend() {
+    local config="${AGENT_DATA}/config.toml"
+    if [ -s "${config}" ]; then
+        sed -i "1i $1" "${config}"
+    else
+        printf '%s\n' "$1" > "${config}"
+    fi
 }
 
 # 0.157 runs the agent inside a background app-server by default. That server
@@ -52,8 +64,21 @@ codex_disable_daemon_auto_start() {
     else
         # First line, as a dotted key, so it belongs to no table and the end of
         # the file stays free for whatever appends a plain top-level setting.
-        sed -i '1i features.daemon_auto_start = false' "${config}"
+        codex_config_prepend 'features.daemon_auto_start = false'
     fi
+}
+
+# Codex takes keys that arrive close together for a paste, and an Enter right
+# after them for a line break in it. Through the browser, ttyd and tmux the
+# last key and Enter often arrive together, so a prompt typed and sent in one
+# motion stayed in the composer, unsent. Pastes arrive bracketed here (xterm.js
+# and tmux both pass them on), so the guess is never needed. Set it once, and
+# leave an existing value alone, as above.
+codex_disable_paste_burst() {
+    if grep -q '^[[:space:]]*disable_paste_burst[[:space:]]*=' "${AGENT_DATA}/config.toml"; then
+        return 0
+    fi
+    codex_config_prepend 'disable_paste_burst = true'
 }
 
 # Register missing servers with Codex's own TOML parser/editor. Leave existing

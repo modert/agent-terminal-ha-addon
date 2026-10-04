@@ -64,6 +64,8 @@ const mock = `<script>
                 '\\r\\n\\r\\nSession controls are interactive. Terminal input is recorded only.\\r\\n> ';
               this.onmessage({ data: new TextEncoder().encode('0' + screen).buffer });
             }
+            // tmux draws the session as it attaches; keys wait for that.
+            else this.onmessage({ data: new TextEncoder().encode('0').buffer });
           }
           return;
         }

@@ -61,3 +61,11 @@ The container has Node but no Python.
 ## Codex gotcha
 
 Codex 0.157 and later start a background app-server that dies in this container. The TUI then exits with "failed to record pid-managed app-server process" and ttyd respawns it forever, which looks like the ChatGPT panel loading endlessly. On every boot, `codex.sh`'s `agent_init` adds `daemon_auto_start = false` to `/data/codex/config.toml` when the setting is missing (inside an existing `[features]` table if there is one) and leaves any existing value alone, including a deliberate `true`. If the panel loops after a Codex update, check `codex features list | grep daemon_auto_start` first; `codex --no-daemon` is the one-off escape.
+
+`agent_init` adds `disable_paste_burst = true` the same way. Codex otherwise takes an Enter that arrives within about 10 ms of the key before it for a line break in a paste, and the prompt stays in the composer. A browser, Home Assistant's proxy, ttyd and tmux bunch keys that closely often enough to matter. A prompt left unsent in Codex is that setting missing, or a Codex started before it was added.
+
+## Input that does not arrive
+
+Three things in the page keep keys with the session they were typed for; check them before blaming the agent. In split view only the pane being typed in may focus its terminal when a connection opens (`otherPaneHasKeyboard`). Keys typed before tmux has drawn the session are held and released on the first output (`held`, `releaseInput`), because ttyd starts the launcher on a terminal in line mode, which echoes keys and turns Enter into a line break. An Enter pressed during an upload waits for the file's path.
+
+To see what a session really receives, run a second ttyd on another port whose command attaches to a separate tmux server (`tmux -L probe`) running a script that logs stdin in raw mode, and drive the page with Chromium's remote debugging. Never type test input into the live tmux server.
