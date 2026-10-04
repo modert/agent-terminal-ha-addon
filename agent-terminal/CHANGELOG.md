@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.8.1
+- Delete added sessions from **Sessions → ••• → Delete**, with confirmation.
+  This ends the task and removes the session from all browsers while keeping
+  workspace files, uploads, provider logins, and saved conversations.
+- Prevent stale browser tabs from restarting deleted sessions. Built-in
+  provider sessions keep their Stop and Start controls and cannot be deleted.
+
 ## 2.8.0
 - Attach files and images in the web terminal. Paste a screenshot with
   Ctrl+V / ⌘V, drop files on the terminal, or choose **Attach file…** from

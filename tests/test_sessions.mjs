@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -68,6 +68,7 @@ test('session operations reject paths, commands, mismatched providers and corrup
   for (const id of ['../options', '$(id)', '=agent-homeassistant-shell', 'x:1', 'session-nope', '', null]) {
     assert.throws(() => store.get(id), /Invalid session/);
     assert.throws(() => store.stop(id), /Invalid session/);
+    assert.throws(() => store.remove(id), /Invalid session/);
   }
   assert.throws(() => store.create({ name: 'x', agent: 'bash -c id', workspace: 'homeassistant' }), /Unknown agent/);
   assert.throws(() => store.create({ name: 'x', agent: 'codex', workspace: '../../data' }), /Invalid workspace/);
@@ -86,6 +87,58 @@ test('session operations reject paths, commands, mismatched providers and corrup
   writeFileSync(file, '{broken');
   assert.equal(store.list().length, 3, 'a corrupt named session does not hide Main or Shell');
   assert.equal(readFileSync(file, 'utf8'), '{broken');
+});
+
+test('deleting an added session ends only its task and prevents stale clients from recreating it', t => {
+  const { root, paths, store, pid, run } = fixture(t);
+  const first = store.create({ name: 'Temporary', agent: 'codex', workspace: 'homeassistant' });
+  const second = store.create({ name: 'Keep working', agent: 'codex', workspace: 'homeassistant' });
+  const third = store.create({ name: 'Never opened', agent: 'shell', workspace: 'homeassistant' });
+  store.ensure('codex', 'homeassistant', first.id, 'exec sleep 120');
+  store.ensure('codex', 'homeassistant', second.id, 'exec sleep 120');
+  const survivor = pid(second.id);
+  const files = ['configuration.yaml', 'saved-conversation.json', 'uploaded-file.txt', 'options.json'];
+  for (const file of files.slice(0, -1)) writeFileSync(join(root, file), 'Keep ' + file);
+  const contents = files.map(file => readFileSync(join(root, file), 'utf8'));
+  const stale = createSessionStore(paths);
+  stale.get(first.id);
+  assert.equal(store.request({ method: 'delete', session: first.id }).id, first.id);
+  assert.equal(existsSync(join(root, 'sessions', first.id + '.json')), false);
+  assert.equal(existsSync(join(root, 'session-locks', first.id)), true, 'keep the shared lock inode for waiting clients');
+  assert.ok(!run('list-sessions', '-F', '#{session_name}').split('\n').includes(first.id));
+  assert.equal(pid(second.id), survivor, 'deletion cannot end another task in the workspace');
+  for (const browser of [stale, createSessionStore(paths)]) {
+    assert.ok(!browser.list().some(s => s.id === first.id));
+    assert.throws(() => browser.get(first.id), /Unknown session/);
+    assert.throws(() => browser.ensure('codex', 'homeassistant', first.id, 'exec sleep 120'), /Unknown session/);
+    assert.throws(() => browser.start(first.id), /Unknown session/);
+    assert.throws(() => browser.rename(first.id, 'Stale edit'), /Unknown session/);
+    assert.throws(() => browser.remove(first.id), /Unknown session/);
+  }
+  store.stop(second.id);
+  store.remove(second.id);
+  store.remove(third.id);
+  assert.ok(store.list().every(s => !s.id.startsWith('session-')), 'stopped and unopened sessions can also be deleted');
+  assert.deepEqual(files.map(file => readFileSync(join(root, file), 'utf8')), contents);
+});
+
+test('built-in sessions stay available even after renaming, and failed termination keeps the record', t => {
+  const { root, paths, store, pid } = fixture(t);
+  const builtin = store.ensure('shell', 'homeassistant', '', 'exec sleep 120');
+  const original = pid(builtin);
+  store.rename(builtin, 'My temporary name');
+  assert.throws(() => store.remove(builtin), /Built-in sessions cannot be deleted/);
+  assert.equal(pid(builtin), original);
+  assert.equal(store.get(builtin).stopped, false);
+  const record = store.create({ name: 'Cannot stop yet', agent: 'shell', workspace: 'homeassistant' });
+  store.ensure('shell', 'homeassistant', record.id, 'exec sleep 120');
+  const stubborn = join(root, 'stubborn-tmux');
+  writeFileSync(stubborn, '#!/bin/sh\nif [ "$1" = kill-session ]; then exit 1; fi\nexec "' + paths.tmux + '" "$@"\n', { mode: 0o755 });
+  assert.throws(() => createSessionStore({ ...paths, tmux: stubborn }).remove(record.id), /Could not stop session/);
+  assert.equal(store.get(record.id).stopped, true, 'a failed deletion keeps the record and blocks automatic relaunch');
+  assert.match(pid(record.id), /^\d+$/);
+  store.remove(record.id);
+  assert.throws(() => store.get(record.id), /Unknown session/);
 });
 
 test('concurrent launch and stop serialize across processes', async t => {
@@ -125,4 +178,35 @@ test('management stream handles fragmented requests and reports operations witho
   assert.match(packets.find(p => p.request === 2).error, /Unknown session operation/);
   assert.ok(packets.find(p => p.request === null).error);
   assert.equal(store.list().filter(s => s.id.startsWith('session-')).length, 1);
+  const id = packets.find(p => p.request === 1).result.id;
+  data = '';
+  input.write(JSON.stringify({ request: 3, method: 'delete', session: id }) + '\n');
+  const deleted = data.trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(deleted[0].result.id, id);
+  assert.equal(deleted[1].type, 'sessions');
+  assert.ok(!deleted[1].sessions.some(s => s.id === id), 'all clients receive a snapshot without the deleted session');
+});
+
+test('deletion serializes with launches and stale start requests across processes', async t => {
+  const { root, paths, store, run } = fixture(t);
+  // Keep the server alive so list-sessions can also detect an orphaned task.
+  store.ensure('shell', 'homeassistant', '', 'exec sleep 120');
+  const record = store.create({ name: 'Delete race', agent: 'shell', workspace: 'homeassistant' });
+  store.ensure('shell', 'homeassistant', record.id, 'exec sleep 120');
+  const worker = join(root, 'delete-worker.mjs');
+  writeFileSync(worker, `import { createSessionStore } from ${JSON.stringify(new URL('../agent-terminal/rootfs/opt/agent-terminal/sessions.mjs', import.meta.url).href)};
+    const store = createSessionStore(${JSON.stringify(paths)});
+    try {
+      if (process.argv[2] === 'delete') store.remove(${JSON.stringify(record.id)});
+      else if (process.argv[2] === 'start') store.start(${JSON.stringify(record.id)});
+      else store.ensure('shell', 'homeassistant', ${JSON.stringify(record.id)}, 'exec sleep 120');
+    } catch (e) { if (!e.message.includes('Unknown session')) throw e; }`);
+  async function launch(operation) {
+    const child = spawn(process.execPath, [worker, operation], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let error = ''; child.stderr.on('data', data => { error += data; });
+    const [code] = await once(child, 'exit'); assert.equal(code, 0, error);
+  }
+  await Promise.all([launch('ensure'), launch('delete'), launch('start'), launch('ensure')]);
+  assert.throws(() => createSessionStore(paths).get(record.id), /Unknown session/);
+  assert.ok(!run('list-sessions', '-F', '#{session_name}').split('\n').includes(record.id));
 });

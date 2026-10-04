@@ -169,6 +169,10 @@ window.AgentSessions = function (options) {
           }));
           actions.appendChild(action('Edit details', 'Edit details for ' + displayName(record), function () { edit('rename', record); }));
           if (!record.stopped) actions.appendChild(action('Stop', 'Stop ' + record.name, function () { edit('stop', record); }));
+          if (/^session-[a-f0-9]{32}$/.test(record.id)) {
+            var remove = action('Delete', 'Delete ' + record.name, function () { edit('delete', record); });
+            remove.classList.add('session-danger'); actions.appendChild(remove);
+          }
           row.appendChild(actions);
         }
         group.appendChild(row);
@@ -194,23 +198,27 @@ window.AgentSessions = function (options) {
   function edit(next, record) {
     if (busy) return;
     mode = next; editing = record; form.hidden = false; el('sessions-browse').hidden = true;
-    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'rename' ? 'Edit session details' : 'Stop session';
-    el('sessions-subtitle').textContent = next === 'stop' ? 'This ends the running task.' : 'Give this conversation a clear job.';
+    var destructive = next === 'stop' || next === 'delete';
+    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'rename' ? 'Edit session details' : next === 'delete' ? 'Delete session' : 'Stop session';
+    el('sessions-subtitle').textContent = next === 'delete' ? 'Remove this temporary session.' : next === 'stop' ? 'This ends the running task.' : 'Give this conversation a clear job.';
     el('sessions-context').hidden = true;
-    el('sessions-name-row').hidden = next === 'stop';
-    el('sessions-purpose-row').hidden = next === 'stop';
-    el('sessions-name').disabled = next === 'stop';
+    el('sessions-name-row').hidden = destructive;
+    el('sessions-purpose-row').hidden = destructive;
+    el('sessions-name').disabled = destructive;
     el('sessions-name').value = record ? record.name : '';
     el('sessions-purpose').value = record && record.description || '';
     el('sessions-provider-row').hidden = el('sessions-workspace-row').hidden = next !== 'create';
     var current = options.current();
     selectOptions(el('sessions-provider'), agents, current.agent);
     selectOptions(el('sessions-workspace'), workspaces, current.workspace);
-    el('sessions-explanation').textContent = next === 'stop'
+    el('sessions-explanation').textContent = next === 'delete'
+      ? 'Delete “' + record.name + '” from ' + label(workspaces, record.workspace) + ' · ' + label(agents, record.agent) + '? This ends its running task and removes it from Sessions in every browser. Terminal scrollback is lost. Workspace files and provider-saved conversations are kept. This cannot be undone.'
+      : next === 'stop'
       ? 'Stop “' + record.name + '” and end its running task? Starting it again launches a fresh process.'
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
-    el('sessions-save').textContent = next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
-    message(''); (next === 'stop' ? el('sessions-back') : el('sessions-name')).focus();
+    el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
+    el('sessions-save').classList.toggle('session-danger', next === 'delete');
+    message(''); (destructive ? el('sessions-back') : el('sessions-name')).focus();
   }
   function browse() {
     mode = 'list'; form.hidden = true; el('sessions-browse').hidden = false;
@@ -250,6 +258,10 @@ window.AgentSessions = function (options) {
     if (mode === 'create') run('create', { name: el('sessions-name').value, description: el('sessions-purpose').value, agent: el('sessions-provider').value, workspace: el('sessions-workspace').value }, choose);
     else if (mode === 'rename') run('rename', { session: editing.id, name: el('sessions-name').value, description: el('sessions-purpose').value }, browse);
     else if (mode === 'stop') run('stop', { session: editing.id }, browse);
+    else if (mode === 'delete') run('delete', { session: editing.id }, function (result) {
+      records = records.filter(function (record) { return record.id !== result.id; });
+      expanded = null; options.changed(records); browse();
+    });
   });
   search.addEventListener('input', render);
   el('sessions-unused').addEventListener('click', function () { showUnused = !showUnused; render(); });
