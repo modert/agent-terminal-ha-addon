@@ -12,7 +12,7 @@ if [ "${1:-}" = "--web" ]; then
     # the page attaches. No URL value is evaluated as a shell command or a
     # path, including on these control connections.
     case "${1:-}" in
-        sessions|uploads)
+        sessions|uploads|voice)
             [ "$#" -eq 1 ] || { echo 'Too many control arguments' >&2; exit 2; }
             exec node "/opt/agent-terminal/$1.mjs" serve ;;
     esac

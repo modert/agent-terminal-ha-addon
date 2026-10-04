@@ -32,6 +32,7 @@ test('phone taps and composition with real browser events and xterm', {
   const browser = spawn(process.env.CHROMIUM_BIN, [
     '--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
     '--disable-background-networking', '--no-first-run', '--no-default-browser-check',
+    '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
   let stderr = '', buffer = '', nextId = 0, session;
@@ -779,4 +780,21 @@ test('phone taps and composition with real browser events and xterm', {
   assert.deepEqual([sent.name, sent.width, sent.height], ['IMG_0042.jpg', 2048, 1365]);
   assert.deepEqual(await packets(), [bracketed('IMG_0042.jpg'), ' ']);
   assert.equal(await evaluate("document.getElementById('paste').hidden"), false, 'the draft stays open to finish the message');
+
+  // Real microphone API and Web Audio, with Chromium's synthetic audio source
+  // and the inert voice receiver. Dictation never sends a terminal command.
+  await load();
+  await tap("document.getElementById('voice-open')");
+  await until("document.getElementById('voice-message').textContent.startsWith('Listening')");
+  assert.equal(await evaluate("document.getElementById('paste-send').disabled"), true);
+  await evaluate("document.getElementById('paste-text').value = 'Please'");
+  await delay(500);
+  await tap("document.getElementById('voice-action')");
+  await until("document.getElementById('paste-text').value === 'Please Review the kitchen dashboard.'");
+  assert.deepEqual(await packets(), [], 'speech stays in the editable draft');
+  assert.ok(await evaluate("window.testVoiceRequests.some(r => r.method === 'chunk' && r.data.length > 0)"), 'Web Audio captured PCM');
+  assert.equal(await evaluate("document.getElementById('paste-send').disabled"), false);
+  await tap("document.getElementById('paste-send')");
+  await until('window.testPackets.length >= 2');
+  assert.deepEqual(await packets(), ['\x1b[200~Please Review the kitchen dashboard.\x1b[201~', '\r']);
 });

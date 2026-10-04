@@ -75,7 +75,7 @@ exec bash -l
     const query = new URLSearchParams();
     if (agent) {
       query.append('arg', agent);
-      if (agent !== 'sessions' && agent !== 'uploads') query.append('arg', workspace);
+      if (agent !== 'sessions' && agent !== 'uploads' && agent !== 'voice') query.append('arg', workspace);
       if (session) query.append('arg', session);
     }
     const socket = new WebSocket('ws://127.0.0.1:8099/ws?' + query, ['tty']);
@@ -222,9 +222,17 @@ exec bash -l
   assert.equal(receiver.screen().includes(upload.subarray(0, 48).toString('base64')), false, 'the PTY must not echo input back');
   rmSync(saved.path);
 
+  // Opening the voice control channel needs no model request or microphone.
+  // It waits for audio and rejects unrelated operations without launching CLI.
+  const voice = await connect('voice');
+  await until(() => voice.screen().includes('"type":"ready"'), 'voice receiver did not start');
+  voice.socket.send('0' + JSON.stringify({ request: 1, method: 'execute', command: 'id' }) + '\n');
+  await until(() => voice.screen().includes('Unknown voice operation'), 'voice receiver accepted an unrelated operation');
+  voice.socket.close();
+
   const before = tmux('list-sessions', '-F', '#{session_name}');
   for (const args of [['--web', 'bash -c id'], ['--web', 'shell', '../../data'], ['--web', 'shell', 'unknown'], ['--web', 'shell', 'homeassistant', 'extra'],
-    ['--web', 'sessions', 'homeassistant'], ['--web', 'uploads', 'homeassistant'], ['--web', 'shell', 'web-test', namedA.id]]) {
+    ['--web', 'sessions', 'homeassistant'], ['--web', 'uploads', 'homeassistant'], ['--web', 'voice', 'homeassistant'], ['--web', 'shell', 'web-test', namedA.id]]) {
     assert.notEqual(spawnSync('agent-session', args).status, 0, 'invalid web selection was accepted');
   }
   assert.equal(tmux('list-sessions', '-F', '#{session_name}'), before, 'invalid requests must not create sessions');
