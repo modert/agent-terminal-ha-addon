@@ -566,6 +566,24 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Fan tuning');
   assert.equal(await evaluate(`testHub.sessions.find(s => s.id === ${JSON.stringify(second)}).description`), 'Tune the upstairs cooling schedule', 'purpose survives reload');
 
+  // The panes connect on their own schedules. The keyboard starts in the left
+  // pane, and a pane whose connection comes back never takes it from the
+  // pane being typed in: the rest of a prompt would land in the other session.
+  const typingIn = `document.activeElement === testTerminal.textarea ? 'left'
+    : document.activeElement === document.getElementById('side-terminal') ? 'right' : 'neither'`;
+  await until(`${side}.document.getElementById('overlay').hidden && document.getElementById('overlay').hidden`);
+  await delay(50);
+  assert.equal(await evaluate(typingIn), 'left', 'a second pane that loads later leaves the keyboard alone');
+  let opened = await evaluate(`${side}.testTerminalConnections.length`);
+  await evaluate(`${side}.testSocket.close()`);
+  await until(`${side}.testTerminalConnections.length > ${opened} && ${side}.document.getElementById('overlay').hidden`);
+  assert.equal(await evaluate(typingIn), 'left', 'the right pane reconnecting does not take the keyboard');
+  await evaluate(`${side}.testTerminal.focus()`);
+  opened = await evaluate('testTerminalConnections.length');
+  await evaluate('testSocket.close()');
+  await until(`testTerminalConnections.length > ${opened} && document.getElementById('overlay').hidden`);
+  assert.equal(await evaluate(typingIn), 'right', 'nor does the left pane');
+
   await click("document.getElementById('sessions-open')");
   assert.equal(await evaluate(`document.querySelector('[data-session="${second}"] .session-place').textContent`), 'Left pane');
   assert.equal(await evaluate(`document.querySelector('[data-session="${first}"] .session-place').textContent`), 'Right pane');
@@ -630,6 +648,9 @@ test('phone taps and composition with real browser events and xterm', {
   await actions(disposable);
   await click(sessionAction('Open beside'));
   await until(`${side}.testSocket?.args[2] === ${JSON.stringify(disposable)}`);
+  // Asking for a session beside this one moves the keyboard to it.
+  await until(`document.activeElement === document.getElementById('side-terminal') &&
+    ${side}.document.activeElement === ${side}.testTerminal.textarea`);
   const survivorConnections = await evaluate('testTerminalConnections.length');
   await click("document.getElementById('sessions-open')");
   await actions(disposable);

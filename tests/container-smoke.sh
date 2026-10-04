@@ -29,6 +29,8 @@ test -s /data/codex/config.toml
 # Codex's background app-server cannot stay alive in the container, and the TUI
 # aborts when it dies, so the auto-start must be off from the first boot.
 grep -qx 'features\.daemon_auto_start = false' /data/codex/config.toml
+# An Enter that arrives together with the last key must send the prompt.
+grep -qx 'disable_paste_burst = true' /data/codex/config.toml
 test -s /data/claude/.claude/.claude.json
 # Claude reads files attached in the web terminal without asking first.
 jq -e '.permissions.additionalDirectories == ["/data/agent-terminal/uploads"]' \

@@ -626,6 +626,8 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     sessionStopped = !!(record && record.stopped);
     hideMenu(); closePaste(); closeSelect(); setKeysOpen(false);
     term.clearSelection();
+    // Keys still waiting were typed for the session being left.
+    held = []; awaitingUpload = false;
     updateSessionControls();
     // Preserve keys/debug parameters; explicit session URLs survive reloads.
     try { history.replaceState(null, '', location.pathname + sessionQuery() + location.hash); } catch (e) {}
@@ -707,19 +709,29 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 
   // ------------------------------------------------------------- websocket
   var sock = null, opened = false, retry = 500, retryTimer = null, connectionId = 0;
+  // Keys wait their turn instead of being lost or overtaking what came first:
+  //  - until tmux has drawn the session. Nothing can be sent while connecting,
+  //    and ttyd then starts the launcher on a terminal still in line mode,
+  //    which echoes keys and turns Enter into a line break.
+  //  - behind an attachment still uploading when Enter is pressed, so the
+  //    prompt is not sent without it.
+  var held = [], heldAt = 0, attached = false, awaitingUpload = false, inserting = false;
+  // A paste made before tmux reports the session's own modes is bracketed,
+  // so a held multi-line paste can never arrive as typed Enters.
+  var BRACKETED_PASTE = '\x1b[?2004h';
 
   function connect() {
     if (choosingPane) return;
     var id = ++connectionId;
     clearTimeout(retryTimer); retryTimer = null;
     // The tmux session continues running when this websocket detaches.
-    var previous = sock; sock = null;
+    var previous = sock; sock = null; attached = false;
     if (previous) previous.close();
     if (sessionStopped) { showOverlay('Session stopped. Open Sessions to start it.'); return; }
     showOverlay('Connecting…');
     // Drain queued output with input disconnected before reusing the terminal.
     // Escape-sequence replies from the old session cannot reach the new one.
-    new Promise(function (resolve) { term.write('', resolve); })
+    new Promise(function (resolve) { term.write(BRACKETED_PASTE, resolve); })
       .then(function () {
         if (id !== connectionId) return {};
         return fetch(tokenUrl, { cache: 'no-store' }).then(function (r) { return r.json(); });
@@ -747,12 +759,12 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       if (id !== connectionId || sock !== s) { s.close(); return; }
       retry = 500;
       hideOverlay();
-      if (opened) { term.reset(); }
+      if (opened) { term.reset(); term.write(BRACKETED_PASTE); }
       opened = true;
       s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
       if (sessionManager) sessionManager.connect(token);
       doFit();
-      if (document.getElementById('sessions-sheet').hidden) term.focus();
+      if (document.getElementById('sessions-sheet').hidden && !otherPaneHasKeyboard()) term.focus();
     };
 
     s.onmessage = function (ev) {
@@ -761,17 +773,40 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       if (!buf.length) return;
       var cmd = String.fromCharCode(buf[0]);
       var body = buf.subarray(1);
-      if (cmd === OUTPUT) term.write(body);
-      else if (cmd === TITLE) updateSessionControls();
+      if (cmd === OUTPUT) {
+        term.write(body);
+        // The launcher prints nothing, so the first output is tmux drawing.
+        if (!attached) { attached = true; releaseInput(); }
+      } else if (cmd === TITLE) updateSessionControls();
       else if (cmd === PREFS) applyPrefs(dec.decode(body));
     };
 
-    s.onclose = function () { if (sock === s) { sock = null; scheduleReconnect(id); } };
+    s.onclose = function () { if (sock === s) { sock = null; attached = false; scheduleReconnect(id); } };
     s.onerror = function () {};
   }
 
+  // In split view the keyboard stays with the pane being typed in. A pane
+  // whose connection opens later (page load, a session switch, a reconnect)
+  // must not take it, or the rest of a prompt lands in the other session.
+  function otherPaneHasKeyboard() {
+    return sidePane ? !document.hasFocus() : !!sideFrame && document.activeElement === sideFrame;
+  }
+
+  function linkUp() { return attached && !!sock && sock.readyState === WebSocket.OPEN; }
   function send(data) {
-    if (sock && sock.readyState === WebSocket.OPEN) sock.send(enc.encode(INPUT + data));
+    if (data === '\r' && uploadsPending()) awaitingUpload = true;
+    if (inserting || (linkUp() && !awaitingUpload && !held.length)) { sock.send(enc.encode(INPUT + data)); return; }
+    if (!held.length) heldAt = Date.now();
+    held.push(data);
+  }
+  // Held keys go out in the order they were typed. Ones that waited through a
+  // long disconnect are dropped: an old Enter must not land unannounced.
+  function releaseInput() {
+    if (!held.length || !linkUp() || awaitingUpload) return;
+    var data = held.join(''), stale = Date.now() - heldAt > 10000;
+    held = [];
+    if (stale) toast('Keys typed while disconnected were not sent', 4000);
+    else sock.send(enc.encode(INPUT + data));
   }
   function sendResize() {
     if (sock && sock.readyState === WebSocket.OPEN) {
@@ -1312,7 +1347,20 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   // the image itself, and read any other file from its path when asked to.
   var uploads = window.AgentUploads ? new window.AgentUploads({ base: base, tokenUrl: tokenUrl }) : null;
   var uploadInput = document.getElementById('upload-input');
-  var uploadQueue = [], uploadBusy = false;
+  var uploadQueue = [], uploadActive = null;
+  function uploadsPending() {
+    var id = currentSession().id;
+    return (!!uploadActive && uploadActive.session === id) ||
+      uploadQueue.some(function (item) { return item.session === id; });
+  }
+  // An Enter that was waiting for a file is dropped with it: the prompt stays
+  // in the editor instead of going out incomplete.
+  function withoutHeldEnter(session) {
+    var at = awaitingUpload && session === currentSession().id ? held.indexOf('\r') : -1;
+    if (at === -1) return '';
+    held.splice(at, 1);
+    return ' - prompt not sent';
+  }
 
   // Files belong to the session that was showing when they were attached.
   function attachFiles(list) {
@@ -1334,28 +1382,29 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   });
 
   function pumpUploads() {
-    if (uploadBusy) return;
+    if (uploadActive) return;
     var item = uploadQueue.shift();
-    if (!item) { uploads.close(); return; }
-    uploadBusy = true;
+    if (!item) { uploads.close(); awaitingUpload = false; releaseInput(); return; }
+    uploadActive = item;
     var name = item.file.name || 'image', more = uploadQueue.length;
     shrinkPhoto(item.file).then(function (file) {
       return uploads.send(file, function (done) {
         toast('Uploading ' + name + ' · ' + Math.round(done * 100) + '%' + (more ? ' · ' + more + ' more' : ''), 8000);
       });
     }).then(function (saved) { insertUpload(item.session, saved); },
-      function (error) { toast('Could not attach ' + name + ': ' + error.message, 5000); })
-      .then(function () { uploadBusy = false; pumpUploads(); });
+      function (error) { toast('Could not attach ' + name + ': ' + error.message + withoutHeldEnter(item.session), 5000); })
+      .then(function () { uploadActive = null; pumpUploads(); });
   }
   // One path per paste: Claude Code only attaches a paste that is exactly
   // one image path. The typed space keeps the next path apart from it.
   function insertUpload(session, saved) {
     var why = session !== currentSession().id ? 'the session changed'
-      : !sock || sock.readyState !== WebSocket.OPEN ? 'the terminal is disconnected' : '';
-    if (why) { toast('Saved ' + saved.path + ' - not inserted: ' + why, 8000); return; }
+      : !linkUp() ? 'the terminal is disconnected' : '';
+    if (why) { toast('Saved ' + saved.path + ' - not inserted: ' + why + withoutHeldEnter(session), 8000); return; }
     clearMods();
-    term.paste(saved.path);
-    send(' ');
+    // Ahead of an Enter that is waiting for this file.
+    inserting = true;
+    try { term.paste(saved.path); send(' '); } finally { inserting = false; }
     toast('Attached ' + saved.name);
   }
 
@@ -2062,7 +2111,9 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       if (!choosingPane && currentSession().id === id) return sidePane ? 'Right pane' : sideFrame ? 'Left pane' : 'Current';
       return peer && peer.id === id ? 'Right pane' : '';
     },
-    focus: function () { if (!pasteEl.hidden) pasteBox.focus(); else term.focus(); }, canSplit: canSplit, beside: openBeside,
+    focus: function () { if (!pasteEl.hidden) pasteBox.focus(); else term.focus(); }, canSplit: canSplit,
+    // Opening a session beside this one is a request to type in it.
+    beside: function (record) { var result = openBeside(record); if (result !== false && sideFrame) sideFrame.focus(); return result; },
     select: function (record) { return switchSession(record.agent, record.workspace, record.id); },
     changed: function (records) {
       updateWorkspaces();

@@ -29,17 +29,18 @@ function client(search = '') {
   document.createElement = () => new Element();
   document.documentElement = new Element(); document.body = new Element();
   const window = new Element();
-  window.top = window; window.innerHeight = 800; window.matchMedia = () => ({ matches: false });
+  window.top = window.parent = window; window.innerHeight = 800; window.matchMedia = () => ({ matches: false });
   window.isSecureContext = true;                   // as Ingress serves the page
   window.getSelection = () => ({ removeAllRanges() {} });
   const location = new URL('https://example.test/api/hassio_ingress/test/' + search);
   const storage = new Map(), fetches = [], sockets = [], uploads = [], timers = new Map(), copies = [];
+  const clock = { now: 1000 };
   let timerId = 0, terminal, clipboardResolve, control;
   class Terminal {
     constructor(options) { this.options = options; terminal = this; }
-    cols = 100; rows = 30; output = []; pastes = []; resets = 0; selection = '';
+    cols = 100; rows = 30; output = []; pastes = []; resets = 0; selection = ''; focused = 0;
     parser = { registerOscHandler() {} };
-    loadAddon() {} open() {} focus() {}
+    loadAddon() {} open() {} focus() { this.focused++; }
     // Selecting text is the page's copy trigger, so the stub keeps a selection
     // and reports it the way xterm does.
     onSelectionChange(callback) { this.selectionChanged = callback; }
@@ -65,6 +66,7 @@ function client(search = '') {
   }
   vm.runInNewContext(source, { document, window, location, Terminal, WebSocket,
     TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Promise, Blob, File, btoa,
+    Date: class extends Date { static now() { return clock.now; } },
     FitAddon: { FitAddon: class { fit() {} } },
     navigator: { platform: 'Linux', clipboard: {
       readText: () => new Promise(resolve => { clipboardResolve = resolve; }),
@@ -79,10 +81,11 @@ function client(search = '') {
     clearInterval: id => timers.delete(id),
   });
   const select = agent => elements.agents.children.find(b => b.dataset.agent === agent).emit('click');
-  return { elements, document, window, location, fetches, sockets, uploads, terminal, timers, select, copies, control: () => control,
+  return { elements, document, window, location, fetches, sockets, uploads, terminal, timers, select, copies, clock, control: () => control,
     resolveClipboard: text => clipboardResolve(text),
     settle: () => { const id = [...timers.keys()].at(-1); const callback = timers.get(id); timers.delete(id); callback(); },
-    async connect(index = fetches.length - 1) { fetches[index](); await tick(); sockets.at(-1).open(); },
+    // tmux draws the session as soon as it attaches; keys wait for that.
+    async connect(index = fetches.length - 1) { fetches[index](); await tick(); sockets.at(-1).open(); sockets.at(-1).output(''); },
   };
 }
 
@@ -197,6 +200,60 @@ test('coming back to the page reconnects at once instead of waiting out the back
   c.sockets.at(-1).close();
   c.window.emit('online'); await tick();
   assert.equal(c.fetches.length, waiting + 2, 'so is coming back online');
+});
+
+test('keys typed while a session connects wait for tmux, arrive once and in order, and never reach another session', async () => {
+  const c = client(); await tick();
+  c.document.hidden = false;                             // a visible page reconnects when asked
+  c.terminal.input('git');                               // "Connecting…": there is no socket yet
+  c.fetches[0](); await tick();
+  const claude = c.sockets[0]; claude.open();
+  c.terminal.input(' status'); c.terminal.input('\r');
+  assert.equal(claude.sent.length, 1, 'only the handshake: ttyd\'s terminal is in line mode until tmux attaches');
+  assert.ok(c.terminal.output.includes('\x1b[?2004h'), 'a paste made meanwhile is bracketed');
+  claude.output('tmux draws the session');
+  assert.equal(claude.sent.at(-1), '0git status\r');
+  c.terminal.input('y');
+  assert.equal(claude.sent.at(-1), '0y', 'an attached session is typed into directly');
+
+  claude.close(); c.window.emit('online'); await tick();
+  c.terminal.input('typed for Claude');
+  c.select('codex'); await tick(); await c.connect();
+  const codex = c.sockets.at(-1);
+  assert.equal(codex.sent.length, 1, 'keys held for the session being left are dropped');
+
+  codex.close(); c.window.emit('online'); await tick();
+  c.terminal.input('rm -rf build'); c.terminal.input('\r');
+  c.clock.now += 11000;
+  await c.connect();
+  assert.equal(c.sockets.at(-1).sent.length, 1, 'an Enter that waited through a long disconnect must not land late');
+  assert.equal(c.elements.toast.textContent, 'Keys typed while disconnected were not sent');
+});
+
+test('a split pane whose connection opens leaves the keyboard with the pane being typed in', async () => {
+  const c = client(); await tick(); await c.connect();
+  assert.equal(c.terminal.focused, 1, 'a single pane takes the keyboard when it connects');
+  c.document.hidden = false;
+  c.window.innerWidth = 1400;
+  c.elements['split-toggle'].emit('click');
+  const frame = c.document.body.children.find(child => child.id === 'side-terminal');
+  assert.ok(frame, 'the second pane opened');
+  const reconnect = async () => { c.sockets.at(-1).close(); c.window.emit('online'); await tick(); await c.connect(); };
+  c.document.activeElement = frame;                      // typing in the right pane
+  await reconnect();
+  assert.equal(c.terminal.focused, 1, 'the left pane reconnecting does not take the keyboard back');
+  c.document.activeElement = null;
+  await reconnect();
+  assert.equal(c.terminal.focused, 2);
+
+  const side = client('?pane=side&arg=codex&arg=homeassistant'); await tick();
+  side.document.hidden = false;
+  side.document.hasFocus = () => false;                  // the left pane is being typed in
+  await side.connect();
+  assert.equal(side.terminal.focused, 0, 'the right pane loading or reconnecting does not take it either');
+  side.document.hasFocus = () => true;
+  side.sockets[0].close(); side.window.emit('online'); await tick(); await side.connect();
+  assert.equal(side.terminal.focused, 1);
 });
 
 async function until(check, message) {
@@ -320,4 +377,25 @@ test('Attach opens the file picker from the keys and the draft, and a pick uploa
   assert.equal(input.value, '', 'the same file can be picked again');
   const { saved } = await receiver(c);
   assert.deepEqual(c.terminal.pastes, [saved[0].path]);
+});
+
+test('Enter pressed while a file uploads waits for it; a failed upload leaves the prompt unsent', async () => {
+  const c = client(); await tick(); await c.connect();
+  const terminal = c.sockets[0];
+  paste(c, [new File(['png'], 'shot.png', { type: 'image/png' })]);
+  c.terminal.input('what is wrong here?'); c.terminal.input('\r'); c.terminal.input('x');
+  assert.equal(terminal.sent.at(-1), '0what is wrong here?', 'text is typed at once; Enter and what follows it wait');
+  const { saved } = await receiver(c);
+  assert.deepEqual(terminal.sent.slice(-3), ['0' + saved[0].path, '0 ', '0\rx'], 'the path goes in ahead of the Enter');
+
+  const fetched = c.fetches.length;
+  paste(c, [new File(['x'.repeat(10)], 'broken.bin')]);
+  c.terminal.input('\r');
+  const sent = terminal.sent.length;
+  await until(() => c.fetches.length > fetched, 'the second upload never asked for a token');
+  await receiver(c, { chunk() { throw new Error('File is larger than announced.'); } });
+  assert.equal(terminal.sent.length, sent, 'a prompt is not sent without its file');
+  assert.equal(c.elements.toast.textContent, 'Could not attach broken.bin: File is larger than announced. - prompt not sent');
+  c.terminal.input('\r');
+  assert.equal(terminal.sent.at(-1), '0\r', 'the next Enter sends as usual');
 });

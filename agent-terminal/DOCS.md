@@ -90,6 +90,11 @@ unset codex_api_key
 Every terminal sets `CODEX_HOME=/data/codex`. Credentials (`auth.json`),
 settings (`config.toml`), and saved sessions stay there across updates. A new
 config uses file-based credential storage; existing settings are preserved.
+Start-up adds `disable_paste_burst = true` when the setting is missing.
+Without it Codex treats keys that arrive close together as a paste and an
+Enter right after them as a line break, so a prompt sent in one motion stays
+in the composer. Real pastes are unaffected. A Codex already running picks
+the setting up when it is restarted; set it to `false` to keep Codex's default.
 Run `codex resume` to reopen a saved conversation after restarting. Click
 **Claude** to return to Claude's live session with its own login intact.
 
@@ -140,6 +145,11 @@ same workspace and agent reconnects to that live process, including its
 conversation. Conversations are separate; switching does not transfer chat
 history between providers. Sign in to each provider once.
 
+You can type as soon as you have picked a session. Keys pressed while it is
+still connecting are kept and typed into it, in order, once it is on screen.
+After a disconnect of more than ten seconds they are dropped instead, and the
+page says so.
+
 ### Named sessions and split view
 
 Open **Sessions** (or **Ctrl+Shift+K**, **⌘Shift+K** on a Mac), then **+ New session**.
@@ -170,6 +180,9 @@ there until you choose. **Cancel** removes the empty pane. You can also choose
 **Open beside** from a session's menu to open that session directly. Drag the
 divider to resize the panes, or focus it and use the left/right arrow keys.
 Each pane has independent typing, clipboard, and helper-key controls. The
+keyboard stays with the pane you are typing in: a pane that loads, switches
+session or reconnects in the background never takes it. After a reload it
+starts in the left pane. The
 browser remembers both selections and the divider position across reloads.
 **Unsplit** or **Close** hides the second pane and leaves its agent running.
 Narrowing the screen returns to one pane, keeping the focused session visible.
@@ -336,6 +349,10 @@ can go on typing your question after it. Claude Code and Codex turn the path
 of a PNG, JPEG, GIF or WebP into an attached image, shown as `[Image #1]`.
 Any other file stays a path, which the agent reads once you send the message.
 In a Shell session it is just the path.
+
+Enter pressed while a file is still uploading waits for it, so the prompt is
+sent with its attachment. If the upload fails, the prompt stays in the editor
+and the page says it was not sent.
 
 - Files go to `/data/agent-terminal/uploads/<date>/`, named with the time and
   a simplified version of their own name. Each can be up to 50 MB.
@@ -545,7 +562,10 @@ and compares the saved bytes.
 cleaning, the size limit, malformed and incomplete uploads, partial files
 removed on disconnect, and the weekly clean-up. `tests/test_webui.mjs` runs
 the page's side of it: pasted, dropped and picked files, chunking, a failed
-file, and a session switched mid-upload. The browser suite repeats paste,
+file, a session switched mid-upload, and an Enter that waits for its file. It
+also checks that keys typed while a session connects arrive once tmux has
+attached, and that a split pane's connection does not take the keyboard. The
+browser suite repeats paste,
 drop and the phone's Attach button with real events, and checks that a large
 photo arrives as a 2048-pixel JPEG.
 `tests/container-smoke.sh` is only for these disposable test containers.
