@@ -388,6 +388,28 @@ and the page says it was not sent.
   SSH, copy the file instead (`scp -P 2202 shot.png root@<ha-host>:/tmp/`) and
   type its path.
 
+## Voice prompts (sidebar panel)
+
+Tap the **microphone** in the top bar, or choose **Voice prompt…** from the
+right-click or long-press menu. Allow microphone access, speak, then tap the
+microphone again or **Finish**. The text is added to your editable draft;
+review it and press **Send**. Dictation preserves text already in the draft
+and never submits a command automatically.
+
+Voice prompting uses the speech-to-text provider and language of your
+preferred assistant in **Home Assistant Settings → Voice assistants**. A local
+Whisper provider keeps transcription local; a cloud provider uses that
+provider's service. No separate API key is needed in the add-on. The add-on
+holds audio in memory for transcription and does not save recordings.
+
+Use an HTTPS Home Assistant address and a browser or companion-app webview
+that grants microphone access. If access is denied, allow the microphone in
+the browser or phone's app permissions. Over plain HTTP, or in an unsupported
+webview, the phone keyboard's dictation can still enter text into the draft.
+Microphone recording is limited to two minutes. Closing the draft, switching
+sessions, stopping the session, or hiding the page cancels recording and any
+pending transcription. Split panes keep their voice drafts separate.
+
 ## Options
 
 | Option | Default | Description |
@@ -587,6 +609,13 @@ photo arrives as a 2048-pixel JPEG.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.
+
+`tests/test_voice.mjs` checks the speech provider selection, PCM transport,
+limits, cancellation, timeouts, and the control stream without contacting
+Home Assistant. `tests/test_voice_client.mjs` covers microphone permissions,
+audio resampling, cleanup and late transcriptions. The browser suite uses
+Chromium's synthetic microphone with real Web Audio to verify that dictation
+fills a draft and only **Send** submits it.
 
 ### Checking the terminal controls
 

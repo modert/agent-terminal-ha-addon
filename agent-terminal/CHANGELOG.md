@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.9.0
+- Dictate prompts with the microphone in the top bar or **Voice prompt…** in
+  the terminal menu. Tap again or choose **Finish**, review the text in your
+  draft, then **Send**. Existing draft text is kept.
+- Use the speech-to-text provider and language configured for Home Assistant's
+  preferred voice assistant, including local Whisper. No extra API key is
+  needed. Audio is held in memory and recordings are not saved by the add-on.
+- Cancel recording and pending transcription when closing a draft, switching
+  sessions, stopping a session, or hiding the page. Voice requires microphone
+  permission and HTTPS; unsupported devices can use keyboard dictation.
+
 ## 2.8.3
 - Claude and ChatGPT terminals remember their own conversation and resume it
   after Stop/Start, a CLI exit, or an add-on update. Tasks in the same workspace

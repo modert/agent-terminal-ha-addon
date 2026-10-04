@@ -1,7 +1,7 @@
 name: "Agent Terminal"
-version: "2.8.3"
+version: "2.9.0"
 slug: "agent_terminal"
-description: "Named Claude, ChatGPT, and Shell sessions - quick switcher, split view, mobile terminal + SSH"
+description: "Claude, ChatGPT, and Shell sessions with voice prompts, split view, mobile terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"
 arch:
   - amd64

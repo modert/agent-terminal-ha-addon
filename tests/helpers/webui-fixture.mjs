@@ -1,6 +1,7 @@
 // Shared, inert ttyd/session transport for browser tests and exploratory runs.
 const mock = `<script>
     window.testPackets = []; window.testFocus = []; window.testTerminalConnections = []; window.testUploaded = [];
+    window.testVoiceRequests = [];
     document.addEventListener('focusin', e => {
       window.testFocus.push({ id: e.target.id, active: navigator.userActivation.isActive });
     });
@@ -27,13 +28,21 @@ const mock = `<script>
       constructor(url) {
         this.url = url; this.args = new URL(url).searchParams.getAll('arg'); this.control = this.args[0] === 'sessions';
         this.upload = this.args[0] === 'uploads';
+        this.voice = this.args[0] === 'voice';
         if (this.control) testHub.controls.push(this);
-        else if (!this.upload) { window.testSocket = this; window.testTerminalConnections.push(this); }
+        else if (!this.upload && !this.voice) { window.testSocket = this; window.testTerminalConnections.push(this); }
         setTimeout(() => this.onopen(), 0);
       }
       packet(value) { this.onmessage({ data: '0' + JSON.stringify(value) + '\\n' }); }
       send(data) {
         const text = new TextDecoder().decode(data);
+        if (this.voice) {
+          if (text[0] === '{') { setTimeout(() => this.packet({ type: 'ready', maxSeconds: 120 }), 0); return; }
+          const request = JSON.parse(text.slice(1)); window.testVoiceRequests.push(request);
+          const result = request.method === 'begin' ? { recording: '1', sampleRate: 16000, maxSeconds: 120 }
+            : request.method === 'finish' ? { text: 'Review the kitchen dashboard.' } : true;
+          setTimeout(() => this.packet({ request: request.request, result }), 0); return;
+        }
         // The add-on's upload receiver: ready after ttyd's handshake, then
         // one reply per request. Chunks are kept for the test to decode.
         if (this.upload) {
