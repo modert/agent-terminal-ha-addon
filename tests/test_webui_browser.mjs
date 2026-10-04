@@ -88,10 +88,10 @@ test('phone taps and composition with real browser events and xterm', {
       type, touchPoints: type === 'touchEnd' || type === 'touchCancel' ? [] : [{ x, y }],
     });
   }
-  async function tap(expression) {
+  async function tap(expression, corner = false) {
     const rect = await evaluate(`(() => {
       const r = (${expression}).getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      return { x: r.x + ${corner ? 8 : 'r.width / 2'}, y: r.y + ${corner ? 8 : 'r.height / 2'} };
     })()`);
     await touch('touchStart', rect.x, rect.y);
     await touch('touchEnd');
@@ -272,7 +272,9 @@ test('phone taps and composition with real browser events and xterm', {
   await touch('touchEnd');
   assert.equal(await evaluate("document.getElementById('menu').hidden"), false, 'long-press still opens the copy/paste menu');
   assert.equal(await evaluate("document.getElementById('paste').hidden"), true);
-  await tap("document.getElementById('term')");
+  // The menu may cover the terminal's center as more actions are added.
+  // Touch an uncovered corner to dismiss it and open the keyboard.
+  await tap("document.getElementById('term')", true);
   await until("document.activeElement.id === 'paste-text'");
   await tap("document.getElementById('paste-cancel')");
   async function direct() { await tap(button('Keys')); await group('tools'); await tap(button('Direct')); }
