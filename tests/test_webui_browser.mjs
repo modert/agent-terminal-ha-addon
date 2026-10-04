@@ -796,7 +796,11 @@ test('phone taps and composition with real browser events and xterm', {
   assert.deepEqual(await packets(), [], 'speech stays in the editable draft');
   assert.ok(await evaluate("window.testVoiceRequests.some(r => r.method === 'chunk' && r.data.length > 0)"), 'Web Audio captured PCM');
   assert.equal(await evaluate("document.getElementById('paste-send').disabled"), false);
+  if (process.env.WEBUI_SCREENSHOT) {
+    const screenshot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-voice.png'), Buffer.from(screenshot.data, 'base64'));
+  }
   await tap("document.getElementById('paste-send')");
-  await until('window.testPackets.length >= 2');
+  await until("window.testPackets.filter(p => p.startsWith('0')).length >= 2");
   assert.deepEqual(await packets(), ['\x1b[200~Please Review the kitchen dashboard.\x1b[201~', '\r']);
 });
