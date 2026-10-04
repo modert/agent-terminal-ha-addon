@@ -496,6 +496,8 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate("document.querySelector('[data-session=\"agent-homeassistant-shell\"]') === null"), true, 'unused defaults stay out of the main task list');
   await click("document.getElementById('sessions-unused')");
   assert.equal(await evaluate("!!document.querySelector('[data-session=\"agent-homeassistant-shell\"]')"), true);
+  await actions('agent-homeassistant-shell');
+  assert.equal(await evaluate(`!!(${sessionAction('Delete')})`), false, 'built-in sessions have no Delete action');
   await evaluate("document.getElementById('sessions-search').value = 'wall tablet'; document.getElementById('sessions-search').dispatchEvent(new Event('input'))");
   assert.deepEqual(await evaluate("[...document.querySelectorAll('.session-choice strong')].map(n => n.textContent)"), ['Dashboard refresh'], 'purpose is searchable');
   await evaluate("document.getElementById('sessions-search').value = ''; document.getElementById('sessions-search').dispatchEvent(new Event('input'))");
@@ -620,6 +622,74 @@ test('phone taps and composition with real browser events and xterm', {
   await click(`${side}.document.getElementById('split-toggle')`);
   await until("!document.getElementById('side-terminal')");
   assert.equal(await evaluate("testHub.sessions.find(s => s.name === 'Release notes').running"), true);
+
+  // Delete a visible second session through the first pane. Confirmation can
+  // be canceled, and deleting must never redirect typing or revive a task.
+  const disposable = await evaluate("testHub.sessions.find(s => s.name === 'Release notes').id");
+  await click("document.getElementById('sessions-open')");
+  await actions(disposable);
+  await click(sessionAction('Open beside'));
+  await until(`${side}.testSocket?.args[2] === ${JSON.stringify(disposable)}`);
+  const survivorConnections = await evaluate('testTerminalConnections.length');
+  await click("document.getElementById('sessions-open')");
+  await actions(disposable);
+  await click(sessionAction('Delete'));
+  assert.equal(await evaluate("document.getElementById('sessions-title').textContent"), 'Delete session');
+  assert.equal(await evaluate('document.activeElement.id'), 'sessions-back', 'confirmation focuses the non-destructive choice');
+  assert.match(await evaluate("document.getElementById('sessions-explanation').textContent"), /Release notes.*Agent Terminal.*Claude.*Workspace files and provider-saved conversations are kept/);
+  if (process.env.WEBUI_SCREENSHOT) {
+    const shot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-delete.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await click("document.getElementById('sessions-back')");
+  assert.equal(await evaluate(`${side}.testSocket.readyState`), 1, 'cancel keeps the target running');
+  await click(sessionAction('Delete'));
+  await click("document.getElementById('sessions-save')");
+  await until(`${side}.document.getElementById('overlay-msg').textContent.includes('Session unavailable')`);
+  assert.equal(await evaluate(`${side}.testSocket.readyState`), 3);
+  assert.equal(await evaluate(`testHub.sessions.some(s => s.id === ${JSON.stringify(disposable)})`), false);
+  assert.equal(await evaluate(`!!document.querySelector('[data-session="${disposable}"]')`), false);
+  assert.equal(await evaluate(`!!${side}.document.querySelector('[data-session="${disposable}"]')`), false);
+  assert.equal(await evaluate('testSocket.args[2]'), first);
+  assert.equal(await evaluate('testTerminalConnections.length'), survivorConnections);
+  await click("document.getElementById('sessions-done')");
+  const removedConnections = await evaluate(`${side}.testTerminalConnections.length`);
+  await evaluate(`${side}.dispatchEvent(new Event('online')); ${side}.dispatchEvent(new Event('focus'))`);
+  await delay(600);
+  assert.equal(await evaluate(`${side}.testTerminalConnections.length`), removedConnections, 'stale tabs cannot reconnect after deletion');
+  await evaluate('window.testPackets = []; testTerminal.focus()');
+  await letter('s');
+  assert.deepEqual(await packets(), ['s'], 'the surviving terminal still receives its own input');
+  await click(`${side}.document.getElementById('split-toggle')`);
+  await until("!document.getElementById('side-terminal')");
+
+  // A stopped session can be removed too, including on a narrow screen.
+  await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await click("document.getElementById('sessions-open')");
+  await actions(second);
+  await click(sessionAction('Stop'));
+  await click("document.getElementById('sessions-save')");
+  await until(`testHub.sessions.find(s => s.id === ${JSON.stringify(second)}).stopped`);
+  await click(sessionAction('Delete'));
+  assert.equal(await evaluate("document.getElementById('sessions-save').getBoundingClientRect().right <= innerWidth"), true);
+  await click("document.getElementById('sessions-save')");
+  await until(`!testHub.sessions.some(s => s.id === ${JSON.stringify(second)})`);
+  await click("document.getElementById('sessions-done')");
+
+  // Removing the current session leaves the picker ready for another choice.
+  const currentTemporary = await createSession('Quick check');
+  await click("document.getElementById('sessions-open')");
+  await actions(currentTemporary);
+  await click(sessionAction('Delete'));
+  await click("document.getElementById('sessions-save')");
+  await until("document.getElementById('overlay-msg').textContent.includes('Session unavailable')");
+  assert.equal(await evaluate('testSocket.readyState'), 3);
+  assert.equal(await evaluate("document.getElementById('sessions-sheet').hidden"), false);
+  await click(`document.querySelector('[data-session-action="${first}:open"]')`);
+  await until(`testSocket.args[2] === ${JSON.stringify(first)} && testSocket.readyState === 1`);
+  await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  await load();
+  assert.equal(await evaluate(`testHub.sessions.some(s => ${JSON.stringify([second, disposable, currentTemporary])}.includes(s.id))`), false, 'removed sessions stay gone after reload');
 
   // Attaching files with real browser events: a pasted screenshot, a drop of
   // two files, and a large photo picked from the phone draft, which goes as a
