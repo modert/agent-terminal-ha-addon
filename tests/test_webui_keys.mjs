@@ -10,7 +10,7 @@ const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
   import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
 const script = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
-async function page({ touch = true, search = '', saved = [], platform = 'Linux', config = null } = {}) {
+async function page({ touch = true, search = '', saved = [], platform = 'Linux', config = null, voiceFactory = null } = {}) {
   const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
   let timerId = 0, terminal, socket, now = 1000;
   function element() {
@@ -91,6 +91,7 @@ async function page({ touch = true, search = '', saved = [], platform = 'Linux',
     close() { this.readyState = 3; if (this.onclose) this.onclose(); }
   }
   const window = Object.assign(element(), { innerHeight: 700, matchMedia: () => ({ matches: touch }) });
+  if (voiceFactory) window.AgentVoice = voiceFactory;
   window.top = window;
   window.getSelection = () => ({ removeAllRanges() {} });
   vm.runInNewContext(script.replace('/*{{SESSION_CONFIG}}*/ null', JSON.stringify(config)), {
@@ -148,6 +149,56 @@ async function page({ touch = true, search = '', saved = [], platform = 'Linux',
   return { ids, window, button, tap, group, write, newline, input, terminal, timers, flush, storage, advance: ms => { now += ms; },
     socket: () => socket, activeElement: () => document.activeElement };
 }
+
+test('voice transcripts stay in their draft, preserve edits and require Send', async () => {
+  let callbacks, state = 'idle';
+  function Voice(options) {
+    callbacks = options;
+    return { state: () => state,
+      start() { state = 'recording'; options.onstate(state, 0); },
+      stop() { state = 'transcribing'; options.onstate(state, 2); },
+      cancel() { state = 'idle'; options.onstate(state, 0); } };
+  }
+  const p = await page({ voiceFactory: Voice });
+  p.ids.get('voice-open').fire('click');
+  const draft = p.ids.get('paste-text');
+  assert.equal(p.ids.get('paste').hidden, false);
+  assert.equal(p.ids.get('paste-send').disabled, true);
+  draft.value = 'Please';
+  p.ids.get('paste-send').fire('click'); p.flush();
+  assert.deepEqual(p.input(), []); assert.deepEqual(p.terminal.pastes, []);
+  p.ids.get('voice-action').fire('click');
+  assert.equal(state, 'transcribing');
+  draft.value += ' carefully';
+  state = 'idle'; callbacks.onstate(state, 0); callbacks.ontext('review the dashboard.');
+  assert.equal(draft.value, 'Please carefully review the dashboard.');
+  assert.deepEqual(p.input(), []); assert.deepEqual(p.terminal.pastes, []);
+  assert.equal(p.ids.get('paste-send').disabled, false);
+  p.ids.get('paste-send').fire('click'); p.flush();
+  assert.deepEqual(p.terminal.pastes, ['Please carefully review the dashboard.']);
+  assert.deepEqual(p.input(), ['\r']);
+});
+
+test('closing a draft or switching sessions cancels voice and rejects late text', async () => {
+  let callbacks, state = 'idle', cancelled = 0;
+  const p = await page({ voiceFactory: function (options) {
+    callbacks = options;
+    return { state: () => state, start() { state = 'recording'; options.onstate(state, 0); },
+      cancel() { cancelled++; state = 'idle'; options.onstate(state, 0); } };
+  } });
+  p.ids.get('voice-open').fire('click');
+  const oldDraft = p.ids.get('paste-text');
+  p.ids.get('agents').children.find(b => b.dataset.agent === 'codex').fire('click');
+  assert.equal(cancelled, 1);
+  p.write(); const nextDraft = p.ids.get('paste-text');
+  assert.notEqual(oldDraft, nextDraft);
+  callbacks.ontext('belongs to the old session');
+  assert.equal(nextDraft.value, ''); assert.deepEqual(p.terminal.pastes, []);
+  p.ids.get('voice-open').fire('click');
+  p.ids.get('paste-cancel').fire('click');
+  callbacks.ontext('cancelled draft');
+  assert.equal(p.ids.get('paste').hidden, true); assert.deepEqual(p.terminal.pastes, []);
+});
 
 test('Keys opens the agent keys, which answer a Codex question', async () => {
   const p = await page();

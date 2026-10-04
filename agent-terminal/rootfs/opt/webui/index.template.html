@@ -63,13 +63,15 @@ body { position: fixed; inset: 0; }
 @media (hover: hover) { .agent-button:hover { background: var(--key-down); } }
 #workspace:focus-visible, .agent-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Drawn rather than a glyph: phones' symbol fonts may lack the keyboard. */
-#keys-switch, #top-collapse {
+#keys-switch, #top-collapse, #voice-open {
   flex: 0 0 auto; min-width: 44px; padding: 0 11px;
   display: flex; align-items: center; justify-content: center;
 }
 #keys-switch { margin-left: auto; }
 #keys-switch svg { display: block; width: 22px; height: 16px; }
 #top-collapse svg { display: block; width: 14px; height: 9px; }
+#voice-open svg { display: block; width: 18px; height: 20px; }
+#voice-open[aria-pressed="true"] { color: #ffb4aa; border-color: #e3877b; background: #472c2b; }
 #session-bar[hidden], #session-strip[hidden] { display: none; }
 /* The collapsed session bar: one slim row naming the session. */
 #session-strip {
@@ -89,7 +91,7 @@ body { position: fixed; inset: 0; }
   #session-bar { flex-wrap: wrap; gap: 6px; }
   #workspace { max-width: none; }
   /* The switches share the workspace row; the agents get a row of their own. */
-  #keys-switch, #top-collapse { order: 1; margin-left: 0; }
+  #keys-switch, #top-collapse, #voice-open { order: 1; margin-left: 0; }
   #agents { order: 2; flex-basis: 100%; }
   .agent-button { flex: 1; min-height: 42px; }
 }
@@ -101,7 +103,7 @@ body { position: fixed; inset: 0; }
   #app.compact-height #workspace-label { display: none; }
   #app.compact-height #workspace { max-width: none; }
   #app.compact-height #agents { flex-basis: auto; order: 0; }
-  #app.compact-height #keys-switch, #app.compact-height #top-collapse { order: 0; }
+  #app.compact-height #keys-switch, #app.compact-height #top-collapse, #app.compact-height #voice-open { order: 0; }
   #app.compact-height .agent-button { padding: 0 7px; }
 }
 @media (pointer: coarse) and (max-width: 560px) {
@@ -262,6 +264,12 @@ body { position: fixed; inset: 0; }
 #paste-newline svg { width: 16px; height: 14px; }
 #paste-attach svg { width: 17px; height: 17px; }
 #paste.compose .sheet-bar #paste-attach { width: 40px; }
+#voice-status { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; padding: 7px 10px; background: var(--bar); border-top: 1px solid var(--line); color: #bdc6d4; font-size: 13px; line-height: 1.4; }
+#voice-message { flex: 1; }
+#voice-action { flex: 0 0 auto; min-width: 64px; }
+#voice-status[hidden] { display: none; }
+#app.side-keys > #voice-status { grid-column: 1; grid-row: 4; }
+#paste-send:disabled { opacity: .5; cursor: wait; }
 /* Opened from Attach; kept rendered (if invisible) so phones open the picker. */
 #upload-input { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 /* Files dragged over the page: dropping them attaches them. */
@@ -429,6 +437,9 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     <button type="button" class="agent-button" id="sessions-open" aria-haspopup="dialog" aria-controls="sessions-sheet"
             aria-expanded="false" title="Sessions (Ctrl+Shift+K)">Sessions</button>
     <button type="button" class="agent-button" id="split-toggle" title="Show two sessions side by side" hidden>Split view</button>
+    <button type="button" class="agent-button" id="voice-open" aria-label="Voice prompt" aria-pressed="false" title="Voice prompt">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>
+    </button>
     <button type="button" class="agent-button" id="keys-switch" aria-label="On-screen keys"
             aria-controls="bar" aria-pressed="false" title="Show on-screen keys">
       <svg viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
@@ -467,6 +478,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       <button type="button" class="k primary" id="paste-send">Send</button>
     </div>
   </div>
+  <div id="voice-status" hidden><span id="voice-message" role="status" aria-live="polite"></span><button type="button" class="k" id="voice-action" hidden>Cancel</button></div>
   <div id="bar" hidden>
     <div id="key-panel" role="group" aria-label="Terminal helper keys" hidden>
       <div class="row" id="key-row">
@@ -521,6 +533,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 <script>/*{{FIT_JS}}*/</script>
 <script>/*{{SESSIONS_JS}}*/</script>
 <script>/*{{UPLOADS_JS}}*/</script>
+<script>/*{{VOICE_JS}}*/</script>
 <script>
 /* Mobile-friendly ttyd client for the Agent Terminal add-on.
  *
@@ -1002,6 +1015,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       go: function () { copyText(term.getSelection()); } },
     { l: 'Paste', hint: isMac ? '⌘V' : 'Ctrl+V', go: pasteText },
     { l: 'Attach file…', hint: 'or drop / paste', go: pickFiles },
+    { l: 'Voice prompt…', go: toggleVoice },
     { l: 'Select all', go: function () { term.selectAll(); } },
     { l: 'Screen as text…', go: openSelect },
     { l: 'Clear selection', when: function () { return term.hasSelection(); },
@@ -1025,7 +1039,8 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     { l: 'Select text…', go: openSelect },
     { l: 'Copy screen', go: function () { copyText(screenText()); } },
     { l: 'Paste', go: pasteText },
-    { l: 'Attach file or photo…', go: pickFiles }
+    { l: 'Attach file or photo…', go: pickFiles },
+    { l: 'Voice prompt…', go: toggleVoice }
   ];
 
   function showMenu(x, y, items, tipText) {
@@ -1212,6 +1227,8 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     pasteBox.focus();
   }
   function closePaste() {
+    if (voice) voice.cancel();
+    if (voiceStatus) voiceStatus.hidden = true;
     pasteSending = false;
     // End editing before hiding the element, so the IME can finish its edit.
     pasteBox.blur();
@@ -1242,6 +1259,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   }
   function sendPaste() {
     if (pasteEl.hidden || pasteSending) return;
+    if (voice && voice.state() !== 'idle') { toast('Finish voice prompting before sending'); return; }
     pasteSending = true;
     // Blurring commits the phone's pending IME/autocorrect edit. Read the
     // final value after its compositionend/input events, and insert once.
@@ -1340,6 +1358,48 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   selButton('paste-send', sendPaste);
   selButton('paste-newline', newTextLine);
   selButton('paste-cancel', closePaste);
+
+  // --------------------------------------------------------------- dictation
+  var voiceStatus = document.getElementById('voice-status'), voiceMessage = document.getElementById('voice-message');
+  var voiceAction = document.getElementById('voice-action'), voiceDraft = null, voiceSession = null;
+  var voice = window.AgentVoice ? new window.AgentVoice({ base: base, tokenUrl: tokenUrl,
+    onstate: function (state, seconds) {
+      var active = state !== 'idle';
+      var title = state === 'recording' ? 'Finish voice prompt' : active ? 'Cancel voice prompt' : 'Voice prompt';
+      var button = document.getElementById('voice-open');
+      button.setAttribute('aria-pressed', String(active)); button.setAttribute('aria-label', title); button.title = title;
+      voiceAction.hidden = !active; voiceAction.textContent = state === 'recording' ? 'Finish' : 'Cancel';
+      document.getElementById('paste-send').disabled = active;
+      voiceStatus.hidden = !active;
+      voiceMessage.textContent = state === 'starting' ? 'Opening microphone…'
+        : state === 'recording' ? 'Listening · ' + seconds + 's'
+        : state === 'transcribing' ? 'Transcribing…' : '';
+      scheduleFit();
+    },
+    ontext: function (text) {
+      if (!draftOpen() || pasteBox !== voiceDraft || currentSession().id !== voiceSession || sessionStopped) return;
+      // Keep any edits made while recording or transcribing. Speech appends to
+      // this draft only; it cannot send Enter or type into another terminal.
+      pasteBox.value += (pasteBox.value && !/\s$/.test(pasteBox.value) ? ' ' : '') + text;
+      voiceMessage.textContent = 'Added to your draft. Review it, then Send.'; voiceStatus.hidden = false;
+      scheduleFit();
+    },
+    onerror: function (message) { voiceMessage.textContent = message; voiceStatus.hidden = false; scheduleFit(); }
+  }) : null;
+  function toggleVoice() {
+    if (!voice || pasteSending) return;
+    if (voice.state() === 'recording') { voice.stop(); return; }
+    if (voice.state() !== 'idle') { voice.cancel(); return; }
+    if (sessionStopped) { toast('Start this session before recording a prompt'); return; }
+    if (!pasteEl.hidden && pasteAutoSend) { toast('Close the paste box before starting a voice prompt'); return; }
+    openCompose(); pasteBox.blur();
+    voiceDraft = pasteBox; voiceSession = currentSession().id;
+    voice.start();
+  }
+  selButton('voice-open', toggleVoice);
+  selButton('voice-action', toggleVoice);
+  window.addEventListener('pagehide', function () { if (voice) voice.cancel(); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden && voice) voice.cancel(); });
 
   // ---------------------------------------------------------------- uploads
   // A file pasted, dropped or picked here is saved in the add-on and its path
@@ -2045,7 +2105,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     query.set('pane', 'side');
     if (record) query.delete('choose'); else query.set('choose', '1');
     sideFrame = document.createElement('iframe'); sideFrame.id = 'side-terminal';
-    sideFrame.title = 'Second terminal session'; sideFrame.allow = 'clipboard-read; clipboard-write';
+    sideFrame.title = 'Second terminal session'; sideFrame.allow = 'clipboard-read; clipboard-write; microphone';
     sideFrame.src = location.pathname + '?' + query.toString();
     divider = document.createElement('div'); divider.id = 'split-divider'; divider.tabIndex = 0;
     divider.setAttribute('role', 'separator'); divider.setAttribute('aria-label', 'Resize terminal panes');
@@ -2122,6 +2182,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       var record = records.find(function (r) { return r.id === currentSession().id; });
       var stopped = !record || record.stopped;
       if (stopped) {
+        if (voice) voice.cancel();
         sessionStopped = true; ++connectionId;
         clearTimeout(retryTimer); retryTimer = null;
         var previous = sock; sock = null; if (previous) previous.close();
