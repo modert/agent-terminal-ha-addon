@@ -2,7 +2,7 @@
 // ttyd's authenticated Ingress connection; it never accepts commands or paths.
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync,
-  renameSync, openSync, closeSync, realpathSync } from 'node:fs';
+  renameSync, unlinkSync, openSync, closeSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -101,15 +101,24 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
       return save({ ...record, name: label, description: note === undefined ? record.description : note });
     });
   }
-  function stop(id) {
+  // Call while holding the session lock. Save before detaching clients so
+  // automatic reconnect cannot create a replacement process, even on error.
+  function stopLocked(id) {
+    const record = save({ ...get(id), stopped: true });
+    if (has(id)) {
+      const result = spawnSync(tmux, ['kill-session', '-t', '=' + id], { encoding: 'utf8' });
+      if (result.status !== 0 && has(id)) throw new Error('Could not stop session.');
+    }
+    return record;
+  }
+  const stop = id => locked(id, () => stopLocked(id));
+  function remove(id) {
     return locked(id, () => {
-      // Persist the stop before detaching clients. Their automatic reconnect
-      // must never create a replacement process, even from another browser.
-      const record = save({ ...get(id), stopped: true });
-      if (has(id)) {
-        const result = spawnSync(tmux, ['kill-session', '-t', '=' + id], { encoding: 'utf8' });
-        if (result.status !== 0 && has(id)) throw new Error('Could not stop session.');
-      }
+      if (!NAMED.test(id)) throw new Error('Built-in sessions cannot be deleted. Use Stop instead.');
+      const record = stopLocked(id);
+      unlinkSync(join(registry, id + '.json'));
+      // Keep the lock file: reconnects and other processes may still hold its
+      // descriptor. Missing named records cannot be started or recreated.
       return record;
     });
   }
@@ -134,10 +143,11 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
       case 'rename': return rename(input.session, input.name, input.description);
       case 'stop': return stop(input.session);
       case 'start': return start(input.session);
+      case 'delete': return remove(input.session);
       default: throw new Error('Unknown session operation.');
     }
   }
-  return { get, list, create, rename, stop, start, ensure, snapshot, request };
+  return { get, list, create, rename, stop, start, remove, ensure, snapshot, request };
 }
 
 export function serve(store, input = process.stdin, output = process.stdout) {

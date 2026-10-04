@@ -180,6 +180,13 @@ process. Closing a pane, switching sessions, and closing the browser only
 detach. A full add-on restart still ends running processes; named session
 metadata and provider-saved conversations survive, but running tasks do not.
 
+For a temporary session you no longer need, choose **Sessions → ••• → Delete**
+and confirm. This ends its task and removes the added session from every
+browser, including its terminal scrollback. Workspace files, uploads, provider
+logins, and provider-saved conversations are kept. A deleted session cannot
+be restarted; create a new one when needed. Built-in provider sessions can
+be stopped but cannot be deleted.
+
 Sessions in the same workspace can edit the same files. Use separate folders
 or Git worktrees when independent coding tasks need separate working copies.
 
@@ -527,8 +534,9 @@ sessions with stub provider commands. They verify that switching preserves
 processes, separates workspaces, keeps login-shell working directories, and
 serves newly created workspaces without restarting ttyd.
 `tests/test_sessions.mjs` uses a separate temporary tmux server to check named
-process isolation, persisted stop state, input validation, and concurrent
-launch/stop operations. It requires tmux and `flock` (both supplied by the
+process isolation, persisted stop state, deletion without removing workspace
+files or restarting on reconnect, input validation, and concurrent lifecycle
+operations. It requires tmux and `flock` (both supplied by the
 add-on). The container integration test exercises management requests and
 readline word editing through the real ttyd WebSocket, PTY, and tmux,
 alongside named provider terminals. It also sends a file through that PTY
@@ -567,7 +575,8 @@ CHROMIUM_BIN=/usr/bin/chromium WEBUI_BUNDLE=/path/to/index.html node tests/test_
 
 The browser suite also creates and renames sessions, routes real keystrokes
 to separate split panes, resizes and restores the split, stops and restarts
-a session, and checks workspace groups, purpose search, and the picker on a
+a session, deletes temporary sessions without disturbing another pane, and
+checks workspace groups, purpose search, and the picker on a
 narrow screen. Desktop checks exercise Ctrl+Left/Right, Ctrl+Backspace and
 Ctrl+Delete, Shift+Enter, unmodified character editing, native text fields,
 and shortcuts in the focused split pane. It checks the New line helper in
