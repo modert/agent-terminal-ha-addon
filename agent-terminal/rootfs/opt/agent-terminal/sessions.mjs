@@ -10,11 +10,15 @@ import { createWorkspaceStore } from './workspaces.mjs';
 
 const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex|shell|custom))$/;
 const NAMED = /^session-[a-f0-9]{32}$/;
-export function createSessionStore({ stateDir = '/data/agent-terminal',
+const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE_DIR || '/data/agent-terminal',
   optionsPath = '/data/options.json', tmux = 'tmux', ...paths } = {}) {
   const workspaces = createWorkspaceStore({ stateDir, optionsPath, ...paths });
   const registry = join(stateDir, 'sessions');
   const locks = join(stateDir, 'session-locks');
+  // Separate from names/stop state: older control connections must not erase
+  // a newly saved conversation when they rename a session during a hot deploy.
+  const conversations = join(stateDir, 'conversations');
   function agents() {
     const result = [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }];
     if (JSON.parse(readFileSync(optionsPath, 'utf8')).web_command) result.push({ id: 'custom', name: 'Custom' });
@@ -53,7 +57,57 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
     if (record.id !== id || typeof record.stopped !== 'boolean') throw new Error('Invalid session record.');
     const selection = pair(record.agent, record.workspace, true);
     if (!NAMED.test(id) && id !== `agent-${selection.workspace}-${selection.agent}`) throw new Error('Invalid session record.');
-    return { id, name: name(record.name), description: description(record.description), ...selection, stopped: record.stopped };
+    const saved = conversation(id);
+    return { id, name: name(record.name), description: description(record.description), ...selection, stopped: record.stopped,
+      ...(saved?.conversationId ? { conversationId: saved.conversationId } : {}) };
+  }
+  function conversation(id) {
+    const file = join(conversations, validateID(id) + '.json');
+    if (!existsSync(file)) return null;
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    if (!['claude', 'codex'].includes(saved.agent) || !UUID.test(saved.launchId) ||
+        (saved.conversationId !== undefined && !UUID.test(saved.conversationId)) ||
+        (saved.transcript !== undefined && (typeof saved.transcript !== 'string' ||
+          !saved.transcript.startsWith('/') || /[\x00-\x1f]/.test(saved.transcript)))) {
+      throw new Error('Invalid saved conversation.');
+    }
+    return saved;
+  }
+  function saveConversation(id, value) {
+    mkdirSync(conversations, { recursive: true, mode: 0o700 });
+    const file = join(conversations, id + '.json');
+    const temporary = file + '.' + randomUUID() + '.tmp';
+    writeFileSync(temporary, JSON.stringify(value) + '\n', { mode: 0o600 });
+    renameSync(temporary, file);
+    return value;
+  }
+  function remember(id, agent, launchId, event) {
+    if (!event || !['SessionStart', 'Stop'].includes(event.hook_event_name) ||
+        typeof event.session_id !== 'string' || !UUID.test(event.session_id)) return false;
+    return locked(id, () => {
+      // Late hooks from a stopped/deleted task or an earlier launch cannot
+      // resurrect it or redirect the next launch to a different conversation.
+      const record = get(id), saved = conversation(id);
+      if (record.stopped || record.agent !== agent || saved?.agent !== agent || saved.launchId !== launchId) return false;
+      if (event.hook_event_name === 'Stop' && saved.conversationId !== event.session_id) return false;
+      if (saved.conversationId && saved.conversationId !== event.session_id &&
+          !['resume', 'clear'].includes(event.source)) return false;
+      const transcript = typeof event.transcript_path === 'string' && event.transcript_path.startsWith('/') &&
+        !/[\x00-\x1f]/.test(event.transcript_path) ? event.transcript_path : undefined;
+      const same = saved.conversationId === event.session_id;
+      saveConversation(id, { agent, launchId, conversationId: event.session_id,
+        ...(transcript ? { transcript } : {}),
+        hasTranscript: !!(transcript && existsSync(transcript)) || (same && saved.hasTranscript === true) });
+      return true;
+    });
+  }
+  function failed(id, launchId) {
+    return locked(id, () => {
+      const record = get(id);
+      if (conversation(id)?.launchId !== launchId) return false;
+      save({ ...record, stopped: true });
+      return true;
+    });
   }
   function save(record) {
     mkdirSync(registry, { recursive: true, mode: 0o700 });
@@ -117,6 +171,8 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
       if (!NAMED.test(id)) throw new Error('Built-in sessions cannot be deleted. Use Stop instead.');
       const record = stopLocked(id);
       unlinkSync(join(registry, id + '.json'));
+      const saved = join(conversations, id + '.json');
+      if (existsSync(saved)) unlinkSync(saved);
       // Keep the lock file: reconnects and other processes may still hold its
       // descriptor. Missing named records cannot be started or recreated.
       return record;
@@ -129,8 +185,21 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
       const record = get(id);
       if (record.agent !== agent || record.workspace !== workspace) throw new Error('Session does not match agent and workspace.');
       if (record.stopped) throw new Error('Session stopped. Choose Start in the session switcher.');
-      if (!has(id)) execFileSync(tmux, ['new-session', '-d', '-s', id, '-c', workspaces.get(workspace).directory,
-        ...environment.flatMap(value => ['-e', value]), command], { stdio: ['ignore', 'ignore', 'pipe'] });
+      if (!has(id)) {
+        const launchEnv = [...environment, `AGENT_TERMINAL_STATE_DIR=${stateDir}`, 'AGENT_TERMINAL_SESSION_ID=', 'AGENT_TERMINAL_LAUNCH_ID=',
+          'AGENT_CONVERSATION_ID=', 'AGENT_CONVERSATION_TRANSCRIPT=', 'AGENT_CONVERSATION_SAVED=false'];
+        if (agent === 'claude' || agent === 'codex') {
+          const saved = conversation(id);
+          if (saved && saved.agent !== agent) throw new Error('Saved conversation belongs to a different agent.');
+          const launch = saveConversation(id, { ...saved, agent, launchId: randomUUID() });
+          launchEnv.push(`AGENT_TERMINAL_SESSION_ID=${id}`, `AGENT_TERMINAL_LAUNCH_ID=${launch.launchId}`,
+            `AGENT_CONVERSATION_ID=${launch.conversationId || ''}`,
+            `AGENT_CONVERSATION_TRANSCRIPT=${launch.transcript || ''}`,
+            `AGENT_CONVERSATION_SAVED=${launch.hasTranscript === true ? 'true' : 'false'}`);
+        }
+        execFileSync(tmux, ['new-session', '-d', '-s', id, '-c', workspaces.get(workspace).directory,
+          ...launchEnv.flatMap(value => ['-e', value]), command], { stdio: ['ignore', 'ignore', 'pipe'] });
+      }
       return id;
     });
   }
@@ -147,7 +216,7 @@ export function createSessionStore({ stateDir = '/data/agent-terminal',
       default: throw new Error('Unknown session operation.');
     }
   }
-  return { get, list, create, rename, stop, start, remove, ensure, snapshot, request };
+  return { get, list, create, rename, stop, start, remove, ensure, remember, failed, snapshot, request };
 }
 
 export function serve(store, input = process.stdin, output = process.stdout) {
@@ -190,6 +259,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     if (operation === 'serve' && !args.length) serve(store);
     else if (operation === 'get' && args.length === 1) console.log(JSON.stringify(store.get(args[0])));
     else if (operation === 'ensure' && args.length >= 4) console.log(store.ensure(...args.slice(0, 4), args.slice(4)));
+    else if (operation === 'failed' && args.length === 2) store.failed(...args);
     else throw new Error('Usage: sessions.mjs serve | get ID | ensure AGENT WORKSPACE ID COMMAND [ENV ...]');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

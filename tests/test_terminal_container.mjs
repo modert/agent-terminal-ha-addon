@@ -34,7 +34,21 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
     rmSync(root, { recursive: true, force: true });
   });
   for (const agent of ['claude', 'codex', 'trusted-custom']) {
-    writeFileSync(join(root, agent), '#!/usr/bin/env bash\nprintf "TEST-AGENT:%s:%s:%s:%s:%s\\n" "${0##*/}" "$AGENT_WORKSPACE" "$PWD" "$CODEX_HOME" "$CLAUDE_CONFIG_DIR"\nexec bash -l\n', { mode: 0o755 });
+    writeFileSync(join(root, agent), `#!/usr/bin/env bash
+if [ -f "${root}/fail-next-start" ]; then
+  rm "${root}/fail-next-start"
+  echo TEST-LAUNCH-FAILED
+  exit 7
+fi
+if [ "\${0##*/}" = claude ] || [ "\${0##*/}" = codex ]; then
+  conversation_id="\${AGENT_CONVERSATION_ID:-$(cat /proc/sys/kernel/random/uuid)}"
+  source=startup; [ -z "\${AGENT_CONVERSATION_ID:-}" ] || source=resume
+  jq -nc --arg id "$conversation_id" --arg source "$source" '{hook_event_name:"SessionStart",session_id:$id,source:$source}' |
+    node /opt/agent-terminal/session-hook.mjs "\${0##*/}"
+fi
+printf "TEST-AGENT:%s:%s:%s:%s:%s\\n" "\${0##*/}" "$AGENT_WORKSPACE" "$PWD" "$CODEX_HOME" "$CLAUDE_CONFIG_DIR"
+exec bash -l
+`, { mode: 0o755 });
   }
   writeFileSync('/data/options.json', JSON.stringify({ ...JSON.parse(options), web_command: join(root, 'trusted-custom') }));
   run('agent-workspace', ['create', 'web-test', 'Web test', join(root, 'task folder')]);
@@ -148,6 +162,10 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   const secondView = await connect('codex', 'web-test', namedB.id);
   await until(() => namedView.screen().includes('TEST-AGENT:codex:web-test:') && secondView.screen().includes('TEST-AGENT:codex:web-test:'), 'named sessions did not start');
   const namedPid = panePid(namedA.id);
+  const conversations = (await manage('list')).sessions;
+  const conversationA = conversations.find(s => s.id === namedA.id).conversationId;
+  assert.match(conversationA, /^[a-f0-9-]{36}$/);
+  assert.notEqual(conversationA, conversations.find(s => s.id === namedB.id).conversationId);
   assert.notEqual(namedPid, panePid(namedB.id));
   namedView.socket.close();
   const reattached = await connect('codex', 'web-test', namedA.id);
@@ -167,6 +185,17 @@ test('real web sessions preserve processes, workspace cwd, and provider environm
   await until(() => started.screen().includes('TEST-AGENT:codex:web-test:'), 'explicit start did not work');
   assert.notEqual(panePid(namedA.id), namedPid);
   assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).description, 'Check layout and spacing');
+  assert.equal((await manage('list')).sessions.find(s => s.id === namedA.id).conversationId, conversationA,
+    'Stop/Start must resume the conversation assigned to this named terminal');
+
+  const failed = await manage('create', { name: 'Failed provider start', agent: 'codex', workspace: 'web-test' });
+  writeFileSync(join(root, 'fail-next-start'), '');
+  await connect('codex', 'web-test', failed.id);
+  await until(async () => (await manage('list')).sessions.find(s => s.id === failed.id).stopped,
+    'a failed provider must stop instead of relaunching on every reconnect');
+  assert.notEqual(spawnSync('agent-session', ['--web', 'codex', 'web-test', failed.id]).status, 0);
+  assert.notEqual(spawnSync('tmux', ['has-session', '-t', '=' + failed.id]).status, 0);
+  await manage('delete', { session: failed.id });
 
   // Files travel on their own connection through a real ttyd PTY, in lines
   // far longer than a cooked terminal accepts; the reply is the saved path.

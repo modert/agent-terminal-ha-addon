@@ -1,0 +1,7 @@
+# The add-on's own lifecycle hook is part of the installed system config.
+# User/project hooks and their trust decisions remain independent.
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "node /opt/agent-terminal/session-hook.mjs codex"
+timeout = 5
