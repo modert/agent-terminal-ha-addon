@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createWorkspaceStore } from './workspaces.mjs';
 import { createHealthStore, createHA, discover, reviewIncident, validateConfig, supervisorToken } from './health.mjs';
 
-const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex|shell|custom))$/;
+const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex|shell|ollama|custom))$/;
 const NAMED = /^session-[a-f0-9]{32}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE_DIR || '/data/agent-terminal',
@@ -21,7 +21,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
   // a newly saved conversation when they rename a session during a hot deploy.
   const conversations = join(stateDir, 'conversations');
   function agents() {
-    const result = [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }];
+    const result = [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }];
     if (JSON.parse(readFileSync(optionsPath, 'utf8')).web_command) result.push({ id: 'custom', name: 'Custom' });
     return result;
   }
@@ -52,7 +52,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     const file = join(registry, id + '.json');
     if (existsSync(file)) record = JSON.parse(readFileSync(file, 'utf8'));
     else if (!NAMED.test(id)) {
-      const match = /^agent-(.+)-(claude|codex|shell|custom)$/.exec(id);
+      const match = /^agent-(.+)-(claude|codex|shell|ollama|custom)$/.exec(id);
       record = { id, name: 'Main', workspace: match[1], agent: match[2], stopped: false };
     } else throw new Error('Unknown session.');
     if (record.id !== id || typeof record.stopped !== 'boolean') throw new Error('Invalid session record.');
@@ -66,7 +66,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     const file = join(conversations, validateID(id) + '.json');
     if (!existsSync(file)) return null;
     const saved = JSON.parse(readFileSync(file, 'utf8'));
-    if (!['claude', 'codex'].includes(saved.agent) || !UUID.test(saved.launchId) ||
+    if (!['claude', 'codex', 'ollama'].includes(saved.agent) || !UUID.test(saved.launchId) ||
         (saved.conversationId !== undefined && !UUID.test(saved.conversationId)) ||
         (saved.transcript !== undefined && (typeof saved.transcript !== 'string' ||
           !saved.transcript.startsWith('/') || /[\x00-\x1f]/.test(saved.transcript)))) {
@@ -189,7 +189,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
       if (!has(id)) {
         const launchEnv = [...environment, `AGENT_TERMINAL_STATE_DIR=${stateDir}`, 'AGENT_TERMINAL_SESSION_ID=', 'AGENT_TERMINAL_LAUNCH_ID=',
           'AGENT_CONVERSATION_ID=', 'AGENT_CONVERSATION_TRANSCRIPT=', 'AGENT_CONVERSATION_SAVED=false'];
-        if (agent === 'claude' || agent === 'codex') {
+        if (agent === 'claude' || agent === 'codex' || agent === 'ollama') {
           const saved = conversation(id);
           if (saved && saved.agent !== agent) throw new Error('Saved conversation belongs to a different agent.');
           const launch = saveConversation(id, { ...saved, agent, launchId: randomUUID() });

@@ -848,4 +848,18 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate("testSocket.args[0]"), 'claude');
   assert.equal(await evaluate("testHub.sessions.find(s => s.id === testSocket.args[2]).name"), 'Investigate: Thermostat unavailable');
   assert.deepEqual(await packets(), [], 'the investigation is prepared in a draft for the user to send');
+
+  // A local provider owns its connection just like the hosted providers.
+  await load();
+  await tap("document.querySelector('#agents button[data-agent=ollama]')");
+  await until("testSocket?.args[0] === 'ollama' && testSocket.readyState === 1");
+  assert.equal(await evaluate('testSocket.args[1]'), 'homeassistant');
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'Ollama provider fits the phone layout');
+  await tap("document.getElementById('sessions-open')");
+  await tap("document.getElementById('sessions-new')");
+  await evaluate("document.getElementById('sessions-name').value = 'Local coding task'");
+  assert.equal(await evaluate("document.getElementById('sessions-provider').value"), 'ollama');
+  await tap("document.getElementById('sessions-save')");
+  await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
+  assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
 });

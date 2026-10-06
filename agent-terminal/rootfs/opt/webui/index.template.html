@@ -53,6 +53,7 @@ body { position: fixed; inset: 0; }
   background: var(--key); color: var(--fg); font: inherit; font-size: 16px;
 }
 #agents { display: flex; gap: 4px; }
+#agents .agent-button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-button {
   min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--key); color: var(--fg); font: inherit; font-size: 13px;
@@ -311,9 +312,9 @@ body.side-pane #split-toggle::before { display: none; }
 #split-toggle[hidden] { display: none; }
 @media (max-width: 560px) {
   #agents { flex-basis: auto; flex: 1; }
-  #agents .agent-button { padding: 0 8px; font-size: 12px; }
+  #agents .agent-button { padding: 0 4px; font-size: 12px; }
   #sessions-open, #split-toggle { order: 2; }
-  #sessions-open { flex: 0 0 auto; max-width: min(150px, calc(100% - 220px)); padding: 0 8px; }
+  #sessions-open { flex: 0 0 auto; max-width: min(125px, calc(100% - 236px)); padding: 0 8px; }
   #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
   #app.compact-height #workspace { width: 0; }
   #app.compact-height #agents .agent-button { padding: 0 5px; font-size: 12px; }
@@ -571,7 +572,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
               <label>Repeated errors<input type="number" id="health-repeatCount" min="2" max="100" required></label>
               <label>Alert cooldown (minutes)<input type="number" id="health-cooldownMinutes" min="5" max="1440" required></label>
             </div>
-            <label>Investigation agent<select id="health-investigationAgent"><option value="codex">ChatGPT</option><option value="claude">Claude</option></select></label>
+            <label>Investigation agent<select id="health-investigationAgent"><option value="codex">ChatGPT</option><option value="claude">Claude</option><option value="ollama">Ollama</option></select></label>
             <p>Investigate opens a named session with a draft to review and send. Monitoring reviews never repair or restart anything.</p>
             <div class="health-actions"><button type="submit" class="agent-button">Save settings</button><button type="button" class="agent-button" id="health-test">Test saved reviewer</button></div>
             <p>The test uses a synthetic incident and sends no real logs.</p>
@@ -604,7 +605,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var tokenUrl = location.protocol + '//' + location.host + base + '/token';
   // Replaced at boot, and whenever agent-workspace creates a workspace.
   var sessionConfig = /*{{SESSION_CONFIG}}*/ null || {
-    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
     workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
     defaultAgent: 'claude'
   };
@@ -1016,7 +1017,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
     // Legacy terminal input loses Shift on Enter. Both agent editors accept
     // Ctrl+J as a newline, so a physical Shift+Enter must send LF, not CR.
-    if ((selectedAgent === 'claude' || selectedAgent === 'codex') &&
+    if ((selectedAgent === 'claude' || selectedAgent === 'codex' || selectedAgent === 'ollama') &&
         e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       fixedKey('\n');

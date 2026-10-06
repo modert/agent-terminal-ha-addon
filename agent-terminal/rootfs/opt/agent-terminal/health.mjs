@@ -39,7 +39,7 @@ export function validateConfig(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid health settings.');
   const c = { ...DEFAULTS, ...input };
   if (typeof c.enabled !== 'boolean' || !['rules', 'ollama', 'homeassistant'].includes(c.reviewer)) throw new Error('Choose a review agent.');
-  if (!['claude', 'codex'].includes(c.investigationAgent)) throw new Error('Choose Claude or ChatGPT for investigations.');
+  if (!['claude', 'codex', 'ollama'].includes(c.investigationAgent)) throw new Error('Choose Claude, ChatGPT, or Ollama for investigations.');
   for (const key of ['ollamaUrl', 'model', 'agentId']) {
     if (typeof c[key] !== 'string' || c[key].length > 200 || /[\x00-\x20\x7f]/.test(c[key])) throw new Error('Invalid ' + key + '.');
   }
@@ -50,7 +50,7 @@ export function validateConfig(input) {
     }
     c.ollamaUrl = url.origin;
   }
-  if (c.enabled && c.reviewer === 'ollama' && (!c.ollamaUrl || !c.model || /(?:^|[:_-])cloud(?:$|[:_-])/.test(c.model))) throw new Error('Choose an Ollama server and a local model.');
+  if (c.enabled && c.reviewer === 'ollama' && (!c.ollamaUrl || !c.model || /(?:^|[:_-])cloud(?:$|[:_-])/i.test(c.model))) throw new Error('Choose an Ollama server and a local model.');
   if (c.agentId && !/^conversation\.[a-z0-9_]+$/.test(c.agentId)) throw new Error('Choose a Home Assistant conversation agent.');
   if (c.enabled && c.reviewer === 'homeassistant' && !c.agentId) throw new Error('Choose a Home Assistant conversation agent.');
   for (const key of ['criticalEntities', 'notifyServices']) {

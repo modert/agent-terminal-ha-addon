@@ -14,6 +14,7 @@ window.AgentSessions = function (options) {
     claude: '<path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18"/>',
     codex: '<rect x="7" y="2.5" width="10" height="19" rx="5"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(60 12 12)"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(120 12 12)"/>',
     shell: '<path d="m5 6 6 6-6 6m8 0h6"/>',
+    ollama: '<path d="M7 10V4a2 2 0 0 1 4 0v5h2V4a2 2 0 0 1 4 0v6a7 7 0 1 1-10 0Z"/><path d="M9 15h.01M15 15h.01M10 19h4"/>',
     custom: '<path d="M8 4H6v6l-2 2 2 2v6h2m8-16h2v6l2 2-2 2v6h-2"/>'
   };
   function mark(agent) {
@@ -216,7 +217,7 @@ window.AgentSessions = function (options) {
       ? 'Delete “' + record.name + '” from ' + label(workspaces, record.workspace) + ' · ' + label(agents, record.agent) + '? This ends its running task and removes it from Sessions in every browser. Terminal scrollback is lost. Workspace files and provider-saved conversations are kept. This cannot be undone.'
       : next === 'stop'
       ? 'Stop “' + record.name + '” and end its running task? ' +
-        (record.agent === 'claude' || record.agent === 'codex' ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
+        (record.agent === 'claude' || record.agent === 'codex' || record.agent === 'ollama' ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
     el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
     el('sessions-save').classList.toggle('session-danger', next === 'delete');

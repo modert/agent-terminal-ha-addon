@@ -10,7 +10,7 @@ const mock = `<script>
       workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' },
         { id: 'addon', name: 'Agent Terminal', directory: '/addons/agent-terminal' }],
       sessions: JSON.parse(localStorage.getItem('test-sessions') || 'null') || [
-        ...['claude', 'codex', 'shell'].map(agent =>
+        ...['claude', 'codex', 'shell', 'ollama'].map(agent =>
           ({ id: 'agent-homeassistant-' + agent, name: 'Main', workspace: 'homeassistant', agent, stopped: false, running: false })),
         { id: 'session-' + 'b'.repeat(32), name: 'Session navigation', description: 'Polish the provider chooser',
           workspace: 'addon', agent: 'claude', stopped: false, running: false }],
@@ -20,7 +20,7 @@ const mock = `<script>
       publish() {
         localStorage.setItem('test-sessions', JSON.stringify(this.sessions));
         for (const socket of this.controls) if (socket.readyState === 1) socket.packet({ type: 'sessions', sessions: this.sessions,
-          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
           workspaces: this.workspaces, health: this.health });
       }
     };
@@ -107,7 +107,7 @@ const mock = `<script>
         else if (request.method === 'delete') testHub.sessions = testHub.sessions.filter(s => s.id !== request.session);
         if (request.method !== 'list') this.packet({ request: request.request, result: record });
         else this.packet({ request: request.request, result: { sessions: testHub.sessions,
-          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
           workspaces: testHub.workspaces } });
         testHub.publish();
       }
