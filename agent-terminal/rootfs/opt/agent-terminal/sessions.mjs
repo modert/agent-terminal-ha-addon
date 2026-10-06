@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createWorkspaceStore } from './workspaces.mjs';
+import { requestRemote } from './remote-client.mjs';
 
 const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex|shell|custom))$/;
 const NAMED = /^session-[a-f0-9]{32}$/;
@@ -206,6 +207,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
   const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list() });
   function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid request.');
+    if (typeof input.method === 'string' && input.method.startsWith('remote/')) return requestRemote(input.method.slice(7));
     switch (input.method) {
       case 'list': return snapshot();
       case 'create': return create(input);
@@ -222,8 +224,8 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
 export function serve(store, input = process.stdin, output = process.stdout) {
   if (input.isTTY) input.setRawMode(true);
   input.setEncoding('utf8');
-  const send = value => output.write(JSON.stringify(value) + '\n');
-  let buffer = '', last = '';
+  let buffer = '', last = '', closed = false, inFlight = 0;
+  const send = value => { if (!closed) output.write(JSON.stringify(value) + '\n'); };
   function publish() {
     const snapshot = store.snapshot();
     const json = JSON.stringify(snapshot);
@@ -239,16 +241,25 @@ export function serve(store, input = process.stdin, output = process.stdout) {
       try {
         request = JSON.parse(line);
         if (!Number.isSafeInteger(request?.request) || request.request < 0) throw new Error('Invalid request number.');
-        send({ request: request.request, result: store.request(request) });
-        publish();
+        if (inFlight >= 4) throw new Error('Controls are busy. Try again in a moment.');
+        const result = store.request(request);
+        if (result && typeof result.then === 'function') {
+          inFlight++;
+          result.then(
+            value => { send({ request: request.request, result: value }); if (!closed) publish(); },
+            error => send({ request: request.request, error: error.message }),
+          ).finally(() => { inFlight--; });
+        }
+        else { send({ request: request.request, result }); publish(); }
       } catch (error) {
         send({ request: Number.isSafeInteger(request?.request) ? request.request : null, error: error.message });
       }
     }
   });
   const timer = setInterval(() => { try { publish(); } catch { /* retry next tick */ } }, 2000);
-  input.on('end', () => clearInterval(timer));
-  input.on('close', () => clearInterval(timer));
+  const end = () => { closed = true; clearInterval(timer); };
+  input.on('end', end);
+  input.on('close', end);
   publish();
 }
 

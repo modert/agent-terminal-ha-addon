@@ -7,7 +7,7 @@ import vm from 'node:vm';
 
 const template = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/index.template.html', import.meta.url), 'utf8');
 const webui = name => readFileSync(new URL('../agent-terminal/rootfs/opt/webui/' + name, import.meta.url), 'utf8');
-const source = webui('sessions.js') + '\n' + webui('uploads.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
+const source = webui('sessions.js') + '\n' + webui('remote.js') + '\n' + webui('uploads.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client(search = '') {
@@ -107,6 +107,37 @@ test('latest selection wins while token requests and old sockets complete out of
   assert.equal(c.sockets[1].sent.at(-1), '0shell input');
   assert.equal(old.sent.includes('0shell input'), false);
   assert.equal(c.elements.agents.children[2].attributes['aria-pressed'], 'true');
+});
+
+test('Phone remote status and pairing use authenticated controls and clear codes when closed', async () => {
+  const c = client(); await tick(); await c.connect(); c.control().open();
+  const reply = result => {
+    const packet = JSON.parse(c.control().sent.at(-1).slice(1));
+    c.control().output(JSON.stringify({ request: packet.request, result }) + '\n');
+    return packet;
+  };
+  c.elements['remote-open'].emit('click');
+  assert.equal(c.elements['remote-sheet'].hidden, false);
+  assert.equal(reply({ enabled: false, status: 'disabled', serverName: 'Home Assistant' }).method, 'remote/status'); await tick();
+  c.elements['remote-start'].emit('click');
+  assert.equal(reply({ enabled: true, status: 'connected', serverName: 'Home Assistant' }).method, 'remote/start'); await tick();
+  c.elements['remote-pair'].emit('click');
+  assert.equal(reply({ manualPairingCode: '123-456', expiresAt: 601 }).method, 'remote/pair'); await tick();
+  assert.equal(c.elements['remote-code'].value, '123-456');
+  c.elements['remote-copy'].emit('click'); await tick(); assert.equal(c.copies.at(-1), '123-456');
+  c.elements['remote-done'].emit('click');
+  assert.equal(c.elements['remote-code'].value, ''); assert.equal(c.elements['remote-sheet'].hidden, true);
+});
+
+test('a pairing response arriving after the dialog closes cannot reveal or retain its code', async () => {
+  const c = client(); await tick(); await c.connect(); c.control().open();
+  c.elements['remote-open'].emit('click');
+  let packet = JSON.parse(c.control().sent.at(-1).slice(1));
+  c.control().output(JSON.stringify({ request: packet.request, result: { enabled: true, status: 'connected' } }) + '\n'); await tick();
+  c.elements['remote-pair'].emit('click'); packet = JSON.parse(c.control().sent.at(-1).slice(1));
+  c.elements['remote-done'].emit('click');
+  c.control().output(JSON.stringify({ request: packet.request, result: { manualPairingCode: 'late-secret', expiresAt: 601 } }) + '\n'); await tick();
+  assert.equal(c.elements['remote-code'].value, ''); assert.equal(c.elements['remote-pairing'].hidden, true);
 });
 
 test('named session URLs survive reload and remote stops cancel every terminal reconnect', async () => {

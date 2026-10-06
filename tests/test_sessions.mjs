@@ -280,6 +280,31 @@ test('management stream handles fragmented requests and reports operations witho
   assert.ok(!deleted[1].sessions.some(s => s.id === id), 'all clients receive a snapshot without the deleted session');
 });
 
+test('async controls preserve request numbers, bound pending work, and ignore results after disconnect', async t => {
+  const input = new PassThrough(), output = new PassThrough();
+  t.after(() => input.destroy());
+  const waiting = new Map(), packets = [];
+  output.on('data', bytes => packets.push(...bytes.toString().trim().split('\n').map(JSON.parse)));
+  const store = { snapshot: () => ({ sessions: [] }), request: input =>
+    new Promise((resolve, reject) => waiting.set(input.request, { resolve, reject })) };
+  serve(store, input, output);
+  for (let request = 1; request <= 5; request++) input.write(JSON.stringify({ request, method: 'remote/status' }) + '\n');
+  assert.equal(waiting.size, 4);
+  assert.match(packets.find(p => p.request === 5).error, /busy/);
+  waiting.get(2).resolve({ enabled: true, status: 'connected' });
+  waiting.get(1).reject(new Error('Remote disconnected.'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(packets.find(p => p.request === 2).result.status, 'connected');
+  assert.match(packets.find(p => p.request === 1).error, /disconnected/);
+  input.destroy();
+  await new Promise(resolve => setImmediate(resolve));
+  const count = packets.length;
+  waiting.get(3).resolve({ manualPairingCode: 'private-code' });
+  waiting.get(4).reject(new Error('closed'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(packets.length, count);
+});
+
 test('deletion serializes with launches and stale start requests across processes', async t => {
   const { root, paths, store, run } = fixture(t);
   // Keep the server alive so list-sessions can also detect an orphaned task.

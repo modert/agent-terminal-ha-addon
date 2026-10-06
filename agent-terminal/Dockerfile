@@ -63,6 +63,13 @@ RUN chmod +x /usr/local/bin/agent-install \
 
 COPY rootfs /
 
+# Native Codex Remote's local WebSocket client. Its service only listens on
+# private Unix sockets; the phone reaches Codex through OpenAI's relay.
+RUN cd /opt/agent-terminal \
+    && npm install --omit=dev --ignore-scripts --no-audit --no-fund \
+    && npm cache clean --force \
+    && node --check remote.mjs
+
 # Built-in Home Assistant MCP server (structured HA tools for the agent).
 RUN cd /opt/ha-mcp \
     && npm install --omit=dev --no-audit --no-fund \
@@ -79,7 +86,7 @@ RUN cd /opt/webui \
     && npm cache clean --force \
     && test -s index.html
 
-RUN chmod +x /usr/local/bin/agent-session /usr/local/bin/agent-run /usr/local/bin/agent-install \
+RUN chmod +x /usr/local/bin/agent-session /usr/local/bin/agent-run /usr/local/bin/agent-install /usr/local/bin/agent-remote \
     /opt/agent-terminal/workspaces.mjs \
     && ln -sfn /opt/agent-terminal/workspaces.mjs /usr/local/bin/agent-workspace \
     && ln -sfn agent-session /usr/local/bin/claude-session \

@@ -47,7 +47,7 @@ async function page({ touch = true, search = '', saved = [], platform = 'Linux',
     getElementById(id) {
       if (!ids.has(id)) {
         const el = element();
-        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast', 'sessions-sheet'].includes(id);
+        el.hidden = ['paste', 'sel', 'overlay', 'menu', 'toast', 'sessions-sheet', 'remote-sheet'].includes(id);
         ids.set(id, el);
       }
       return ids.get(id);

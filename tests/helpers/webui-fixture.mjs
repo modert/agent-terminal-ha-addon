@@ -14,7 +14,7 @@ const mock = `<script>
           ({ id: 'agent-homeassistant-' + agent, name: 'Main', workspace: 'homeassistant', agent, stopped: false, running: false })),
         { id: 'session-' + 'b'.repeat(32), name: 'Session navigation', description: 'Polish the provider chooser',
           workspace: 'addon', agent: 'claude', stopped: false, running: false }],
-      controls: [],
+      controls: [], remote: { enabled: false, status: 'disabled' },
       publish() {
         localStorage.setItem('test-sessions', JSON.stringify(this.sessions));
         for (const socket of this.controls) if (socket.readyState === 1) socket.packet({ type: 'sessions', sessions: this.sessions,
@@ -80,6 +80,13 @@ const mock = `<script>
         }
         if (text[0] === '{') { testHub.publish(); return; }
         const request = JSON.parse(text.slice(1));
+        if (request.method.startsWith('remote/')) {
+          if (request.method === 'remote/start') testHub.remote = { enabled: true, status: 'connected', serverName: 'Test Home Assistant' };
+          if (request.method === 'remote/stop') testHub.remote = { enabled: false, status: 'disabled' };
+          const result = request.method === 'remote/pair'
+            ? { manualPairingCode: '123-456', expiresAt: Math.floor(Date.now() / 1000) + 600 } : testHub.remote;
+          this.packet({ request: request.request, result }); return;
+        }
         let record = testHub.sessions.find(s => s.id === request.session);
         if (request.method === 'create') {
           record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: request.name, description: request.description || '',

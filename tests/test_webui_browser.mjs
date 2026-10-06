@@ -400,7 +400,9 @@ test('phone taps and composition with real browser events and xterm', {
   // the terminal focused, so typing carries on.
   async function click(expression) {
     const rect = await evaluate(`(() => {
-      const node = (${expression}), r = node.getBoundingClientRect();
+      const node = (${expression});
+      node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+      const r = node.getBoundingClientRect();
       let x = r.x + r.width / 2, y = r.y + r.height / 2, frame = node.ownerDocument.defaultView.frameElement;
       while (frame) { const f = frame.getBoundingClientRect(); x += f.x; y += f.y; frame = frame.ownerDocument.defaultView.frameElement; }
       return { x, y };
@@ -803,4 +805,32 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('paste-send')");
   await until("window.testPackets.filter(p => p.startsWith('0')).length >= 2");
   assert.deepEqual(await packets(), ['\x1b[200~Please Review the kitchen dashboard.\x1b[201~', '\r']);
+
+  // Phone Remote controls stay in their dialog and never type into xterm.
+  await load();
+  await tap("document.getElementById('sessions-open')");
+  await click("document.getElementById('remote-open')");
+  await until("document.getElementById('remote-state').textContent === 'Off'");
+  assert.equal(await evaluate("document.activeElement.id"), 'remote-done');
+  await tap("document.getElementById('remote-start')");
+  await until("document.getElementById('remote-state').textContent === 'Connected'");
+  await tap("document.getElementById('remote-pair')");
+  await until("!document.getElementById('remote-pairing').hidden");
+  assert.equal(await evaluate("document.getElementById('remote-code').value"), '123-456');
+  assert.equal(await evaluate(`(() => {
+    const r = document.getElementById('remote-code').getBoundingClientRect();
+    return r.left >= 0 && r.right <= innerWidth && r.height >= 44;
+  })()`), true, 'the code fits the phone viewport');
+  if (process.env.WEBUI_SCREENSHOT) {
+    const shot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-remote.png'), Buffer.from(shot.data, 'base64'));
+  }
+  await evaluate("document.getElementById('remote-copy').focus()");
+  await shortcut('Tab', 9, 0);
+  assert.equal(await evaluate('document.activeElement.id'), 'remote-done', 'Tab stays inside Remote');
+  await shortcut('Escape', 27, 0);
+  assert.equal(await evaluate("document.getElementById('remote-sheet').hidden"), true);
+  assert.equal(await evaluate("document.getElementById('remote-code').value"), '');
+  assert.equal(await evaluate("document.getElementById('sessions-sheet').hidden"), false);
+  assert.deepEqual(await packets(), [], 'pairing and dialog shortcuts send no terminal input');
 });

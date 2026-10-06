@@ -33,7 +33,7 @@ window.AgentSessions = function (options) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Session controls are disconnected. Reconnecting…'));
     return new Promise(function (resolve, reject) {
       var id = ++serial;
-      var timer = setTimeout(function () { pending.delete(id); reject(new Error('No response. Reopen Sessions to check the result.')); }, 10000);
+      var timer = setTimeout(function () { pending.delete(id); reject(new Error('No response. Reopen controls to check the result.')); }, method.indexOf('remote/') === 0 ? 45000 : 10000);
       pending.set(id, { resolve: resolve, reject: reject, timer: timer });
       socket.send(encoder.encode('0' + JSON.stringify(Object.assign({ request: id, method: method }, fields)) + '\n'));
     });
@@ -289,8 +289,9 @@ window.AgentSessions = function (options) {
   });
   window.addEventListener('keydown', function (event) {
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.code === 'KeyK') {
+      if (!el('remote-sheet').hidden) return;
       event.preventDefault(); event.stopImmediatePropagation(); open(false);
     }
   }, true);
-  return { connect: connect, open: open, refresh: refresh, records: function () { return records; } };
+  return { connect: connect, open: open, close: close, refresh: refresh, request: send, records: function () { return records; } };
 };
