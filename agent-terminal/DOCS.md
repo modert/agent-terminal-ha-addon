@@ -807,8 +807,9 @@ a `ui-explore/NAME` tag pointing at a reviewed commit. The tag also works
 before the workflow reaches the default branch. There are no pull-request
 or scheduled triggers. Inputs are passed as quoted environment variables,
 the job token has read-only contents access, and checkout does not retain it.
-Set the repository variable `UI_EXPLORER_OLLAMA_URL` to override the lab's
-default Ollama endpoint.
+The lab's Ollama endpoint comes from the repository secret
+`UI_EXPLORER_OLLAMA_URL`, which keeps the address out of this repository and
+the run logs.
 
 Each run requires a fresh ephemeral runner on the dedicated tester VM. The
 runner is registered with only `ui-explorer-RUN_ID-ATTEMPT` as its label, so

@@ -14,6 +14,8 @@ A checkout under `/addons` also shows up in Home Assistant as a local add-on wit
 
 The user also pushes to this repo from other machines, so `git fetch` before committing.
 
+This repository is public. Keep the owner's name and email address, household names, Home Assistant entity and service names, and home-network addresses out of files, commit messages, pull requests and comments. Put such a value in a file under `/data` or in a repository secret and refer to that instead.
+
 ## A pull request you open waits unseen
 
 Agents here push with the owner's GitHub login, and GitHub sends nobody a notification about their own pull request. Only the daily Codex update merges itself. Anything else you open stays open, with green checks and no one told, until the owner happens to look. So never leave one without doing one of these:
@@ -23,14 +25,14 @@ Agents here push with the owner's GitHub login, and GitHub sends nobody a notifi
 
   ```sh
   curl -sf -X POST -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" -H 'Content-Type: application/json' \
-    http://supervisor/core/api/services/notify/notifications_owner -d '{
+    "http://supervisor/core/api/services/notify/$(cat /data/agent-terminal/owner-notify-service)" -d '{
       "title": "Agent Terminal: PR #<number> is waiting on you",
       "message": "<title>. <the one thing they need to do>",
       "data": {"tag": "agent_terminal_pr_<number>", "group": "system", "channel": "system",
                "clickAction": "https://github.com/modert/agent-terminal-ha-addon/pull/<number>"}}'
   ```
 
-  `notify.notifications_owner` is the owner's own group in the Home Assistant config (`/homeassistant/notify.yaml`). Clear the alert when the PR merges or closes: the same call with `"message": "clear_notification"` and only the `tag` in `data`.
+  `/data/agent-terminal/owner-notify-service` holds the name of the owner's own group in the Home Assistant config (`/homeassistant/notify.yaml`), without the `notify.` prefix. If the file is missing, ask the owner for the name rather than picking a group. Clear the alert when the PR merges or closes: the same call with `"message": "clear_notification"` and only the `tag` in `data`.
 
 Whenever something merges to `master`, run `gh pr list` afterwards. A merge can leave another open PR conflicting, most often over `version` and the changelog: the Codex update takes the next patch version on `master` every time Codex releases, so a PR that bumps the version too goes stale within a day. Bump the version last, and merge `master` into the branch before asking for a merge.
 
