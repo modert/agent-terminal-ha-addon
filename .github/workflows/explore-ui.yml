@@ -45,7 +45,8 @@ jobs:
     env:
       CHROMIUM_BIN: /usr/bin/chromium
       WEBUI_BUNDLE: ${{ github.workspace }}/agent-terminal/rootfs/opt/webui/index.html
-      OLLAMA_URL: ${{ vars.UI_EXPLORER_OLLAMA_URL || 'http://192.168.1.250:11434' }}
+      # A secret, so the lab's address stays out of this repository and the logs.
+      OLLAMA_URL: ${{ secrets.UI_EXPLORER_OLLAMA_URL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
