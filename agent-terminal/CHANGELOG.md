@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.10.0
+- Add opt-in monitoring under **Sessions → Health** for recurring Home
+  Assistant errors and outages of selected important entities.
+- Choose Rules only, a local Ollama model, or a Home Assistant conversation
+  agent with control disabled to review incidents. Test the saved reviewer
+  with synthetic evidence before enabling alerts.
+- Send major-issue alerts to selected Companion app devices, with
+  Investigate, Snooze 1h, and Dismiss actions, cooldowns, and recovery clearing.
+- Choose Claude or ChatGPT for a named investigation session with an unsent
+  diagnostic draft. Monitoring performs no automatic repairs or restarts.
+
 ## 2.9.0
 - Dictate prompts with the microphone in the top bar or **Voice prompt…** in
   the terminal menu. Tap again or choose **Finish**, review the text in your

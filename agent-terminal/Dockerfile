@@ -63,6 +63,8 @@ RUN chmod +x /usr/local/bin/agent-install \
 
 COPY rootfs /
 
+RUN node --check /opt/agent-terminal/health.mjs
+
 # Built-in Home Assistant MCP server (structured HA tools for the agent).
 RUN cd /opt/ha-mcp \
     && npm install --omit=dev --no-audit --no-fund \

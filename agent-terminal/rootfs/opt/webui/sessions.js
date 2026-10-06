@@ -33,7 +33,7 @@ window.AgentSessions = function (options) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Session controls are disconnected. Reconnecting…'));
     return new Promise(function (resolve, reject) {
       var id = ++serial;
-      var timer = setTimeout(function () { pending.delete(id); reject(new Error('No response. Reopen Sessions to check the result.')); }, 10000);
+      var timer = setTimeout(function () { pending.delete(id); reject(new Error('No response. Reopen Sessions to check the result.')); }, method === 'health.test' ? 120000 : method === 'health.discover' ? 20000 : 10000);
       pending.set(id, { resolve: resolve, reject: reject, timer: timer });
       socket.send(encoder.encode('0' + JSON.stringify(Object.assign({ request: id, method: method }, fields)) + '\n'));
     });
@@ -43,6 +43,7 @@ window.AgentSessions = function (options) {
       records = packet.sessions; agents = packet.agents; workspaces = packet.workspaces;
       options.config.agents = agents; options.config.workspaces = workspaces;
       options.changed(records);
+      if (options.healthChanged && packet.health) options.healthChanged(packet.health);
       if (mode === 'list' && !sheet.hidden) { message(''); refresh(); }
     } else if (pending.has(packet.request)) {
       var task = pending.get(packet.request); pending.delete(packet.request); clearTimeout(task.timer);
@@ -231,6 +232,7 @@ window.AgentSessions = function (options) {
     el('sessions-title').textContent = placing ? 'Add a second session' : 'Sessions';
     el('sessions-subtitle').textContent = placing ? 'Choose a task to open in the right pane.' : 'Pick a task to continue.';
     el('sessions-done').textContent = picking() ? 'Cancel' : 'Done';
+    el('health-open').hidden = placing;
     el('sessions-context').hidden = !placing;
     if (placing) {
       var other = options.other && options.other(), left = records.find(function (r) { return r.id === (other ? other.id : options.current().id); });
@@ -292,5 +294,5 @@ window.AgentSessions = function (options) {
       event.preventDefault(); event.stopImmediatePropagation(); open(false);
     }
   }, true);
-  return { connect: connect, open: open, refresh: refresh, records: function () { return records; } };
+  return { connect: connect, open: open, close: close, refresh: refresh, request: send, records: function () { return records; } };
 };

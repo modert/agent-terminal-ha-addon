@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createWorkspaceStore } from './workspaces.mjs';
+import { createHealthStore, createHA, discover, reviewIncident, validateConfig, supervisorToken } from './health.mjs';
 
 const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex|shell|custom))$/;
 const NAMED = /^session-[a-f0-9]{32}$/;
@@ -203,9 +204,19 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
       return id;
     });
   }
-  const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list() });
+  const health = createHealthStore({ stateDir, sessions: { create, get, start } });
+  const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list(), health: health.snapshot() });
   function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid request.');
+    if (input.method === 'health.discover') return discover(createHA({ token: supervisorToken() }));
+    if (input.method === 'health.test') {
+      const config = validateConfig({ ...health.config(), enabled: true });
+      const item = { kind: 'log', title: 'Synthetic reviewer check', count: 12,
+        firstSeen: Date.now() - 1800000, lastSeen: Date.now(),
+        evidence: 'A synthetic thermostat integration has failed authentication for 30 minutes. All thermostat entities are unavailable and its heating automation cannot run.' };
+      return reviewIncident(item, config, { ha: config.reviewer === 'homeassistant' ? createHA({ token: supervisorToken() }) : undefined });
+    }
+    if (typeof input.method === 'string' && input.method.startsWith('health.')) return health.request(input);
     switch (input.method) {
       case 'list': return snapshot();
       case 'create': return create(input);
@@ -222,8 +233,8 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
 export function serve(store, input = process.stdin, output = process.stdout) {
   if (input.isTTY) input.setRawMode(true);
   input.setEncoding('utf8');
-  const send = value => output.write(JSON.stringify(value) + '\n');
-  let buffer = '', last = '';
+  let buffer = '', last = '', closed = false, inFlight = 0;
+  const send = value => { if (!closed) output.write(JSON.stringify(value) + '\n'); };
   function publish() {
     const snapshot = store.snapshot();
     const json = JSON.stringify(snapshot);
@@ -239,16 +250,25 @@ export function serve(store, input = process.stdin, output = process.stdout) {
       try {
         request = JSON.parse(line);
         if (!Number.isSafeInteger(request?.request) || request.request < 0) throw new Error('Invalid request number.');
-        send({ request: request.request, result: store.request(request) });
-        publish();
+        if (inFlight >= 4) throw new Error('Controls are busy. Try again in a moment.');
+        const result = store.request(request);
+        if (result && typeof result.then === 'function') {
+          inFlight++;
+          result.then(
+            value => { send({ request: request.request, result: value }); if (!closed) publish(); },
+            error => send({ request: request.request, error: error.message }),
+          ).finally(() => { inFlight--; });
+        }
+        else { send({ request: request.request, result }); publish(); }
       } catch (error) {
         send({ request: Number.isSafeInteger(request?.request) ? request.request : null, error: error.message });
       }
     }
   });
   const timer = setInterval(() => { try { publish(); } catch { /* retry next tick */ } }, 2000);
-  input.on('end', () => clearInterval(timer));
-  input.on('close', () => clearInterval(timer));
+  const end = () => { closed = true; clearInterval(timer); };
+  input.on('end', end);
+  input.on('close', end);
   publish();
 }
 

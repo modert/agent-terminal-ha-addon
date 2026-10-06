@@ -7,7 +7,7 @@ import vm from 'node:vm';
 
 const template = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/index.template.html', import.meta.url), 'utf8');
 const webui = name => readFileSync(new URL('../agent-terminal/rootfs/opt/webui/' + name, import.meta.url), 'utf8');
-const source = webui('sessions.js') + '\n' + webui('uploads.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
+const source = webui('sessions.js') + '\n' + webui('uploads.js') + '\n' + webui('health.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client(search = '') {

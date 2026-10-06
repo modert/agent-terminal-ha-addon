@@ -119,6 +119,9 @@ tools."
 - **Files and images for the agent** - paste a screenshot, drop a file, or
   pick a photo on your phone, and it lands in the prompt (see
   [Attaching files and images](#attaching-files-and-images-sidebar-panel)).
+- **Optional health alerts** - monitor new Home Assistant errors and important
+  entities, choose a reviewer, and receive major-issue prompts on your phone
+  (see [Health monitoring and alerts](#health-monitoring-and-alerts)).
 - **Built-in `homeassistant` MCP server** - gives the agent structured tools
   instead of hand-rolled `curl`: `ha_list_entities`, `ha_get_entity_state`,
   `ha_call_service`, `ha_render_template`, `ha_list_services`,
@@ -410,6 +413,54 @@ Microphone recording is limited to two minutes. Closing the draft, switching
 sessions, stopping the session, or hiding the page cancels recording and any
 pending transcription. Split panes keep their voice drafts separate.
 
+## Health monitoring and alerts
+
+Open **Sessions → Health**. Monitoring starts off. Choose the Companion app
+notification service for each phone, optionally list important entity IDs
+(one per line), and choose the agent that should review incidents. Save your
+settings, use **Test saved reviewer** to check the connection with synthetic
+evidence, then enable monitoring and save again. The test sends no alert and
+does not include your logs.
+
+The reviewer can be **Rules only**, **Local Ollama**, or a **Home Assistant
+conversation agent**. Ollama connects directly to your server, for example
+`http://YOUR_OLLAMA_HOST:11434`, and an already installed local model. It never
+downloads a model or falls back to a cloud provider. The review request has
+no tools. Home Assistant lists only conversation agents with Home Assistant
+control turned off, and checks that setting before every review. That agent's
+configured provider receives the evidence, so choose a local provider if you
+want reviews to stay local. Claude or ChatGPT can be selected separately for
+investigations.
+
+The worker checks once a minute. Enabling establishes the current log as a
+baseline; older errors are ignored. Repeated new errors are grouped and
+reviewed after the configured count and delay. Important entities must remain
+missing, unknown, or unavailable for the delay. New critical errors and known
+storage/configuration failures are eligible immediately. Those failures and
+important entity outages remain major even if a model downgrades them.
+Other model assessments send alerts only for major severity with at least
+80% reported confidence. That confidence is the model's assessment, not a
+measured probability. Rules only, or a failed reviewer, alerts on qualifying
+recurring errors too; select a reviewer to filter limited-impact failures.
+
+Alerts have **Investigate**, **Snooze 1h**, and **Dismiss** actions. Investigate
+opens the incident in the panel; choose **Investigate** there to open a named
+Claude or ChatGPT session with a diagnostic draft. Review it and press
+**Send**. Existing investigation sessions are reused. The monitor itself
+does not restart services or change Home Assistant state. Snooze pauses
+reminders for an hour; Dismiss silences that incident until it recovers and
+recurs. The cooldown controls reminders, and a stable notification tag replaces
+earlier alerts. Recovered entities clear their alerts. Log incidents clear
+after a quiet period and are labelled **Quiet**, which does not prove that
+the underlying device recovered.
+
+Settings, incidents, acknowledgements, and delivery history persist under
+`/data/agent-terminal/health`. Common credentials are redacted before logs are
+saved or reviewed, and incident text is displayed as plain text. Evidence
+is bounded to the latest log entries and 100 incidents. The monitor depends
+on this add-on and Home Assistant's API and notification services being
+available; it cannot send an alert while Home Assistant itself is offline.
+
 ## Options
 
 | Option | Default | Description |
@@ -616,6 +667,14 @@ Home Assistant. `tests/test_voice_client.mjs` covers microphone permissions,
 audio resampling, cleanup and late transcriptions. The browser suite uses
 Chromium's synthetic microphone with real Web Audio to verify that dictation
 fills a draft and only **Send** submits it.
+
+`tests/test_health.mjs` covers baseline cursors, recurring errors, entity
+outages and recovery, secret redaction, reviewer validation and tool-free
+requests, cloud-model rejection, failed reviews, cooldown/delivery history,
+notification actions, persisted acknowledgements, and investigation sessions.
+It uses temporary stores and mock APIs. The browser suite checks settings,
+plain-text evidence, phone layout, snooze, and an investigation draft that
+stays unsent. Run the worker checks with `node --test tests/test_health.mjs`.
 
 ### Checking the terminal controls
 

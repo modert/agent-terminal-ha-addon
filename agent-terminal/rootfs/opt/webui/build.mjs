@@ -19,6 +19,7 @@ const parts = {
   SESSIONS_JS: readFileSync(join(here, 'sessions.js'), 'utf8'),
   UPLOADS_JS: readFileSync(join(here, 'uploads.js'), 'utf8'),
   VOICE_JS: readFileSync(join(here, 'voice.js'), 'utf8'),
+  HEALTH_JS: readFileSync(join(here, 'health.js'), 'utf8'),
 };
 
 let html = readFileSync(join(here, 'index.template.html'), 'utf8');

@@ -803,4 +803,46 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('paste-send')");
   await until("window.testPackets.filter(p => p.startsWith('0')).length >= 2");
   assert.deepEqual(await packets(), ['\x1b[200~Please Review the kitchen dashboard.\x1b[201~', '\r']);
+
+  // Health remains opt-in; saving choices never sends a terminal prompt.
+  // The complete response flow uses the same inert session backend.
+  await load();
+  await tap("document.getElementById('sessions-open')");
+  await tap("document.getElementById('health-open')");
+  await until("!document.getElementById('health-sheet').hidden && document.getElementById('health-delayMinutes').value === '10'");
+  assert.equal(await evaluate("document.getElementById('health-enabled').checked"), false);
+  await evaluate(`(() => {
+    const reviewer = document.getElementById('health-reviewer'); reviewer.value = 'ollama'; reviewer.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('health-ollamaUrl').value = 'http://model.test:11434';
+    document.getElementById('health-model').value = 'example:4b';
+    document.getElementById('health-criticalEntities').value = 'climate.main';
+    document.getElementById('health-investigationAgent').value = 'claude';
+    document.querySelector('#health-notifyServices option').selected = true;
+    document.querySelector('#health-form button').scrollIntoView({ block: 'center' });
+  })()`);
+  await tap("document.querySelector('#health-form button')");
+  await until("document.getElementById('health-status').textContent.includes('Settings saved')");
+  assert.equal(await evaluate('testHub.health.config.reviewer'), 'ollama');
+  assert.equal(await evaluate('testHub.health.config.investigationAgent'), 'claude');
+  assert.deepEqual(await packets(), [], 'health setup sends no terminal commands');
+  await evaluate(`(() => {
+    testHub.health.incidents = [{ id: '${'a'.repeat(32)}', title: 'Thermostat unavailable', kind: 'entity', severity: 'major',
+      evidence: '<img src=x onerror="window.healthInjected=true"> climate.main unavailable', firstSeen: Date.now() - 900000,
+      lastSeen: Date.now(), count: 4 }];
+    testHub.publish(); document.getElementById('health-settings').open = false;
+  })()`);
+  await until("document.querySelectorAll('.health-incident').length === 1");
+  assert.equal(await evaluate("document.querySelector('#health-incidents img') === null && !window.healthInjected"), true, 'untrusted evidence stays plain text');
+  assert.equal(await evaluate("document.getElementById('health-sheet').scrollWidth <= document.getElementById('health-sheet').clientWidth"), true, 'phone dialog has no horizontal overflow');
+  if (process.env.WEBUI_SCREENSHOT) {
+    const screenshot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-health.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  await tap("Array.from(document.querySelectorAll('.health-actions button')).find(b => b.textContent === 'Snooze 1h')");
+  await until('testHub.health.incidents[0].snoozedUntil > Date.now()');
+  await tap("Array.from(document.querySelectorAll('.health-actions button')).find(b => b.textContent === 'Investigate')");
+  await until("!document.getElementById('paste').hidden && document.getElementById('paste-text').value.includes('read-only checks')");
+  assert.equal(await evaluate("testSocket.args[0]"), 'claude');
+  assert.equal(await evaluate("testHub.sessions.find(s => s.id === testSocket.args[2]).name"), 'Investigate: Thermostat unavailable');
+  assert.deepEqual(await packets(), [], 'the investigation is prepared in a draft for the user to send');
 });
