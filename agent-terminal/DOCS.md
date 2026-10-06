@@ -432,7 +432,8 @@ configured provider receives the evidence, so choose a local provider if you
 want reviews to stay local. Claude or ChatGPT can be selected separately for
 investigations.
 
-The worker checks once a minute. Enabling establishes the current log as a
+The worker checks once a minute using the latest 1,000 Supervisor journal
+records from Home Assistant Core. Enabling establishes the current log as a
 baseline; older errors are ignored. Repeated new errors are grouped and
 reviewed after the configured count and delay. Important entities must remain
 missing, unknown, or unavailable for the delay. New critical errors and known

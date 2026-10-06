@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULTS, validateConfig, createHealthStore, observe, eligible, parseLog,
-  parseReview, redact, reviewIncident, createMonitor, notification, discover, watchActions } from '../agent-terminal/rootfs/opt/agent-terminal/health.mjs';
+  parseReview, redact, reviewIncident, createMonitor, notification, discover, watchActions, createHA } from '../agent-terminal/rootfs/opt/agent-terminal/health.mjs';
 import { createSessionStore, serve } from '../agent-terminal/rootfs/opt/agent-terminal/sessions.mjs';
 import { writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
@@ -71,6 +71,21 @@ test('tracebacks and common secrets are redacted before persistence or review', 
   assert.match(entries[0].message, /ValueError/);
   assert.doesNotMatch(entries[0].message, /sample secret|sample-token|another-secret/);
   assert.doesNotMatch(redact('https://user:pass@example.test/?access_token=sample'), /user:pass|sample/);
+  assert.equal(parseLog('\x1b[31m' + log(1) + '\x1b[0m')[0].level, 'ERROR');
+});
+
+test('log reads use a bounded Supervisor journal tail while states use the Core API', async () => {
+  const requests = [];
+  const ha = createHA({ token: 'example', fetchImpl: async (url, options) => {
+    requests.push({ url, options });
+    return new Response(url.includes('/core/logs?') ? log(1) : '[]');
+  } });
+  assert.equal(await ha('/core/logs'), log(1));
+  assert.deepEqual(await ha('/states'), []);
+  assert.equal(requests[0].url, 'http://supervisor/core/logs?lines=1000&no_colors');
+  assert.equal(requests[1].url, 'http://supervisor/core/api/states');
+  assert.equal(requests[0].options.redirect, 'error');
+  await assert.rejects(createHA({ fetchImpl: async () => new Response('too large') })('/core/logs', undefined, { limit: 2 }), /exceeds/);
 });
 
 test('review output validates severity, confidence and bounded plain text', () => {
@@ -127,7 +142,7 @@ test('known major incidents still alert if AI downgrades them, and recovery clea
   store.request({ method: 'health.save', config: config({ criticalEntities: ['climate.main'], notifyServices: ['notify.mobile_app_test_device'] }) });
   let state = 'unavailable', reviews = 0;
   const sent = [];
-  const monitor = createMonitor({ store, now, ha: async path => path === '/error_log' ? '' : [{ entity_id: 'climate.main', state }],
+  const monitor = createMonitor({ store, now, ha: async path => path === '/core/logs' ? '' : [{ entity_id: 'climate.main', state }],
     reviewer: async () => { reviews++; return { severity: 'info', confidence: 0.1, summary: 'Probably fine', nextStep: 'Inspect' }; },
     notify: async (_service, item) => sent.push(notification(item, store.config(), 'test_agent_terminal')) });
   await monitor.tick(); assert.equal(sent.length, 0);
@@ -144,7 +159,7 @@ test('review and device failures do not suppress rule alerts or duplicate delive
   const { store, now, advance } = fixture(t);
   store.request({ method: 'health.save', config: config({ criticalEntities: ['climate.main'], notifyServices: ['notify.mobile_app_first', 'notify.mobile_app_second'] }) });
   const sent = [], monitor = createMonitor({ store, now,
-    ha: async path => path === '/error_log' ? '' : [{ entity_id: 'climate.main', state: 'unavailable' }],
+    ha: async path => path === '/core/logs' ? '' : [{ entity_id: 'climate.main', state: 'unavailable' }],
     reviewer: async () => { throw new Error('review timeout'); },
     notify: async service => { sent.push(service); if (service.endsWith('second') && sent.length === 2) throw new Error('offline'); },
   });
@@ -157,7 +172,7 @@ test('review and device failures do not suppress rule alerts or duplicate delive
 test('changing settings or disabling while a review runs prevents stale notifications', async t => {
   const { store, now, advance } = fixture(t);
   store.request({ method: 'health.save', config: config({ criticalEntities: ['climate.main'], notifyServices: ['notify.mobile_app_test_device'] }) });
-  const monitor = createMonitor({ store, now, ha: async path => path === '/error_log' ? '' : [{ entity_id: 'climate.main', state: 'unavailable' }],
+  const monitor = createMonitor({ store, now, ha: async path => path === '/core/logs' ? '' : [{ entity_id: 'climate.main', state: 'unavailable' }],
     reviewer: async () => { store.request({ method: 'health.save', config: { ...store.config(), enabled: false } }); return { severity: 'major', confidence: 1, summary: 'Major', nextStep: 'Inspect' }; },
     notify: () => { throw new Error('must not notify'); },
   });
@@ -219,7 +234,7 @@ test('disabling during delivery prevents sends to subsequent devices', async t =
   const { store, now, advance } = fixture(t);
   store.request({ method: 'health.save', config: config({ criticalEntities: ['climate.main'], notifyServices: ['notify.mobile_app_first', 'notify.mobile_app_second'] }) });
   const deliveries = [];
-  const monitor = createMonitor({ store, now, ha: async path => path === '/error_log' ? '' : [{ entity_id: 'climate.main', state: 'unavailable' }],
+  const monitor = createMonitor({ store, now, ha: async path => path === '/core/logs' ? '' : [{ entity_id: 'climate.main', state: 'unavailable' }],
     notify: async service => {
       deliveries.push(service);
       store.request({ method: 'health.save', config: { ...store.config(), enabled: false } });
@@ -232,7 +247,7 @@ test('disabling during delivery prevents sends to subsequent devices', async t =
 test('reenabling establishes a fresh baseline instead of alerting on disabled-period logs', async t => {
   const { store, now, advance } = fixture(t);
   let text = log(0);
-  const monitor = createMonitor({ store, now, ha: async path => path === '/error_log' ? text : [], notify: () => assert.fail('no alerts') });
+  const monitor = createMonitor({ store, now, ha: async path => path === '/core/logs' ? text : [], notify: () => assert.fail('no alerts') });
   await monitor.tick();
   store.request({ method: 'health.save', config: { ...store.config(), enabled: false } });
   text += log(1, 'database disk is full'); advance(60000); await monitor.tick();

@@ -144,7 +144,7 @@ export function createHealthStore({ stateDir = '/data/agent-terminal', sessions,
 // is part of the cursor but excluded from the incident fingerprint.
 export function parseLog(text) {
   const entries = [];
-  for (const line of text.split('\n')) {
+  for (const line of text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').split('\n')) {
     const match = /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)?)\s+(ERROR|WARNING|CRITICAL)\b.*?\[([^\]]+)\]\s*(.*)$/.exec(line);
     if (match) entries.push({ stamp: match[1], level: match[2], logger: match[3], message: redact(match[4]).slice(0, 3000) });
     else if (entries.length && /^\s|^Traceback|^[A-Za-z]+(?:Error|Exception):/.test(line)) entries.at(-1).message = (entries.at(-1).message + '\n' + redact(line)).slice(0, 3000);
@@ -222,9 +222,13 @@ export function supervisorToken() {
   if (process.env.SUPERVISOR_TOKEN) return process.env.SUPERVISOR_TOKEN;
   return readFileSync('/run/s6/container_environment/SUPERVISOR_TOKEN', 'utf8').trim();
 }
-export function createHA({ token, fetchImpl = fetch, base = 'http://supervisor/core/api' } = {}) {
+export function createHA({ token, fetchImpl = fetch, base = 'http://supervisor/core/api', supervisorBase = 'http://supervisor' } = {}) {
   return async (path, body, { timeout = 10000, signal, limit = 5 * 1024 * 1024 } = {}) => {
-    const response = await fetchImpl(base + path, { method: body ? 'POST' : 'GET', redirect: 'error',
+    // Core no longer writes an error_log file by default. Supervisor provides
+    // journal records; request a bounded tail instead of the complete boot log.
+    const logs = path === '/core/logs';
+    const url = logs ? supervisorBase + '/core/logs?lines=1000&no_colors' : base + path;
+    const response = await fetchImpl(url, { method: body ? 'POST' : 'GET', redirect: 'error',
       headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.any([AbortSignal.timeout(timeout), ...(signal ? [signal] : [])]) });
@@ -232,7 +236,7 @@ export function createHA({ token, fetchImpl = fetch, base = 'http://supervisor/c
     const chunks = []; let size = 0;
     for await (const chunk of response.body) { size += chunk.length; if (size > limit) throw new Error('Home Assistant response exceeds the health monitor limit.'); chunks.push(chunk); }
     const text = Buffer.concat(chunks).toString('utf8');
-    return path === '/error_log' ? text : JSON.parse(text);
+    return logs ? text : JSON.parse(text);
   };
 }
 export async function discover(ha) {
@@ -298,7 +302,7 @@ export function createMonitor({ store, ha, notify, reviewer = reviewIncident, no
       if (!config.enabled) { store.status({ enabled: false, checkedAt: now() }); return; }
       const revision = JSON.stringify(config);
       const current = () => JSON.stringify(store.config()) === revision;
-      const results = await Promise.allSettled([ha('/error_log'), ha('/states')]);
+      const results = await Promise.allSettled([ha('/core/logs'), ha('/states')]);
       if (!current()) return;
       const log = results[0].status === 'fulfilled' ? results[0].value : null;
       const states = results[1].status === 'fulfilled' ? results[1].value : null;
