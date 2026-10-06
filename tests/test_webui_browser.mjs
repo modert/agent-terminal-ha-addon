@@ -842,6 +842,9 @@ test('phone taps and composition with real browser events and xterm', {
   await until('testHub.health.incidents[0].snoozedUntil > Date.now()');
   await tap("Array.from(document.querySelectorAll('.health-actions button')).find(b => b.textContent === 'Investigate')");
   await until("!document.getElementById('paste').hidden && document.getElementById('paste-text').value.includes('read-only checks')");
+  // The draft opens immediately; fetching ttyd's token connects the selected
+  // terminal asynchronously. Check the new socket only after it has opened.
+  await until("testSocket?.args[0] === 'claude' && testSocket.readyState === 1");
   assert.equal(await evaluate("testSocket.args[0]"), 'claude');
   assert.equal(await evaluate("testHub.sessions.find(s => s.id === testSocket.args[2]).name"), 'Investigate: Thermostat unavailable');
   assert.deepEqual(await packets(), [], 'the investigation is prepared in a draft for the user to send');
