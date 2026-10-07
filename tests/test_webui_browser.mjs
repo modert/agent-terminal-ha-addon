@@ -399,7 +399,12 @@ test('phone taps and composition with real browser events and xterm', {
   // A desktop hides the keys until the switch asks for them; its clicks keep
   // the terminal focused, so typing carries on.
   async function click(expression) {
-    const rect = await evaluate(`(() => {
+    await until(`!!(${expression})`);
+    const rect = await evaluate(`(async () => {
+      (${expression}).scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      // A viewport resize or scrolling needs a frame before Chrome hit-tests
+      // the new coordinates. Resolve the node again after list updates.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const node = (${expression}), r = node.getBoundingClientRect();
       let x = r.x + r.width / 2, y = r.y + r.height / 2, frame = node.ownerDocument.defaultView.frameElement;
       while (frame) { const f = frame.getBoundingClientRect(); x += f.x; y += f.y; frame = frame.ownerDocument.defaultView.frameElement; }
@@ -490,6 +495,7 @@ test('phone taps and composition with real browser events and xterm', {
 
   async function actions(id) {
     await click(`document.querySelector('[data-session-action="${id}:actions"]')`);
+    await until(`document.querySelector('[data-session-action="${id}:actions"]')?.getAttribute('aria-expanded') === 'true'`);
   }
   const sessionAction = text => `[...document.querySelectorAll('.session-actions button')].find(b => b.textContent === ${JSON.stringify(text)})`;
   await click("document.getElementById('sessions-open')");
