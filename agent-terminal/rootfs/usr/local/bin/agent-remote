@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// Native Codex Remote control from a trusted local shell.
+import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+
+const modulePath = process.env.AGENT_REMOTE_CLIENT || '/opt/agent-terminal/remote-client.mjs';
+const { requestRemote, remoteRuntimeDir } = await import(pathToFileURL(modulePath));
+const [method, ...args] = process.argv.slice(2);
+try {
+  if (!['status', 'start', 'stop', 'pair', 'open'].includes(method) || args.length > 1 ||
+      (args.length && (method !== 'open' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(args[0])))) {
+    throw new Error('Usage: agent-remote status | start | stop | pair | open [CONVERSATION_ID]');
+  }
+  if (method === 'open') {
+    const status = await requestRemote('status');
+    if (!status.enabled) throw new Error('Enable Remote first with agent-remote start.');
+    const child = spawn('codex', ['--remote', 'unix://' + remoteRuntimeDir() + '/app-server.sock',
+      ...(args.length ? ['resume', args[0]] : [])], { stdio: 'inherit', env: { ...process.env, CODEX_HOME: '/data/codex' } });
+    child.on('error', error => { console.error(error.message); process.exitCode = 1; });
+    child.on('exit', code => { process.exitCode = code || 0; });
+  } else {
+    const result = await requestRemote(method);
+    if (method === 'pair') console.log('Pairing code: ' + result.manualPairingCode + '\nExpires: ' + new Date(result.expiresAt * 1000).toISOString());
+    else console.log(JSON.stringify(result, null, 2));
+  }
+} catch (error) { console.error(error.message); process.exitCode = 1; }

@@ -327,6 +327,20 @@ body.side-pane #split-toggle::before { display: none; }
   z-index: 10; padding: 24px; align-items: center; justify-content: center; touch-action: auto;
   background: rgba(6, 9, 14, 0.78);
 }
+#remote-sheet { z-index: 11; padding: 24px; align-items: center; justify-content: center; background: rgba(6, 9, 14, 0.78); touch-action: auto; }
+#remote-sheet [hidden] { display: none !important; }
+#remote-sheet header { display: flex; align-items: flex-start; gap: 12px; padding: 20px 20px 0; }
+#remote-title { margin: 0; font-size: 20px; }
+#remote-sheet .agent-button { min-height: 44px; flex: 0 0 auto; }
+.remote-body { padding: 16px 20px 20px; overflow-y: auto; font-size: 14px; line-height: 1.6; }
+.remote-body p { margin: 0 0 14px; color: #b7c2d2; }
+.remote-body strong { color: var(--fg); }
+.remote-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+#remote-pairing { padding: 14px; border: 1px solid #465665; border-radius: 8px; margin-bottom: 14px; }
+#remote-code { width: 100%; min-height: 44px; padding: 8px; margin: 8px 0; font: 22px monospace; letter-spacing: 2px; color: var(--fg); background: var(--key); border: 1px solid var(--line); border-radius: 6px; }
+#remote-status { color: #dac09b; margin: 0; }
+#remote-open { margin: 8px 16px; align-self: flex-start; }
+@media (max-width: 600px) { #remote-sheet { padding: 10px; } }
 .sessions-dialog {
   display: flex; flex-direction: column; width: 100%; max-width: 680px; max-height: 100%; min-height: 0;
   background: #141820; border: 1px solid #343c49; border-radius: 14px;
@@ -537,6 +551,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       </div>
       <div id="sessions-list"></div>
       <button type="button" id="sessions-unused" hidden>Show unused sessions</button>
+      <button type="button" class="agent-button" id="remote-open" aria-haspopup="dialog" aria-controls="remote-sheet">Phone remote</button>
     </div>
     <form id="sessions-form" hidden>
       <label id="sessions-name-row">Task name<input id="sessions-name" required maxlength="80" autocomplete="off" placeholder="Dashboard refresh"></label>
@@ -547,6 +562,29 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       <footer><button type="button" class="agent-button" id="sessions-back">Back</button><button type="submit" class="agent-button" id="sessions-save">Create session</button></footer>
     </form>
     <p id="sessions-status" role="status"></p>
+    </div>
+  </section>
+  <section id="remote-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="remote-title" hidden>
+    <div class="sessions-dialog">
+      <header><div class="sessions-heading"><h2 id="remote-title">Codex on your phone</h2></div><button type="button" class="agent-button" id="remote-done">Back</button></header>
+      <div class="remote-body">
+        <p>Start and guide Codex tasks on Home Assistant from the ChatGPT phone app.</p>
+        <p><strong id="remote-state">Checking…</strong><br><span id="remote-host">Agent Terminal on Home Assistant</span></p>
+        <div class="remote-actions">
+          <button type="button" class="agent-button" id="remote-start">Enable Remote</button>
+          <button type="button" class="agent-button" id="remote-pair" hidden>Pair a phone</button>
+          <button type="button" class="agent-button" id="remote-stop" hidden title="Disconnect Remote and end tasks running through it">Disable Remote</button>
+        </div>
+        <div id="remote-pairing" hidden>
+          <label for="remote-code">Pairing code</label>
+          <input id="remote-code" readonly autocomplete="off" spellcheck="false" aria-describedby="remote-expiry">
+          <p id="remote-expiry"></p>
+          <button type="button" class="agent-button" id="remote-copy">Copy code</button>
+          <p>Open Codex or Remote in ChatGPT on your phone, add a connection, and enter this code using the same account and workspace.</p>
+        </div>
+        <p>Phone tasks use a shared Remote session. To work in that session here, open Shell and run <code>agent-remote open</code>. Your existing terminal tasks keep running separately.</p>
+        <p id="remote-status" role="status"></p>
+      </div>
     </div>
   </section>
   <section id="health-sheet" role="dialog" aria-modal="true" aria-labelledby="health-title" hidden>
@@ -588,6 +626,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 <script>/*{{XTERM_JS}}*/</script>
 <script>/*{{FIT_JS}}*/</script>
 <script>/*{{SESSIONS_JS}}*/</script>
+<script>/*{{REMOTE_JS}}*/</script>
 <script>/*{{UPLOADS_JS}}*/</script>
 <script>/*{{VOICE_JS}}*/</script>
 <script>/*{{HEALTH_JS}}*/</script>
@@ -729,7 +768,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   workspaceEl.addEventListener('change', function () { switchSession(selectedAgent, workspaceEl.value); });
   window.addEventListener('keydown', function (e) {
     if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !/^Digit[123]$/.test(e.code)) return;
-    if (!document.getElementById('sessions-sheet').hidden) return;
+    if (!document.getElementById('sessions-sheet').hidden || !document.getElementById('remote-sheet').hidden) return;
     e.preventDefault(); e.stopImmediatePropagation();
     switchSession(sessionConfig.agents[Number(e.code.slice(-1)) - 1].id, selectedWorkspace);
   }, true);
@@ -834,7 +873,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       s.send(enc.encode(JSON.stringify({ AuthToken: token, columns: term.cols, rows: term.rows })));
       if (sessionManager) sessionManager.connect(token);
       doFit();
-      if (document.getElementById('sessions-sheet').hidden && !otherPaneHasKeyboard()) term.focus();
+      if (document.getElementById('sessions-sheet').hidden && document.getElementById('remote-sheet').hidden && !otherPaneHasKeyboard()) term.focus();
     };
 
     s.onmessage = function (ev) {
@@ -1556,7 +1595,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     return !text || files.some(function (f) { return f.name && text.indexOf(f.name) !== -1; }) ? files : [];
   }
   document.addEventListener('paste', function (e) {
-    if (document.getElementById('sessions-sheet').contains(e.target)) return;
+    if (document.getElementById('sessions-sheet').contains(e.target) || document.getElementById('remote-sheet').contains(e.target)) return;
     var files = pastedFiles(e.clipboardData);
     if (!files.length) return;
     e.preventDefault();
@@ -2259,6 +2298,10 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     }
   });
   notifySelection();
+  if (window.AgentRemote && sessionManager) new window.AgentRemote({
+    request: sessionManager.request,
+    browse: function () { sessionManager.open(); }
+  });
   if (choosingPane && sessionManager) {
     document.body.classList.add('choosing-pane'); sessionManager.open();
     // The empty pane only loads metadata. It never attaches to the left

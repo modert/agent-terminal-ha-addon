@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.11.0
+- Enable native Codex Remote from **Sessions → Phone remote**, then generate a
+  short-lived pairing code for the ChatGPT phone app. Remote is off until
+  enabled, and its preference survives add-on updates.
+- Supervise a foreground Codex server, reconnect after server failures, and
+  use OpenAI's relay without adding a public listener or changing Codex login,
+  approval settings, or independent terminal sessions.
+- Use `agent-remote open` in Shell to work on the shared Remote server, or
+  `agent-remote open CONVERSATION_ID` to join an exact saved conversation.
+
 ## 2.10.0
 - Add **Ollama** as a general local coding session beside Claude and ChatGPT.
   Choose an installed local model, switch with **/model**, and use files,

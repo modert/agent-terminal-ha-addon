@@ -168,6 +168,48 @@ agent-session --agent ollama --workspace homeassistant
 
 ## Switching agents and workspaces
 
+### Codex from the ChatGPT phone app
+
+Open **Sessions → Phone remote → Enable Remote**. Once the status says
+**Connected**, choose **Pair a phone**. In the ChatGPT phone app, open Codex
+or Remote, add a connection, and enter the displayed code using the same
+ChatGPT account and workspace. Codes expire in about ten minutes; generate
+a fresh one when you are ready to connect. Your account and app must offer
+the manual pairing flow. Native Remote is experimental; OpenAI's general
+[Remote setup guide](https://learn.chatgpt.com/docs/remote-connections)
+documents desktop hosts, while the add-on uses Codex's native Remote protocol.
+
+Remote uses your existing Codex ChatGPT login. API-key-only login cannot
+register a Remote host. The shared server runs tasks inside the add-on with
+its existing Home Assistant tools, permissions, and sandbox settings. Its
+local transports are private Unix sockets in Codex's reserved socket
+directory; the phone connects through OpenAI's authenticated relay. No
+additional port forwarding or API key is needed.
+
+The enabled setting is stored in `/data/agent-terminal/remote.json`. The
+service reconnects after a server failure and starts again after an add-on
+boot when enabled. **Disable Remote** disconnects phone access and ends tasks
+on the Remote server. Existing ordinary Claude, ChatGPT, and Shell terminal
+tasks keep their independent processes.
+
+To use the same server from Agent Terminal, open **Shell** and run:
+
+```sh
+agent-remote open                         # start a conversation on the shared server
+agent-remote open CONVERSATION_ID         # join an exact saved conversation
+```
+
+New shared-server conversations are available to paired phones. Opening the
+same shared conversation from a phone or terminal attaches to that server's
+running work. Existing ordinary ChatGPT terminals are independent; opening
+their saved history through Remote does not take control of their running
+process. Finish or stop that terminal before resuming its history remotely.
+
+Shell commands `agent-remote status`, `start`, `pair`, and `stop` provide the
+same controls. Pairing codes are only returned to the requesting browser or
+shell, and are never stored in status snapshots or settings. Read
+`/run/agent-terminal/remote-status.json` to diagnose the current connection.
+
 The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
 **Ollama**, or **Shell**. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
 ChatGPT, and **Ctrl+Shift+3** opens Shell. Use the buttons if your browser or OS reserves
@@ -653,10 +695,11 @@ survive switching back and forth.
 ### Checking the Codex adapter
 
 With Python 3.11+, Bash, Node, and the Codex version pinned in `codex.sh` on
-PATH, install the MCP server's dependencies and run from the repository root:
+PATH, install the MCP and Remote clients' dependencies and run from the repository root:
 
 ```sh
 npm install --prefix agent-terminal/rootfs/opt/ha-mcp --no-package-lock
+npm ci --prefix agent-terminal/rootfs/opt/agent-terminal --ignore-scripts
 python3 -m unittest discover -s tests -v
 node --test tests/test_*.mjs
 ```
@@ -697,6 +740,12 @@ photo arrives as a 2048-pixel JPEG.
 `tests/container-smoke.sh` is only for these disposable test containers.
 Live ChatGPT sign-in and operations against a real HA instance are manual
 acceptance checks after installation.
+
+`tests/test_remote.mjs` uses a simulated Codex child and an isolated Unix
+WebSocket server to check startup, persisted enablement, failure recovery,
+protocol initialization, and private pairing replies. It makes no model or
+relay requests. The browser suite checks the Remote dialog, phone layout,
+keyboard focus, and clearing a pairing code when the dialog closes.
 
 `tests/test_voice.mjs` checks the speech provider selection, PCM transport,
 limits, cancellation, timeouts, and the control stream without contacting

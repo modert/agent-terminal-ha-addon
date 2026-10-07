@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createWorkspaceStore } from './workspaces.mjs';
+import { requestRemote } from './remote-client.mjs';
+
 import { createHealthStore, createHA, discover, reviewIncident, validateConfig, supervisorToken } from './health.mjs';
 
 const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex|shell|ollama|custom))$/;
@@ -208,6 +210,8 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
   const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list(), health: health.snapshot() });
   function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid request.');
+    if (typeof input.method === 'string' && input.method.startsWith('remote/')) return requestRemote(input.method.slice(7));
+
     if (input.method === 'health.discover') return discover(createHA({ token: supervisorToken() }));
     if (input.method === 'health.test') {
       const config = validateConfig({ ...health.config(), enabled: true });

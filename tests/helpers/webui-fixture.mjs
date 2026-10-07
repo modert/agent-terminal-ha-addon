@@ -14,6 +14,7 @@ const mock = `<script>
           ({ id: 'agent-homeassistant-' + agent, name: 'Main', workspace: 'homeassistant', agent, stopped: false, running: false })),
         { id: 'session-' + 'b'.repeat(32), name: 'Session navigation', description: 'Polish the provider chooser',
           workspace: 'addon', agent: 'claude', stopped: false, running: false }],
+      remote: { enabled: false, status: 'disabled' },
       health: { config: { enabled: false, reviewer: 'rules', ollamaUrl: '', model: '', agentId: '', notifyServices: [], criticalEntities: [],
         delayMinutes: 10, repeatCount: 3, cooldownMinutes: 60, investigationAgent: 'codex' }, status: {}, incidents: [] },
       controls: [],
@@ -82,6 +83,13 @@ const mock = `<script>
         }
         if (text[0] === '{') { testHub.publish(); return; }
         const request = JSON.parse(text.slice(1));
+        if (request.method.startsWith('remote/')) {
+          if (request.method === 'remote/start') testHub.remote = { enabled: true, status: 'connected', serverName: 'Test Home Assistant' };
+          if (request.method === 'remote/stop') testHub.remote = { enabled: false, status: 'disabled' };
+          const result = request.method === 'remote/pair'
+            ? { manualPairingCode: '123-456', expiresAt: Math.floor(Date.now() / 1000) + 600 } : testHub.remote;
+          this.packet({ request: request.request, result }); return;
+        }
         if (request.method.startsWith('health.')) {
           let result = testHub.health;
           if (request.method === 'health.discover') result = { agents: [{ id: 'conversation.test_review', name: 'Test reviewer' }], notifyServices: ['notify.mobile_app_test_device'] };

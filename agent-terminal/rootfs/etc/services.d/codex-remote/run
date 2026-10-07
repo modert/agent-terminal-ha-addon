@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bash
+set -euo pipefail
+export CODEX_HOME=/data/codex
+if [ -r /run/s6/container_environment/SUPERVISOR_TOKEN ]; then
+    export SUPERVISOR_TOKEN="$(cat /run/s6/container_environment/SUPERVISOR_TOKEN)"
+fi
+exec node /opt/agent-terminal/remote.mjs
