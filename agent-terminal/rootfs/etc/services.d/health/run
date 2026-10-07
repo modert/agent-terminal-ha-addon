@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bash
+# This worker stays idle until Health monitoring is enabled in the web UI.
+exec node /opt/agent-terminal/health.mjs run

@@ -53,6 +53,7 @@ body { position: fixed; inset: 0; }
   background: var(--key); color: var(--fg); font: inherit; font-size: 16px;
 }
 #agents { display: flex; gap: 4px; }
+#agents .agent-button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-button {
   min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--key); color: var(--fg); font: inherit; font-size: 13px;
@@ -311,9 +312,9 @@ body.side-pane #split-toggle::before { display: none; }
 #split-toggle[hidden] { display: none; }
 @media (max-width: 560px) {
   #agents { flex-basis: auto; flex: 1; }
-  #agents .agent-button { padding: 0 8px; font-size: 12px; }
+  #agents .agent-button { padding: 0 4px; font-size: 12px; }
   #sessions-open, #split-toggle { order: 2; }
-  #sessions-open { flex: 0 0 auto; max-width: min(150px, calc(100% - 220px)); padding: 0 8px; }
+  #sessions-open { flex: 0 0 auto; max-width: min(125px, calc(100% - 236px)); padding: 0 8px; }
   #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
   #app.compact-height #workspace { width: 0; }
   #app.compact-height #agents .agent-button { padding: 0 5px; font-size: 12px; }
@@ -391,6 +392,27 @@ body.side-pane #split-toggle::before { display: none; }
 #sessions-status:empty { display: none; }
 #sessions-form footer { display: flex; justify-content: flex-end; gap: 8px; }
 #sessions-save { background: var(--accent); color: var(--bg); }
+#health-sheet { position: fixed; inset: 0; z-index: 30; padding: 20px; background: #0009; display: grid; place-items: center; }
+#health-sheet[hidden] { display: none; }
+#health-sheet [hidden] { display: none !important; }
+#health-sheet .sessions-dialog { width: min(760px, 100%); max-height: 94dvh; overflow: hidden; }
+#health-sheet header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; }
+#health-sheet h2 { margin: 0; font-size: 20px; }
+.health-scroll { min-height: 0; overflow-y: auto; padding: 0 20px 20px; }
+#health-form label { display: block; margin: 14px 0; font-size: 13px; }
+#health-form label input, #health-form label select, #health-form textarea { width: 100%; box-sizing: border-box; margin-top: 6px; }
+#health-form label input[type=checkbox] { width: auto; margin-right: 8px; }
+#health-form textarea { min-height: 75px; padding: 10px; border: 1px solid #414e60; border-radius: 6px; background: #171c24; color: var(--fg); font: inherit; }
+#health-form p, #health-summary, #health-status { color: #aeb4bf; font-size: 13px; line-height: 1.5; }
+.health-thresholds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.health-incident { padding: 14px; margin: 12px 0; border: 1px solid #414e60; border-radius: 8px; overflow-wrap: anywhere; }
+.health-incident h3 { margin: 0; font-size: 14px; }
+.health-incident p, .health-incident details { font-size: 13px; line-height: 1.5; }
+.health-incident pre { white-space: pre-wrap; font-size: 12px; }
+.health-meta { color: #aeb4bf; }
+.health-selected { border-color: var(--accent); }
+.health-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (max-width: 560px) { #health-sheet { padding: 8px; } .health-scroll { padding: 0 12px 12px; } }
 #sessions-sheet .session-danger { background: #42282d; border-color: #a05e66; color: #ffb6bd; }
 @media (max-width: 560px) {
   #sessions-sheet { padding: 10px; }
@@ -506,7 +528,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   <input type="file" id="upload-input" multiple tabindex="-1" aria-hidden="true">
   <section id="sessions-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sessions-title" aria-describedby="sessions-subtitle" hidden>
     <div class="sessions-dialog">
-    <header><div class="sessions-heading"><h2 id="sessions-title">Sessions</h2><p id="sessions-subtitle">Pick a task to continue.</p></div><button type="button" class="agent-button" id="sessions-done">Done</button></header>
+    <header><div class="sessions-heading"><h2 id="sessions-title">Sessions</h2><p id="sessions-subtitle">Pick a task to continue.</p></div><button type="button" class="agent-button" id="health-open">Health</button><button type="button" class="agent-button" id="sessions-done">Done</button></header>
     <div id="sessions-browse">
       <p id="sessions-context" hidden></p>
       <div class="sessions-toolbar">
@@ -527,6 +549,40 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     <p id="sessions-status" role="status"></p>
     </div>
   </section>
+  <section id="health-sheet" role="dialog" aria-modal="true" aria-labelledby="health-title" hidden>
+    <div class="sessions-dialog">
+      <header><h2 id="health-title">Health &amp; alerts</h2><button type="button" class="agent-button" id="health-done">Done</button></header>
+      <div class="health-scroll">
+        <p id="health-summary"></p>
+        <details id="health-settings" open><summary>Monitoring settings</summary>
+          <form id="health-form">
+            <label><input type="checkbox" id="health-enabled">Enable background monitoring</label>
+            <label>Review agent<select id="health-reviewer"><option value="rules">Rules only</option><option value="ollama">Local Ollama model</option><option value="homeassistant">Home Assistant conversation agent</option></select></label>
+            <div id="health-ollama-fields" hidden>
+              <label>Ollama server<input type="url" id="health-ollamaUrl" placeholder="http://ollama-server:11434" autocomplete="off"></label>
+              <label>Local model<input id="health-model" placeholder="Installed model name" autocomplete="off"></label>
+              <p>Reviews go to this server. Choose a locally hosted model; there is no automatic cloud fallback.</p>
+            </div>
+            <label id="health-agent-row" hidden>Conversation agent<select id="health-agentId"></select><p>Choose an agent with Home Assistant control turned off. Its configured provider receives incident evidence.</p></label>
+            <label>Notification devices <span>(optional)</span><select id="health-notifyServices" multiple size="3"></select></label>
+            <p>Select Companion app devices for push alerts. Leave empty to review incidents here.</p>
+            <label>Important entities <span>(one entity ID per line)</span><textarea id="health-criticalEntities" placeholder="climate.main_thermostat" spellcheck="false"></textarea></label>
+            <div class="health-thresholds">
+              <label>Failure delay (minutes)<input type="number" id="health-delayMinutes" min="1" max="1440" required></label>
+              <label>Repeated errors<input type="number" id="health-repeatCount" min="2" max="100" required></label>
+              <label>Alert cooldown (minutes)<input type="number" id="health-cooldownMinutes" min="5" max="1440" required></label>
+            </div>
+            <label>Investigation agent<select id="health-investigationAgent"><option value="codex">ChatGPT</option><option value="claude">Claude</option><option value="ollama">Ollama</option></select></label>
+            <p>Investigate opens a named session with a draft to review and send. Monitoring reviews never repair or restart anything.</p>
+            <div class="health-actions"><button type="submit" class="agent-button">Save settings</button><button type="button" class="agent-button" id="health-test">Test saved reviewer</button></div>
+            <p>The test uses a synthetic incident and sends no real logs.</p>
+          </form>
+        </details>
+        <p id="health-status" role="status"></p>
+        <div id="health-incidents"></div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>/*{{XTERM_JS}}*/</script>
@@ -534,6 +590,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 <script>/*{{SESSIONS_JS}}*/</script>
 <script>/*{{UPLOADS_JS}}*/</script>
 <script>/*{{VOICE_JS}}*/</script>
+<script>/*{{HEALTH_JS}}*/</script>
 <script>
 /* Mobile-friendly ttyd client for the Agent Terminal add-on.
  *
@@ -548,7 +605,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var tokenUrl = location.protocol + '//' + location.host + base + '/token';
   // Replaced at boot, and whenever agent-workspace creates a workspace.
   var sessionConfig = /*{{SESSION_CONFIG}}*/ null || {
-    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
     workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
     defaultAgent: 'claude'
   };
@@ -594,7 +651,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   if (!hasWorkspace(selectedWorkspace)) selectedWorkspace = 'homeassistant';
   var selectedSession = queryArgs.length ? (queryArgs[2] || '') : (savedSession.id || '');
   if (!/^session-[a-f0-9]{32}$/.test(selectedSession)) selectedSession = '';
-  var sessionManager = null, sessionStopped = false;
+  var sessionManager = null, sessionStopped = false, healthManager = null;
   function currentSession() {
     return { id: selectedSession || 'agent-' + selectedWorkspace + '-' + selectedAgent, agent: selectedAgent, workspace: selectedWorkspace };
   }
@@ -960,7 +1017,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
     // Legacy terminal input loses Shift on Enter. Both agent editors accept
     // Ctrl+J as a newline, so a physical Shift+Enter must send LF, not CR.
-    if ((selectedAgent === 'claude' || selectedAgent === 'codex') &&
+    if ((selectedAgent === 'claude' || selectedAgent === 'codex' || selectedAgent === 'ollama') &&
         e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       fixedKey('\n');
@@ -2188,6 +2245,17 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
         var previous = sock; sock = null; if (previous) previous.close();
         showOverlay(record ? 'Session stopped. Open Sessions to start it.' : 'Session unavailable. Choose another in Sessions.');
       } else if (sessionStopped) { sessionStopped = false; retry = 500; connect(); }
+    },
+    healthChanged: function (value) { if (healthManager) healthManager.update(value); }
+  });
+  if (window.AgentHealth && sessionManager) healthManager = new window.AgentHealth({
+    request: sessionManager.request,
+    closeSessions: function () { sessionManager.close(false); },
+    focus: function () { term.focus(); },
+    investigate: function (result) {
+      // An investigation already open beside this pane owns its own draft.
+      if (switchSession(result.session.agent, result.session.workspace, result.session.id) === 'other') return;
+      openPaste(false); pasteBox.value = result.prompt; pasteBox.focus();
     }
   });
   notifySelection();

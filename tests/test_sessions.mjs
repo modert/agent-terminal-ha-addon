@@ -86,6 +86,26 @@ test('conversation hooks validate launch ownership, track explicit conversation 
   assert.throws(() => store.request({ method: 'remember', session: id, conversationId: a }), /Unknown session operation/, 'the browser cannot forge hook callbacks');
 });
 
+test('Ollama sessions persist exact conversations independently of ChatGPT', t => {
+  const { store, run, paths, root } = fixture(t);
+  const local = store.create({ name: 'Local task', agent: 'ollama', workspace: 'homeassistant' });
+  store.ensure('ollama', 'homeassistant', local.id, 'exec sleep 120');
+  const token = run('show-environment', '-t', '=' + local.id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+  const conversation = '550e8400-e29b-41d4-a716-446655440010';
+  assert.equal(store.remember(local.id, 'codex', token, { hook_event_name: 'SessionStart', source: 'startup', session_id: conversation }), false);
+  const hook = new URL('../agent-terminal/rootfs/opt/agent-terminal/session-hook.mjs', import.meta.url).pathname;
+  execFileSync(process.execPath, [hook, 'codex'], {
+    input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', session_id: conversation }),
+    env: { ...process.env, AGENT: 'ollama', AGENT_TERMINAL_STATE_DIR: root, AGENT_TERMINAL_SESSION_ID: local.id, AGENT_TERMINAL_LAUNCH_ID: token },
+  });
+  assert.equal(store.get(local.id).conversationId, conversation);
+  store.stop(local.id); store.start(local.id);
+  const reopened = createSessionStore(paths);
+  reopened.ensure('ollama', 'homeassistant', local.id, 'exec sleep 120');
+  assert.equal(run('show-environment', '-t', '=' + local.id, 'AGENT_CONVERSATION_ID'), 'AGENT_CONVERSATION_ID=' + conversation);
+  assert.equal(reopened.get('agent-homeassistant-ollama').agent, 'ollama');
+});
+
 test('provider launchers resume only their assigned conversation and preserve argument boundaries', t => {
   const root = mkdtempSync(join(tmpdir(), 'resume-adapters-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -178,7 +198,7 @@ test('session operations reject paths, commands, mismatched providers and corrup
   assert.throws(() => store.request({ method: 'exec', command: 'id' }), /Unknown session operation/);
   const file = join(root, 'sessions', record.id + '.json');
   writeFileSync(file, '{broken');
-  assert.equal(store.list().length, 3, 'a corrupt named session does not hide Main or Shell');
+  assert.equal(store.list().length, 4, 'a corrupt named session does not hide the built-in providers');
   assert.equal(readFileSync(file, 'utf8'), '{broken');
 });
 

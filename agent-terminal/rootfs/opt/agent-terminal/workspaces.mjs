@@ -68,7 +68,7 @@ export function createWorkspaceStore({
   }
   function refreshUI() {
     const options = JSON.parse(readFileSync(optionsPath, 'utf8'));
-    const agents = [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }];
+    const agents = [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }];
     if (options.web_command) agents.push({ id: 'custom', name: 'Custom' });
     const config = { agents, workspaces: list(), defaultAgent: options.web_command ? 'custom' : (options.agent || 'claude') };
     const json = JSON.stringify(config).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');

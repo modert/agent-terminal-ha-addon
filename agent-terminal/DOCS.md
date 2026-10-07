@@ -10,6 +10,7 @@ Supported agents:
 |---|---|---|
 | `claude` | Anthropic's [Claude Code](https://github.com/anthropics/claude-code) | Your normal Claude account (subscription) - no API key |
 | `codex` | [OpenAI Codex](https://developers.openai.com/codex/cli/) (ChatGPT) | ChatGPT account with Codex access, using device code sign-in; API key also supported |
+| `ollama` | Codex terminal connected to your local Ollama server | No ChatGPT account or API key; select an installed local model |
 
 The add-on is built around per-agent adapters, so more can be added - see
 [Adding an agent](#adding-an-agent).
@@ -27,7 +28,7 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
 
 ## Setup
 
-1. **Configuration tab**: choose the initial agent, `agent: claude` or `agent: codex`. Add your SSH
+1. **Configuration tab**: choose the initial agent, `agent: claude`, `agent: codex`, or `agent: ollama`. Add your SSH
    public key(s) to `authorized_keys` if you want SSH access, or leave it empty
    to use the web panel only. Leave `web_command` empty to launch the selected
    agent.
@@ -107,6 +108,40 @@ approval and sandbox settings apply. Start with a read-only request such as
 "List my Home Assistant lights and their current state using the homeassistant
 tools."
 
+### Local Ollama sessions
+
+Choose **Ollama** in the top bar or create a named session with provider
+**Ollama**. Enter your server URL if it is not already configured. The first
+connection uses your Health review server/model as its starting selection.
+Pick an installed model by number or name, or press Enter for the saved
+selection. Type `s` at the picker to change servers. A failed connection
+offers retry or quit; quitting stops that session until you choose Start.
+
+Use Ollama 0.13.3 or newer, which provides the Responses API. This is an
+interactive coding session: the existing Codex terminal connects
+to Ollama for inference and can read files, edit code, run commands, and use
+the Home Assistant MCP tools. No ChatGPT account or API key is needed. Only
+installed local models advertising completion and tool support are listed;
+cloud-backed models are excluded and models are never downloaded. The local
+model catalog also supplies the terminal's **/model** picker. Models with
+vision support can use attached images. Thinking starts off; supported models
+can enable it through the model picker.
+
+Local Codex settings and transcripts live in `/data/ollama/codex`, separately
+from ChatGPT's `/data/codex`. Startup server/model selections are remembered
+per terminal under `/data/agent-terminal/ollama`. Named local conversations
+resume after Stop/Start and updates, and work in split view. File operations
+use the local session's permission settings. Configure at least a 64K context
+window on the Ollama server for coding, as described in
+[Ollama's Codex guide](https://docs.ollama.com/integrations/codex). Response
+quality and speed depend on your model and hardware.
+
+From SSH, open the same general local session with:
+
+```sh
+agent-session --agent ollama --workspace homeassistant
+```
+
 ## What you get
 
 - **Persistent login** - stored under `/data`, survives restarts/updates.
@@ -119,6 +154,9 @@ tools."
 - **Files and images for the agent** - paste a screenshot, drop a file, or
   pick a photo on your phone, and it lands in the prompt (see
   [Attaching files and images](#attaching-files-and-images-sidebar-panel)).
+- **Optional health alerts** - monitor new Home Assistant errors and important
+  entities, choose a reviewer, and receive major-issue prompts on your phone
+  (see [Health monitoring and alerts](#health-monitoring-and-alerts)).
 - **Built-in `homeassistant` MCP server** - gives the agent structured tools
   instead of hand-rolled `curl`: `ha_list_entities`, `ha_get_entity_state`,
   `ha_call_service`, `ha_render_template`, `ha_list_services`,
@@ -131,8 +169,8 @@ tools."
 ## Switching agents and workspaces
 
 The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
-or **Shell**; keyboard shortcuts are **Ctrl+Shift+1**, **Ctrl+Shift+2**, and
-**Ctrl+Shift+3** respectively. Use the buttons if your browser or OS reserves
+**Ollama**, or **Shell**. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
+ChatGPT, and **Ctrl+Shift+3** opens Shell. Use the buttons if your browser or OS reserves
 a shortcut. The workspace selector chooses the task folder. The keyboard
 button at the right end shows or hides the on-screen helper keys (see
 [Helper keys on a desktop](#helper-keys-on-a-desktop)). The **⌃** button
@@ -410,13 +448,63 @@ Microphone recording is limited to two minutes. Closing the draft, switching
 sessions, stopping the session, or hiding the page cancels recording and any
 pending transcription. Split panes keep their voice drafts separate.
 
+## Health monitoring and alerts
+
+Open **Sessions → Health**. Monitoring starts off. Choose the Companion app
+notification service for each phone, optionally list important entity IDs
+(one per line), and choose the agent that should review incidents. Save your
+settings, use **Test saved reviewer** to check the connection with synthetic
+evidence, then enable monitoring and save again. The test sends no alert and
+does not include your logs.
+
+The reviewer can be **Rules only**, **Local Ollama**, or a **Home Assistant
+conversation agent**. Ollama connects directly to your server, for example
+`http://YOUR_OLLAMA_HOST:11434`, and an already installed local model. It never
+downloads a model or falls back to a cloud provider. The review request has
+no tools. Home Assistant lists only conversation agents with Home Assistant
+control turned off, and checks that setting before every review. That agent's
+configured provider receives the evidence, so choose a local provider if you
+want reviews to stay local. Claude, ChatGPT, or Ollama can be selected separately for
+investigations.
+
+The worker checks once a minute using the latest 1,000 Supervisor journal
+records from Home Assistant Core. Enabling establishes the current log as a
+baseline; older errors are ignored. Repeated new errors are grouped and
+reviewed after the configured count and delay. Important entities must remain
+missing, unknown, or unavailable for the delay. New critical errors and known
+storage/configuration failures are eligible immediately. Those failures and
+important entity outages remain major even if a model downgrades them.
+Other model assessments send alerts only for major severity with at least
+80% reported confidence. That confidence is the model's assessment, not a
+measured probability. Rules only, or a failed reviewer, alerts on qualifying
+recurring errors too; select a reviewer to filter limited-impact failures.
+
+Alerts have **Investigate**, **Snooze 1h**, and **Dismiss** actions. Investigate
+opens the incident in the panel; choose **Investigate** there to open a named
+Claude, ChatGPT, or Ollama session with a diagnostic draft. For Ollama, finish
+the terminal's model selection first. Review the draft and press **Send**.
+Existing investigation sessions are reused. The monitor itself
+does not restart services or change Home Assistant state. Snooze pauses
+reminders for an hour; Dismiss silences that incident until it recovers and
+recurs. The cooldown controls reminders, and a stable notification tag replaces
+earlier alerts. Recovered entities clear their alerts. Log incidents clear
+after a quiet period and are labelled **Quiet**, which does not prove that
+the underlying device recovered.
+
+Settings, incidents, acknowledgements, and delivery history persist under
+`/data/agent-terminal/health`. Common credentials are redacted before logs are
+saved or reviewed, and incident text is displayed as plain text. Evidence
+is bounded to the latest log entries and 100 incidents. The monitor depends
+on this add-on and Home Assistant's API and notification services being
+available; it cannot send an alert while Home Assistant itself is offline.
+
 ## Options
 
 | Option | Default | Description |
 |---|---|---|
 | `authorized_keys` | `[]` | SSH public keys allowed to log in. Empty = SSH effectively unusable (no keys accepted). |
 | `ssh_port` | `2202` | Port sshd listens on. Also update the add-on's `ports` mapping if you change this. |
-| `agent` | `claude` | Initial choice: `claude` (Claude Code) or `codex` (ChatGPT via OpenAI Codex). Switch live with the panel buttons. |
+| `agent` | `claude` | Initial choice: `claude` (Claude Code), `codex` (ChatGPT), or `ollama` (local models). Switch live with the panel buttons. |
 | `web_command` | *(empty)* | Optional trusted shell command for the separate Custom session and initial web selection. Use the Shell button for a plain shell. |
 | `mobile_ui` | `true` | Serve the terminal with agent/workspace controls and touch support. Set `false` for ttyd's stock client without these controls. |
 | `git_user_name` / `git_user_email` | `""` | Optional system-wide git identity for commits made from this add-on. |
@@ -616,6 +704,20 @@ Home Assistant. `tests/test_voice_client.mjs` covers microphone permissions,
 audio resampling, cleanup and late transcriptions. The browser suite uses
 Chromium's synthetic microphone with real Web Audio to verify that dictation
 fills a draft and only **Send** submits it.
+
+`tests/test_health.mjs` covers baseline cursors, recurring errors, entity
+outages and recovery, secret redaction, reviewer validation and tool-free
+requests, cloud-model rejection, failed reviews, cooldown/delivery history,
+notification actions, persisted acknowledgements, and investigation sessions.
+It uses temporary stores and mock APIs. The browser suite checks settings,
+plain-text evidence, phone layout, snooze, and an investigation draft that
+stays unsent. Run the worker checks with `node --test tests/test_health.mjs`.
+
+`tests/test_ollama.mjs` checks installed-model discovery, cloud and unsupported
+model rejection, server validation, remembered per-session selections, and
+launcher credential isolation. Session tests verify exact local conversation
+resumption. Browser checks open general and named Ollama sessions and verify
+the four-provider phone layout. These suites do not contact a real model.
 
 ### Checking the terminal controls
 

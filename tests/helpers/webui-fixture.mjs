@@ -10,16 +10,18 @@ const mock = `<script>
       workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' },
         { id: 'addon', name: 'Agent Terminal', directory: '/addons/agent-terminal' }],
       sessions: JSON.parse(localStorage.getItem('test-sessions') || 'null') || [
-        ...['claude', 'codex', 'shell'].map(agent =>
+        ...['claude', 'codex', 'shell', 'ollama'].map(agent =>
           ({ id: 'agent-homeassistant-' + agent, name: 'Main', workspace: 'homeassistant', agent, stopped: false, running: false })),
         { id: 'session-' + 'b'.repeat(32), name: 'Session navigation', description: 'Polish the provider chooser',
           workspace: 'addon', agent: 'claude', stopped: false, running: false }],
+      health: { config: { enabled: false, reviewer: 'rules', ollamaUrl: '', model: '', agentId: '', notifyServices: [], criticalEntities: [],
+        delayMinutes: 10, repeatCount: 3, cooldownMinutes: 60, investigationAgent: 'codex' }, status: {}, incidents: [] },
       controls: [],
       publish() {
         localStorage.setItem('test-sessions', JSON.stringify(this.sessions));
         for (const socket of this.controls) if (socket.readyState === 1) socket.packet({ type: 'sessions', sessions: this.sessions,
-          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
-          workspaces: this.workspaces });
+          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
+          workspaces: this.workspaces, health: this.health });
       }
     };
     window.WebSocket = class {
@@ -80,6 +82,20 @@ const mock = `<script>
         }
         if (text[0] === '{') { testHub.publish(); return; }
         const request = JSON.parse(text.slice(1));
+        if (request.method.startsWith('health.')) {
+          let result = testHub.health;
+          if (request.method === 'health.discover') result = { agents: [{ id: 'conversation.test_review', name: 'Test reviewer' }], notifyServices: ['notify.mobile_app_test_device'] };
+          else if (request.method === 'health.test') result = { severity: 'major', confidence: 0.95, summary: 'Synthetic integration failure', nextStep: 'Inspect' };
+          else if (request.method === 'health.save') testHub.health.config = request.config;
+          else if (request.method === 'health.investigate') {
+            const item = testHub.health.incidents.find(i => i.id === request.incident);
+            const record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: 'Investigate: ' + item.title,
+              description: 'Review a health incident', agent: testHub.health.config.investigationAgent, workspace: 'homeassistant', stopped: false, running: false };
+            testHub.sessions.push(record); result = { session: record, prompt: 'Investigate this incident using read-only checks: ' + item.evidence };
+          } else if (request.method === 'health.snooze') testHub.health.incidents.find(i => i.id === request.incident).snoozedUntil = Date.now() + 3600000;
+          else if (request.method === 'health.dismiss') testHub.health.incidents.find(i => i.id === request.incident).dismissed = true;
+          this.packet({ request: request.request, result }); testHub.publish(); return;
+        }
         let record = testHub.sessions.find(s => s.id === request.session);
         if (request.method === 'create') {
           record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: request.name, description: request.description || '',
@@ -91,7 +107,7 @@ const mock = `<script>
         else if (request.method === 'delete') testHub.sessions = testHub.sessions.filter(s => s.id !== request.session);
         if (request.method !== 'list') this.packet({ request: request.request, result: record });
         else this.packet({ request: request.request, result: { sessions: testHub.sessions,
-          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+          agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
           workspaces: testHub.workspaces } });
         testHub.publish();
       }

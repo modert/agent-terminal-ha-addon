@@ -10,7 +10,7 @@ ENV LANG=C.UTF-8 \
 
 # Agent CLIs baked into the image: space-separated adapter names from
 # rootfs/opt/agents. The add-on's `agent` option picks the initial agent.
-ARG AGENTS="claude codex"
+ARG AGENTS="claude codex ollama"
 
 # System deps: node/npm for the agent CLIs, openssh for VS Code Remote-SSH,
 # ttyd for the Ingress web terminal, gh for GitHub, plus the usual dev CLIs.
@@ -62,6 +62,9 @@ RUN chmod +x /usr/local/bin/agent-install \
     && rm -rf /root/.npm /tmp/*
 
 COPY rootfs /
+
+RUN node --check /opt/agent-terminal/health.mjs \
+    && node --check /opt/agent-terminal/ollama.mjs
 
 # Built-in Home Assistant MCP server (structured HA tools for the agent).
 RUN cd /opt/ha-mcp \
