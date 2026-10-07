@@ -5,8 +5,8 @@ import { createSessionStore } from './sessions.mjs';
 
 const id = process.env.AGENT_TERMINAL_SESSION_ID;
 const launch = process.env.AGENT_TERMINAL_LAUNCH_ID;
-const agent = process.argv[2];
-if (id && launch && ['claude', 'codex'].includes(agent)) {
+const agent = process.argv[2] === 'codex' && process.env.AGENT === 'ollama' ? 'ollama' : process.argv[2];
+if (id && launch && ['claude', 'codex', 'ollama'].includes(agent)) {
   try {
     const input = readFileSync(0, 'utf8');
     if (input.length > 65536) throw new Error('Oversized session event');

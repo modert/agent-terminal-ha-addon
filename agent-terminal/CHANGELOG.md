@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 2.10.0
+## 2.11.0
 - Enable native Codex Remote from **Sessions → Phone remote**, then generate a
   short-lived pairing code for the ChatGPT phone app. Remote is off until
   enabled, and its preference survives add-on updates.
@@ -11,6 +11,23 @@
   approval settings, or independent terminal sessions.
 - Use `agent-remote open` in Shell to work on the shared Remote server, or
   `agent-remote open CONVERSATION_ID` to join an exact saved conversation.
+
+## 2.10.0
+- Add **Ollama** as a general local coding session beside Claude and ChatGPT.
+  Choose an installed local model, switch with **/model**, and use files,
+  commands, images on supported models, and Home Assistant tools.
+- Keep local conversations and settings separate from ChatGPT. Named local
+  sessions resume after Stop/Start and support split view. No API key,
+  model download, or automatic cloud fallback is needed.
+- Add opt-in monitoring under **Sessions → Health** for recurring Home
+  Assistant errors and outages of selected important entities.
+- Choose Rules only, a local Ollama model, or a Home Assistant conversation
+  agent with control disabled to review incidents. Test the saved reviewer
+  with synthetic evidence before enabling alerts.
+- Send major-issue alerts to selected Companion app devices, with
+  Investigate, Snooze 1h, and Dismiss actions, cooldowns, and recovery clearing.
+- Choose Claude, ChatGPT, or Ollama for a named investigation session with an unsent
+  diagnostic draft. Monitoring performs no automatic repairs or restarts.
 
 ## 2.9.1
 - Update the Codex CLI to 0.160.1.

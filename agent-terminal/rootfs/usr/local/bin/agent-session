@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Each named terminal has its own persistent tmux session. Switching
 # disconnects only a client; the agent's live process keeps running.
-# Usage: agent-session [--session ID] [--agent claude|codex|shell] [--workspace ID] [command]
+# Usage: agent-session [--session ID] [--agent claude|codex|ollama|shell] [--workspace ID] [command]
 # ttyd uses --web followed by agent, workspace and optional session ID.
 set -euo pipefail
 
@@ -26,7 +26,7 @@ else
                 case "$1" in --agent) MODE="$2" ;; --workspace) WORKSPACE="$2" ;; --session) SESSION_ID="$2" ;; esac
                 shift 2 ;;
             --help)
-                echo 'Usage: agent-session [--session ID] [--agent claude|codex|shell] [--workspace ID] [command]'; exit 0 ;;
+                echo 'Usage: agent-session [--session ID] [--agent claude|codex|ollama|shell] [--workspace ID] [command]'; exit 0 ;;
             --*) echo "Unknown option: $1" >&2; exit 2 ;;
             *) [ "$#" -eq 1 ] || { echo 'Quote a custom command as one argument' >&2; exit 2; }; START_CMD="$1"; shift ;;
         esac
@@ -41,9 +41,9 @@ if [ -n "${SESSION_ID}" ] && ! "${WEB}"; then
 fi
 
 if [ -n "${MODE}" ]; then
-    case "${MODE}" in claude|codex|shell|custom) ;; *) echo 'Unknown agent' >&2; exit 2 ;; esac
+    case "${MODE}" in claude|codex|shell|ollama|custom) ;; *) echo 'Unknown agent' >&2; exit 2 ;; esac
 fi
-if [ "${MODE}" = claude ] || [ "${MODE}" = codex ]; then export AGENT="${MODE}"; fi
+if [ "${MODE}" = claude ] || [ "${MODE}" = codex ] || [ "${MODE}" = ollama ]; then export AGENT="${MODE}"; fi
 
 # shellcheck source=/usr/local/lib/agent.sh
 . /usr/local/lib/agent.sh

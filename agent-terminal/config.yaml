@@ -1,7 +1,7 @@
 name: "Agent Terminal"
-version: "2.10.0"
+version: "2.11.0"
 slug: "agent_terminal"
-description: "Claude, ChatGPT, and Shell sessions with voice prompts, split view, mobile terminal + SSH"
+description: "Claude, ChatGPT, Ollama, and Shell sessions with health alerts, voice prompts, mobile terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"
 arch:
   - amd64
@@ -44,7 +44,7 @@ options:
   #   - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... you@yourlaptop"
   authorized_keys: []
 schema:
-  agent: "list(claude|codex)"
+  agent: "list(claude|codex|ollama)"
   ssh_port: "port"
   web_command: "str?"
   mobile_ui: "bool?"

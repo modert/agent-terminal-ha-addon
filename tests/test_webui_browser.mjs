@@ -399,10 +399,13 @@ test('phone taps and composition with real browser events and xterm', {
   // A desktop hides the keys until the switch asks for them; its clicks keep
   // the terminal focused, so typing carries on.
   async function click(expression) {
-    const rect = await evaluate(`(() => {
-      const node = (${expression});
-      node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-      const r = node.getBoundingClientRect();
+    await until(`!!(${expression})`);
+    const rect = await evaluate(`(async () => {
+      (${expression}).scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+      // A viewport resize or scrolling needs a frame before Chrome hit-tests
+      // the new coordinates. Resolve the node again after list updates.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const node = (${expression}), r = node.getBoundingClientRect();
       let x = r.x + r.width / 2, y = r.y + r.height / 2, frame = node.ownerDocument.defaultView.frameElement;
       while (frame) { const f = frame.getBoundingClientRect(); x += f.x; y += f.y; frame = frame.ownerDocument.defaultView.frameElement; }
       return { x, y };
@@ -492,6 +495,7 @@ test('phone taps and composition with real browser events and xterm', {
 
   async function actions(id) {
     await click(`document.querySelector('[data-session-action="${id}:actions"]')`);
+    await until(`document.querySelector('[data-session-action="${id}:actions"]')?.getAttribute('aria-expanded') === 'true'`);
   }
   const sessionAction = text => `[...document.querySelectorAll('.session-actions button')].find(b => b.textContent === ${JSON.stringify(text)})`;
   await click("document.getElementById('sessions-open')");
@@ -833,4 +837,63 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate("document.getElementById('remote-code').value"), '');
   assert.equal(await evaluate("document.getElementById('sessions-sheet').hidden"), false);
   assert.deepEqual(await packets(), [], 'pairing and dialog shortcuts send no terminal input');
+
+  // Health remains opt-in; saving choices never sends a terminal prompt.
+  // The complete response flow uses the same inert session backend.
+  await load();
+  await tap("document.getElementById('sessions-open')");
+  await tap("document.getElementById('health-open')");
+  await until("!document.getElementById('health-sheet').hidden && document.getElementById('health-delayMinutes').value === '10'");
+  assert.equal(await evaluate("document.getElementById('health-enabled').checked"), false);
+  await evaluate(`(() => {
+    const reviewer = document.getElementById('health-reviewer'); reviewer.value = 'ollama'; reviewer.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('health-ollamaUrl').value = 'http://model.test:11434';
+    document.getElementById('health-model').value = 'example:4b';
+    document.getElementById('health-criticalEntities').value = 'climate.main';
+    document.getElementById('health-investigationAgent').value = 'claude';
+    document.querySelector('#health-notifyServices option').selected = true;
+    document.querySelector('#health-form button').scrollIntoView({ block: 'center' });
+  })()`);
+  await tap("document.querySelector('#health-form button')");
+  await until("document.getElementById('health-status').textContent.includes('Settings saved')");
+  assert.equal(await evaluate('testHub.health.config.reviewer'), 'ollama');
+  assert.equal(await evaluate('testHub.health.config.investigationAgent'), 'claude');
+  assert.deepEqual(await packets(), [], 'health setup sends no terminal commands');
+  await evaluate(`(() => {
+    testHub.health.incidents = [{ id: '${'a'.repeat(32)}', title: 'Thermostat unavailable', kind: 'entity', severity: 'major',
+      evidence: '<img src=x onerror="window.healthInjected=true"> climate.main unavailable', firstSeen: Date.now() - 900000,
+      lastSeen: Date.now(), count: 4 }];
+    testHub.publish(); document.getElementById('health-settings').open = false;
+  })()`);
+  await until("document.querySelectorAll('.health-incident').length === 1");
+  assert.equal(await evaluate("document.querySelector('#health-incidents img') === null && !window.healthInjected"), true, 'untrusted evidence stays plain text');
+  assert.equal(await evaluate("document.getElementById('health-sheet').scrollWidth <= document.getElementById('health-sheet').clientWidth"), true, 'phone dialog has no horizontal overflow');
+  if (process.env.WEBUI_SCREENSHOT) {
+    const screenshot = await command('Page.captureScreenshot');
+    writeFileSync(process.env.WEBUI_SCREENSHOT.replace('.png', '-health.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  await tap("Array.from(document.querySelectorAll('.health-actions button')).find(b => b.textContent === 'Snooze 1h')");
+  await until('testHub.health.incidents[0].snoozedUntil > Date.now()');
+  await tap("Array.from(document.querySelectorAll('.health-actions button')).find(b => b.textContent === 'Investigate')");
+  await until("!document.getElementById('paste').hidden && document.getElementById('paste-text').value.includes('read-only checks')");
+  // The draft opens immediately; fetching ttyd's token connects the selected
+  // terminal asynchronously. Check the new socket only after it has opened.
+  await until("testSocket?.args[0] === 'claude' && testSocket.readyState === 1");
+  assert.equal(await evaluate("testSocket.args[0]"), 'claude');
+  assert.equal(await evaluate("testHub.sessions.find(s => s.id === testSocket.args[2]).name"), 'Investigate: Thermostat unavailable');
+  assert.deepEqual(await packets(), [], 'the investigation is prepared in a draft for the user to send');
+
+  // A local provider owns its connection just like the hosted providers.
+  await load();
+  await tap("document.querySelector('#agents button[data-agent=ollama]')");
+  await until("testSocket?.args[0] === 'ollama' && testSocket.readyState === 1");
+  assert.equal(await evaluate('testSocket.args[1]'), 'homeassistant');
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'Ollama provider fits the phone layout');
+  await tap("document.getElementById('sessions-open')");
+  await tap("document.getElementById('sessions-new')");
+  await evaluate("document.getElementById('sessions-name').value = 'Local coding task'");
+  assert.equal(await evaluate("document.getElementById('sessions-provider').value"), 'ollama');
+  await tap("document.getElementById('sessions-save')");
+  await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
+  assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
 });
