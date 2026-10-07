@@ -19,6 +19,9 @@
 - Choose Claude, ChatGPT, or Ollama for a named investigation session with an unsent
   diagnostic draft. Monitoring performs no automatic repairs or restarts.
 
+## 2.9.1
+- Update the Codex CLI to 0.160.1.
+
 ## 2.9.0
 - Dictate prompts with the microphone in the top bar or **Voice prompt…** in
   the terminal menu. Tap again or choose **Finish**, review the text in your
