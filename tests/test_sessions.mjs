@@ -348,3 +348,37 @@ test('deletion serializes with launches and stale start requests across processe
   assert.throws(() => createSessionStore(paths).get(record.id), /Unknown session/);
   assert.ok(!run('list-sessions', '-F', '#{session_name}').split('\n').includes(record.id));
 });
+
+
+test('start fresh stops the old terminal and launches without its locked conversation', t => {
+  const { store, paths, run } = fixture(t);
+  const other = store.create({ name: 'Other task', agent: 'codex', workspace: 'homeassistant' });
+  store.ensure('codex', 'homeassistant', other.id, 'exec sleep 120');
+  for (const id of ['agent-homeassistant-codex', store.create({ name: 'Locked task', description: 'Fix the lights', agent: 'codex', workspace: 'homeassistant' }).id]) {
+    store.ensure('codex', 'homeassistant', id, 'exec sleep 120');
+    const launch = run('show-environment', '-t', '=' + id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+    const conversation = '550e8400-e29b-41d4-a716-446655440099';
+    assert.equal(store.remember(id, 'codex', launch, { hook_event_name: 'SessionStart', session_id: conversation }), true);
+    const old = store.get(id);
+    const replacement = store.request({ method: 'fresh', session: id });
+    assert.notEqual(replacement.id, id);
+    assert.equal(replacement.agent, old.agent);
+    assert.equal(replacement.workspace, old.workspace);
+    assert.equal(replacement.description, old.description);
+    assert.equal(replacement.conversationId, undefined);
+    const browser = createSessionStore(paths);
+    assert.equal(browser.get(id).stopped, true);
+    assert.equal(browser.list().find(r => r.id === id).running, false);
+    assert.throws(() => browser.ensure('codex', 'homeassistant', id, 'exec sleep 120'), /Session stopped/);
+    assert.equal(browser.get(id).conversationId, conversation, 'history remains available for explicit recovery');
+    assert.equal(store.remember(id, 'codex', launch, { hook_event_name: 'SessionStart', session_id: conversation }), false);
+    browser.ensure('codex', 'homeassistant', replacement.id, 'exec sleep 120');
+    assert.equal(run('show-environment', '-t', '=' + replacement.id, 'AGENT_CONVERSATION_ID'), 'AGENT_CONVERSATION_ID=');
+    assert.notEqual(run('show-environment', '-t', '=' + replacement.id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1], launch);
+    // The escape also works after a failed launch has already stopped a task.
+    browser.stop(replacement.id);
+    assert.equal(browser.request({ method: 'fresh', session: replacement.id }).stopped, false);
+  }
+  assert.equal(store.list().find(r => r.id === other.id).running, true);
+  assert.throws(() => store.request({ method: 'fresh', session: '../options' }), /Invalid session/);
+});

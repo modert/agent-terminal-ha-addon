@@ -896,4 +896,27 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('sessions-save')");
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
+
+  // A locked Codex conversation can be left behind without terminal input.
+  await load();
+  await tap("document.querySelector('#agents button[data-agent=codex]')");
+  await until("testSocket?.args[0] === 'codex' && testSocket.readyState === 1");
+  const locked = await evaluate("testSocket.args[2] || 'agent-homeassistant-codex'");
+  await tap("document.getElementById('sessions-open')");
+  await actions(locked);
+  await tap(sessionAction('Start fresh'));
+  assert.equal(await evaluate("document.getElementById('sessions-title').textContent"), 'Start fresh');
+  assert.match(await evaluate("document.getElementById('sessions-explanation').textContent"), /Phone remote/);
+  await tap("document.getElementById('sessions-back')");
+  assert.equal(await evaluate('testHub.sessions.find(s => s.id === ' + JSON.stringify(locked) + ').stopped'), false, 'Back leaves the old task running');
+  await tap(sessionAction('Start fresh'));
+  await tap("document.getElementById('sessions-save')");
+  await until("document.getElementById('sessions-sheet').hidden && testSocket?.args[2]?.startsWith('session-') && testSocket.readyState === 1");
+  const fresh = await evaluate('testSocket.args[2]');
+  assert.notEqual(fresh, locked);
+  assert.equal(await evaluate('testHub.sessions.find(s => s.id === ' + JSON.stringify(locked) + ').stopped'), true);
+  assert.equal(await evaluate('testHub.sessions.find(s => s.id === ' + JSON.stringify(fresh) + ').conversationId'), undefined);
+  await load();
+  await until('testSocket?.args[2] === ' + JSON.stringify(fresh));
+
 });

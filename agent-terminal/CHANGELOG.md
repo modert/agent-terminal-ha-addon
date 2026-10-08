@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.11.2
+- Add **Sessions → ••• → Start fresh** to end a terminal and open a new
+  conversation when the old Codex conversation is locked or open remotely.
+  Keep the old session stopped and preserve its saved history and workspace files.
+
 ## 2.11.1
 - Update the Codex CLI to 0.161.0.
 
