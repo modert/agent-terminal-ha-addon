@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.11.1
+- Update the Codex CLI to 0.161.0.
+
 ## 2.11.0
 - Enable native Codex Remote from **Sessions → Phone remote**, then generate a
   short-lived pairing code for the ChatGPT phone app. Remote is off until
