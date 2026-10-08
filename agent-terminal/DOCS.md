@@ -279,6 +279,13 @@ browser remembers both selections and the divider position across reloads.
 **Unsplit** or **Close** hides the second pane and leaves its agent running.
 Narrowing the screen returns to one pane, keeping the focused session visible.
 
+**Start fresh** in a session’s **•••** menu ends its terminal process and opens
+a new conversation with the same provider, workspace, name, and purpose. Use
+this when Codex keeps resuming a conversation that is locked or open in Phone
+remote. The old terminal stays stopped, including in other browsers; its saved
+conversation and workspace files are kept. A conversation running separately
+in Phone remote can continue there without blocking the new terminal.
+
 **Stop** ends the running process after confirmation. Automatic reconnects
 from other browsers cannot restart it; **Start** explicitly allows a fresh
 process and resumes the saved conversation. Closing a pane, switching

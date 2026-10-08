@@ -170,6 +170,7 @@ window.AgentSessions = function (options) {
             if (options.beside(record) !== false) close(false);
           }));
           actions.appendChild(action('Edit details', 'Edit details for ' + displayName(record), function () { edit('rename', record); }));
+          actions.appendChild(action('Start fresh', 'End ' + displayName(record) + ' and start a new conversation', function () { edit('fresh', record); }));
           if (!record.stopped) actions.appendChild(action('Stop', 'Stop ' + record.name, function () { edit('stop', record); }));
           if (/^session-[a-f0-9]{32}$/.test(record.id)) {
             var remove = action('Delete', 'Delete ' + record.name, function () { edit('delete', record); });
@@ -200,9 +201,9 @@ window.AgentSessions = function (options) {
   function edit(next, record) {
     if (busy) return;
     mode = next; editing = record; form.hidden = false; el('sessions-browse').hidden = true;
-    var destructive = next === 'stop' || next === 'delete';
-    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'rename' ? 'Edit session details' : next === 'delete' ? 'Delete session' : 'Stop session';
-    el('sessions-subtitle').textContent = next === 'delete' ? 'Remove this temporary session.' : next === 'stop' ? 'This ends the running task.' : 'Give this conversation a clear job.';
+    var destructive = next === 'stop' || next === 'delete' || next === 'fresh';
+    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'fresh' ? 'Start fresh' : next === 'rename' ? 'Edit session details' : next === 'delete' ? 'Delete session' : 'Stop session';
+    el('sessions-subtitle').textContent = next === 'fresh' ? 'End this terminal and open a new conversation.' : next === 'delete' ? 'Remove this temporary session.' : next === 'stop' ? 'This ends the running task.' : 'Give this conversation a clear job.';
     el('sessions-context').hidden = true;
     el('sessions-name-row').hidden = destructive;
     el('sessions-purpose-row').hidden = destructive;
@@ -213,13 +214,15 @@ window.AgentSessions = function (options) {
     var current = options.current();
     selectOptions(el('sessions-provider'), agents, current.agent);
     selectOptions(el('sessions-workspace'), workspaces, current.workspace);
-    el('sessions-explanation').textContent = next === 'delete'
+    el('sessions-explanation').textContent = next === 'fresh'
+      ? 'End “' + displayName(record) + '” in every attached terminal and start a new conversation in the same workspace? The old session stays stopped in Sessions. Its saved conversation and workspace files are kept. A copy open in Phone remote may continue there; this terminal will no longer try to resume it.'
+      : next === 'delete'
       ? 'Delete “' + record.name + '” from ' + label(workspaces, record.workspace) + ' · ' + label(agents, record.agent) + '? This ends its running task and removes it from Sessions in every browser. Terminal scrollback is lost. Workspace files and provider-saved conversations are kept. This cannot be undone.'
       : next === 'stop'
       ? 'Stop “' + record.name + '” and end its running task? ' +
         (record.agent === 'claude' || record.agent === 'codex' || record.agent === 'ollama' ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
-    el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
+    el('sessions-save').textContent = next === 'fresh' ? 'End and start fresh' : next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
     el('sessions-save').classList.toggle('session-danger', next === 'delete');
     message(''); (destructive ? el('sessions-back') : el('sessions-name')).focus();
   }
@@ -261,6 +264,7 @@ window.AgentSessions = function (options) {
     event.preventDefault();
     if (mode === 'create') run('create', { name: el('sessions-name').value, description: el('sessions-purpose').value, agent: el('sessions-provider').value, workspace: el('sessions-workspace').value }, choose);
     else if (mode === 'rename') run('rename', { session: editing.id, name: el('sessions-name').value, description: el('sessions-purpose').value }, browse);
+    else if (mode === 'fresh') run('fresh', { session: editing.id }, choose);
     else if (mode === 'stop') run('stop', { session: editing.id }, browse);
     else if (mode === 'delete') run('delete', { session: editing.id }, function (result) {
       records = records.filter(function (record) { return record.id !== result.id; });
