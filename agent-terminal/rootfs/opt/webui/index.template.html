@@ -53,7 +53,12 @@ body { position: fixed; inset: 0; }
   background: var(--key); color: var(--fg); font: inherit; font-size: 16px;
 }
 #agents { display: flex; gap: 4px; }
-#agents .agent-button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#agents .agent-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; white-space: nowrap; }
+#agents .agent-button svg { flex: none; width: 18px; height: 18px; }
+#agents .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Names only where the bar has room for them; the mark alone everywhere else. */
+@media (max-width: 900px) { #agents .agent-name { display: none; } }
+#app.compact-height #agents .agent-name, body.split #agents .agent-name, body.side-pane #agents .agent-name { display: none; }
 .agent-button {
   min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--key); color: var(--fg); font: inherit; font-size: 13px;
@@ -311,8 +316,12 @@ body { position: fixed; inset: 0; }
 body.side-pane #split-toggle::before { display: none; }
 #split-toggle[hidden] { display: none; }
 @media (max-width: 560px) {
-  #agents { flex-basis: auto; flex: 1; }
+  /* Marks alone are narrow enough to fit beside the workspace, so the basis
+     is what puts the providers on the second line, with room left there for
+     the longest session name. */
+  #agents { flex: 1 1 calc(100% - 132px); min-width: 0; }
   #agents .agent-button { padding: 0 4px; font-size: 12px; }
+  #agents .agent-button svg { width: 20px; height: 20px; }
   #sessions-open, #split-toggle { order: 2; }
   #sessions-open { flex: 0 0 auto; max-width: min(125px, calc(100% - 236px)); padding: 0 8px; }
   #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
@@ -380,6 +389,7 @@ body.side-pane #split-toggle::before { display: none; }
 .provider-claude { color: #e2a48b; background: #3a2c28; }
 .provider-codex { color: #91d1bd; background: #213830; }
 .provider-shell { color: #a7c7ef; background: #243245; }
+.provider-antigravity { color: #e3cd8b; background: #383122; }
 .provider-custom { color: #c7b1e4; background: #30273e; }
 .session-copy { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
 .session-copy strong { font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
@@ -644,7 +654,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var tokenUrl = location.protocol + '//' + location.host + base + '/token';
   // Replaced at boot, and whenever agent-workspace creates a workspace.
   var sessionConfig = /*{{SESSION_CONFIG}}*/ null || {
-    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }],
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }, { id: 'antigravity', name: 'Antigravity' }],
     workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
     defaultAgent: 'claude'
   };
@@ -759,7 +769,11 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   sessionConfig.agents.forEach(function (agent, i) {
     var button = document.createElement('button');
     button.type = 'button'; button.className = 'agent-button';
-    button.dataset.agent = agent.id; button.textContent = agent.name;
+    button.dataset.agent = agent.id; button.setAttribute('aria-label', agent.name);
+    if (window.AgentSessions) button.innerHTML = window.AgentSessions.icon(agent.id);
+    var name = document.createElement('span');
+    name.className = 'agent-name'; name.textContent = agent.name;
+    button.appendChild(name);
     button.title = 'Switch to ' + agent.name + (i < 3 ? ' (Ctrl+Shift+' + (i + 1) + ')' : '');
     if (i < 3) button.setAttribute('aria-keyshortcuts', 'Control+Shift+' + (i + 1));
     button.addEventListener('click', function () { switchSession(agent.id, selectedWorkspace); });
@@ -1054,9 +1068,9 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 
   term.attachCustomKeyEventHandler(function (e) {
     if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
-    // Legacy terminal input loses Shift on Enter. Both agent editors accept
+    // Legacy terminal input loses Shift on Enter. The agent editors accept
     // Ctrl+J as a newline, so a physical Shift+Enter must send LF, not CR.
-    if ((selectedAgent === 'claude' || selectedAgent === 'codex' || selectedAgent === 'ollama') &&
+    if (['claude', 'codex', 'ollama', 'antigravity'].indexOf(selectedAgent) !== -1 &&
         e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       fixedKey('\n');

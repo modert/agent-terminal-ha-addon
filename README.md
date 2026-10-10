@@ -10,7 +10,8 @@ Home Assistant MCP server.
 
 Switch **Claude Code**, **ChatGPT via OpenAI Codex**, or **Shell** with the
 panel buttons or **Ctrl+Shift+1 / 2 / 3**. Each workspace and agent keeps its
-own live session; switching needs no add-on restart. Create task workspaces
+own live session; switching needs no add-on restart. Local **Ollama** models
+and Google's **Antigravity** CLI have buttons of their own. Create task workspaces
 with shared instructions and skills using `agent-workspace create`.
 Both agents use persistent account sign-in and the same Home Assistant tools.
 For ChatGPT, click **ChatGPT** and choose **Sign in with Device Code**

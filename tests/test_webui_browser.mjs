@@ -719,6 +719,10 @@ test('phone taps and composition with real browser events and xterm', {
   await until(`testSocket.args[2] === ${JSON.stringify(first)} && testSocket.readyState === 1`);
   await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await load();
+  assert.equal(await evaluate(`document.body.classList.contains('split') || [...document.querySelectorAll('#agents button')].every(b => {
+    const name = b.querySelector('.agent-name');
+    return b.querySelector('svg') && name.getBoundingClientRect().width > 0 && name.scrollWidth <= name.clientWidth;
+  })`), true, 'a wide screen shows each provider\'s name in full beside its mark');
   assert.equal(await evaluate(`testHub.sessions.some(s => ${JSON.stringify([second, disposable, currentTemporary])}.includes(s.id))`), false, 'removed sessions stay gone after reload');
 
   // Attaching files with real browser events: a pasted screenshot, a drop of
@@ -896,4 +900,23 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('sessions-save')");
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
+
+  // Five providers share the phone's second row as marks: no wider, no third row.
+  await load();
+  await tap("document.querySelector('#agents button[data-agent=antigravity]')");
+  await until("testSocket?.args[0] === 'antigravity' && testSocket.readyState === 1");
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'five providers fit the phone layout');
+  assert.equal(await evaluate("document.getElementById('session-bar').getBoundingClientRect().height <= 110"), true,
+    'five providers keep the phone header within two rows');
+  assert.equal(await evaluate("document.getElementById('agents').getBoundingClientRect().top > document.getElementById('workspace').getBoundingClientRect().bottom"), true,
+    'the providers stay on their own line below the workspace');
+  assert.equal(await evaluate("Math.abs(document.getElementById('agents').getBoundingClientRect().top - document.getElementById('sessions-open').getBoundingClientRect().top) < 4"), true,
+    'and share it with the session name');
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b => {
+    const r = b.getBoundingClientRect();
+    return r.width >= 40 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth;
+  })`), true, 'every provider button stays on screen and large enough to tap');
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b =>
+    b.querySelector('svg').getBoundingClientRect().width >= 18 && b.getAttribute('aria-label') &&
+    getComputedStyle(b.querySelector('.agent-name')).display === 'none')`), true, 'a phone shows each provider as its mark, named for screen readers');
 });

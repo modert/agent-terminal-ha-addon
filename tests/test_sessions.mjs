@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
+import { createServer } from 'node:http';
+import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { createSessionStore, serve } from '../agent-terminal/rootfs/opt/agent-terminal/sessions.mjs';
 
@@ -106,6 +108,103 @@ test('Ollama sessions persist exact conversations independently of ChatGPT', t =
   assert.equal(reopened.get('agent-homeassistant-ollama').agent, 'ollama');
 });
 
+test('an Antigravity session follows the conversation its hook names', t => {
+  const { store, run, paths, root } = fixture(t);
+  const task = store.create({ name: 'Google task', agent: 'antigravity', workspace: 'homeassistant' });
+  store.ensure('antigravity', 'homeassistant', task.id, 'exec sleep 120');
+  const launchToken = id => run('show-environment', '-t', '=' + id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+  const token = launchToken(task.id);
+  const hook = new URL('../agent-terminal/rootfs/opt/agent-terminal/session-hook.mjs', import.meta.url).pathname;
+  // The payload Antigravity 1.3.3 sends, with its camelCase names.
+  const report = (event, payload, session = task.id, launch = token) => execFileSync(process.execPath, [hook, 'antigravity', event], {
+    input: JSON.stringify(payload), encoding: 'utf8',
+    env: { ...process.env, AGENT_TERMINAL_STATE_DIR: root, AGENT_TERMINAL_SESSION_ID: session, AGENT_TERMINAL_LAUNCH_ID: launch },
+  });
+  const a = '1623a59b-b6c3-4f18-b109-0ba48b324606', b = '3299a7c9-d689-42ee-9def-e9016286efc2';
+  const transcript = join(root, 'transcript_full.jsonl');
+  const saved = () => JSON.parse(readFileSync(join(root, 'conversations', task.id + '.json')));
+  assert.equal(report('PreInvocation', { conversationId: a, transcriptPath: transcript, invocationNum: 0, modelName: 'auto' }), '{}\n',
+    'Antigravity reads the output as the hook\'s answer');
+  assert.equal(store.get(task.id).conversationId, a);
+  writeFileSync(transcript, 'saved history');
+  report('Stop', { conversationId: a, transcriptPath: transcript, terminationReason: 'NO_TOOL_CALL', fullyIdle: true });
+  assert.equal(saved().hasTranscript, true);
+  // /clear, /resume, or a saved conversation that no longer exists.
+  report('PreInvocation', { conversationId: b, transcriptPath: transcript });
+  assert.equal(store.get(task.id).conversationId, b);
+  report('Stop', { conversationId: a, transcriptPath: transcript });
+  assert.equal(report('PreInvocation', { conversationId: '../../data' }), '{}\n');
+  report('PreInvocation', { conversationId: a }, task.id, 'wrong-launch');
+  assert.equal(store.get(task.id).conversationId, b);
+  // agy started by hand inside another provider's terminal, or in no session.
+  const other = 'agent-homeassistant-claude';
+  store.ensure('claude', 'homeassistant', other, 'exec sleep 120');
+  report('PreInvocation', { conversationId: a }, other, launchToken(other));
+  assert.equal(store.get(other).conversationId, undefined);
+  assert.equal(report('Stop', { conversationId: a }, '', ''), '{}\n');
+  store.stop(task.id); store.start(task.id);
+  createSessionStore(paths).ensure('antigravity', 'homeassistant', task.id, 'exec sleep 120');
+  assert.equal(run('show-environment', '-t', '=' + task.id, 'AGENT_CONVERSATION_ID'), 'AGENT_CONVERSATION_ID=' + b);
+});
+
+// The CLI is not pinned, so this is what notices a release that changes its
+// hooks or its resume flag. It uses an API key against a local stand-in for
+// the Gemini API: no account, and no request to a real model.
+test('the real Antigravity CLI names its conversation to the hook and reopens it by ID', {
+  skip: spawnSync('agy', ['--version']).status !== 0 && 'agy is not installed, or cannot run on this processor', timeout: 240000,
+}, async t => {
+  const { store, run, root } = fixture(t);
+  const home = join(root, 'home'), data = join(root, 'antigravity'), work = join(root, 'work');
+  mkdirSync(home); mkdirSync(work);
+  const adapter = new URL('../agent-terminal/rootfs/opt/agents/antigravity.sh', import.meta.url).pathname;
+  const hook = new URL('../agent-terminal/rootfs/opt/agent-terminal/session-hook.mjs', import.meta.url).pathname;
+  execFileSync('bash', ['-euo', 'pipefail', '-c', '. "$1"; AGENT_DATA="$2"; ANTIGRAVITY_HOME="$3"; agent_init', 'bash', adapter, data, home]);
+  const hooks = join(data, '.gemini/config/hooks.json');
+  writeFileSync(hooks, readFileSync(hooks, 'utf8').replaceAll('/opt/agent-terminal/session-hook.mjs', hook));
+  mkdirSync(join(data, '.gemini/antigravity-cli'));
+  writeFileSync(join(data, '.gemini/antigravity-cli/settings.json'), JSON.stringify({ modelProvider: 'gemini', enableTelemetry: false }));
+  const reply = { candidates: [{ content: { role: 'model', parts: [{ text: 'Hello.' }] }, finishReason: 'STOP', index: 0 }],
+    usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2, totalTokenCount: 7 } };
+  const model = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      if (request.url.includes('streamGenerateContent')) {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.end('data: ' + JSON.stringify(reply) + '\n\n');
+      } else {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify(request.method === 'GET' ? { models: [] } : reply));
+      }
+    });
+  }).listen(0, '127.0.0.1');
+  await once(model, 'listening');
+  t.after(() => model.close());
+
+  const task = store.create({ name: 'Google task', agent: 'antigravity', workspace: 'homeassistant' });
+  store.ensure('antigravity', 'homeassistant', task.id, 'exec sleep 300');
+  const token = run('show-environment', '-t', '=' + task.id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+  const agy = async (...args) => {
+    const { stdout } = await promisify(execFile)('agy', [...args, '--print', 'Say hello', '--print-timeout', '100s', '--output-format', 'json'], {
+      cwd: work, timeout: 110000,
+      env: { PATH: process.env.PATH, HOME: home, AGY_CLI_DISABLE_AUTO_UPDATE: 'true', GEMINI_API_KEY: 'test-key',
+        GOOGLE_GEMINI_BASE_URL: 'http://127.0.0.1:' + model.address().port,
+        AGENT_TERMINAL_STATE_DIR: root, AGENT_TERMINAL_SESSION_ID: task.id, AGENT_TERMINAL_LAUNCH_ID: token },
+    });
+    return JSON.parse(stdout.trim().split('\n').at(-1));
+  };
+  const first = await agy();
+  assert.equal(first.status, 'SUCCESS');
+  assert.match(first.conversation_id, /^[a-f0-9-]{36}$/);
+  assert.equal(store.get(task.id).conversationId, first.conversation_id, 'the hook saved the conversation the CLI created');
+  assert.equal(JSON.parse(readFileSync(join(root, 'conversations', task.id + '.json'))).hasTranscript, true);
+  const again = await agy('--conversation', first.conversation_id);
+  assert.equal(again.conversation_id, first.conversation_id, 'the launcher\'s flag reopens that conversation');
+  assert.equal(again.num_turns, 2);
+  const replaced = await agy('--conversation', '00000000-0000-4000-8000-000000000000');
+  assert.notEqual(replaced.conversation_id, first.conversation_id, 'a conversation that is gone starts a new one');
+  assert.equal(store.get(task.id).conversationId, replaced.conversation_id, 'and the session follows it');
+});
+
 test('provider launchers resume only their assigned conversation and preserve argument boundaries', t => {
   const root = mkdtempSync(join(tmpdir(), 'resume-adapters-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -198,7 +297,7 @@ test('session operations reject paths, commands, mismatched providers and corrup
   assert.throws(() => store.request({ method: 'exec', command: 'id' }), /Unknown session operation/);
   const file = join(root, 'sessions', record.id + '.json');
   writeFileSync(file, '{broken');
-  assert.equal(store.list().length, 4, 'a corrupt named session does not hide the built-in providers');
+  assert.equal(store.list().length, 5, 'a corrupt named session does not hide the built-in providers');
   assert.equal(readFileSync(file, 'utf8'), '{broken');
 });
 

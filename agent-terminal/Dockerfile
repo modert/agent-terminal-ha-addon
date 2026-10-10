@@ -10,7 +10,7 @@ ENV LANG=C.UTF-8 \
 
 # Agent CLIs baked into the image: space-separated adapter names from
 # rootfs/opt/agents. The add-on's `agent` option picks the initial agent.
-ARG AGENTS="claude codex ollama"
+ARG AGENTS="claude codex ollama antigravity"
 
 # System deps: node/npm for the agent CLIs, openssh for VS Code Remote-SSH,
 # ttyd for the Ingress web terminal, gh for GitHub, plus the usual dev CLIs.
