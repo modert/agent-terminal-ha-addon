@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.11.4
+- Claude Code no longer updates itself inside the add-on; it changes only
+  with the add-on image. Before, a Claude session left running on an older
+  version reinstalled the CLI every half hour, and an install that died
+  midway left every new Claude session unable to start until the add-on was
+  rebuilt.
+
 ## 2.11.3
 - Update the Codex CLI to 0.162.1.
 

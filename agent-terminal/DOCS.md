@@ -51,6 +51,10 @@ device, approve, copy the code, paste it back. No browser needed on the HA
 host itself. This only has to be done once - the login persists across
 add-on restarts and updates.
 
+Claude Code comes with the add-on image and changes only when the add-on is
+updated. Every terminal sets `DISABLE_AUTOUPDATER=1`, so a running session
+never reinstalls the CLI underneath the others.
+
 ### ChatGPT (OpenAI Codex)
 
 1. Open the sidebar panel and click **ChatGPT** (or press **Ctrl+Shift+2**).
