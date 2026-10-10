@@ -40,6 +40,9 @@ test "$(bash -lc 'printf %s "$AGENT"')" = codex
 test "$(bash -lc 'printf %s "$CODEX_HOME"')" = /data/codex
 grep -qx 'CODEX_HOME=/data/codex' /root/.ssh/environment
 grep -qx 'CLAUDE_CONFIG_DIR=/data/claude/.claude' /root/.ssh/environment
+# Claude Code changes with the image, never by reinstalling itself.
+grep -qx 'DISABLE_AUTOUPDATER=1' /root/.ssh/environment
+test "$(bash -lc 'printf %s "$DISABLE_AUTOUPDATER"')" = 1
 bash -lc 'codex mcp get homeassistant --json' | jq -e '.transport.command == "node"' >/dev/null
 sshd -t
 
@@ -48,6 +51,7 @@ agent-session --agent shell
 tmux has-session -t '=agent-homeassistant-shell'
 test "$(tmux show-environment -t '=agent-homeassistant-shell' CODEX_HOME)" = CODEX_HOME=/data/codex
 test "$(tmux show-environment -t '=agent-homeassistant-shell' CLAUDE_CONFIG_DIR)" = CLAUDE_CONFIG_DIR=/data/claude/.claude
+test "$(tmux show-environment -t '=agent-homeassistant-shell' DISABLE_AUTOUPDATER)" = DISABLE_AUTOUPDATER=1
 tmux kill-server
 
 # Switch to Claude and back, as a container restart would do. Verify Codex's

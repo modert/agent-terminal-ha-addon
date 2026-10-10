@@ -19,6 +19,10 @@ agent_install() {
 # Environment the CLI needs, as NAME=value lines (shell-safe values only).
 agent_env() {
     echo "CLAUDE_CONFIG_DIR=${AGENT_DATA}/.claude"
+    # The image supplies the CLI. Left on, every session running an older
+    # version reinstalls it with npm each half hour, and an install that dies
+    # midway leaves a `claude` that cannot start until the next rebuild.
+    echo "DISABLE_AUTOUPDATER=1"
 }
 
 # Session hooks capture the actual ID, including /clear and /resume changes.
