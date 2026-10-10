@@ -315,6 +315,14 @@ body.side-pane #split-toggle::before { display: none; }
   #agents .agent-button { padding: 0 4px; font-size: 12px; }
   #sessions-open, #split-toggle { order: 2; }
   #sessions-open { flex: 0 0 auto; max-width: min(125px, calc(100% - 236px)); padding: 0 8px; }
+  /* More than four providers do not fit beside a session name at equal widths.
+     Size each to its label and let the name give up room first. The row may
+     shrink, so it never forces a third line (a label that still does not fit
+     is cut short); its basis is what keeps it off the workspace's line, and
+     leaves room for the longest name beside it. */
+  #agents.crowded { min-width: 0; flex-basis: calc(100% - 132px); }
+  #agents.crowded .agent-button { flex: 1 1 auto; }
+  #agents.crowded ~ #sessions-open { max-width: min(125px, max(64px, calc(100% - 280px))); }
   #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
   #app.compact-height #workspace { width: 0; }
   #app.compact-height #agents .agent-button { padding: 0 5px; font-size: 12px; }
@@ -766,6 +774,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     button.addEventListener('click', function () { switchSession(agent.id, selectedWorkspace); });
     agentsEl.appendChild(button);
   });
+  agentsEl.classList.toggle('crowded', sessionConfig.agents.length > 4);
   workspaceEl.addEventListener('change', function () { switchSession(selectedAgent, workspaceEl.value); });
   window.addEventListener('keydown', function (e) {
     if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !/^Digit[123]$/.test(e.code)) return;

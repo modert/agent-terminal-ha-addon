@@ -897,11 +897,19 @@ test('phone taps and composition with real browser events and xterm', {
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
 
-  // A fifth provider shares the phone's toolbar row without pushing it wider.
+  // A fifth provider shares the phone's toolbar row: no wider, and no third row.
   await load();
   await tap("document.querySelector('#agents button[data-agent=antigravity]')");
   await until("testSocket?.args[0] === 'antigravity' && testSocket.readyState === 1");
   assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'five providers fit the phone layout');
-  assert.equal(await evaluate("[...document.querySelectorAll('#agents button')].every(b => b.getBoundingClientRect().width >= 40)"), true,
-    'every provider button stays wide enough to tap');
+  assert.equal(await evaluate("document.getElementById('session-bar').getBoundingClientRect().height <= 110"), true,
+    'five providers keep the phone header within two rows');
+  assert.equal(await evaluate("document.getElementById('agents').getBoundingClientRect().top > document.getElementById('workspace').getBoundingClientRect().bottom"), true,
+    'the providers stay on their own line below the workspace');
+  assert.equal(await evaluate("Math.abs(document.getElementById('agents').getBoundingClientRect().top - document.getElementById('sessions-open').getBoundingClientRect().top) < 4"), true,
+    'and share it with the session name');
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b => {
+    const r = b.getBoundingClientRect();
+    return r.width >= 32 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth;
+  })`), true, 'every provider button stays on screen and large enough to tap');
 });

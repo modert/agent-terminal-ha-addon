@@ -10,6 +10,8 @@
 - Antigravity needs processor instructions that a virtual machine with a
   generic CPU type hides. There its session explains what to change and
   stops instead of restarting, and the other agents are not affected.
+- On a phone, more than four provider buttons are sized to their labels and
+  the session name gives up room first, so the header stays two rows.
 
 ## 2.11.4
 - Claude Code no longer updates itself inside the add-on; it changes only
