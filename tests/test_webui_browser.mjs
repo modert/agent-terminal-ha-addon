@@ -896,4 +896,12 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('sessions-save')");
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
+
+  // A fifth provider shares the phone's toolbar row without pushing it wider.
+  await load();
+  await tap("document.querySelector('#agents button[data-agent=antigravity]')");
+  await until("testSocket?.args[0] === 'antigravity' && testSocket.readyState === 1");
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'five providers fit the phone layout');
+  assert.equal(await evaluate("[...document.querySelectorAll('#agents button')].every(b => b.getBoundingClientRect().width >= 40)"), true,
+    'every provider button stays wide enough to tap');
 });

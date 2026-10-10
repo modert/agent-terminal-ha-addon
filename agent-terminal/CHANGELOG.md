@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.12.0
+- Add Google's Antigravity CLI (`agy`) as a provider: an **Antigravity**
+  button, named sessions that reopen their own conversation, the built-in
+  Home Assistant tools, and a Google sign-in that survives restarts and
+  updates. Set `agent: antigravity` to make it the initial choice.
+- Antigravity needs processor instructions that a virtual machine with a
+  generic CPU type hides. There its session explains what to change and
+  stops instead of restarting, and the other agents are not affected.
+
 ## 2.11.4
 - Claude Code no longer updates itself inside the add-on; it changes only
   with the add-on image. Before, a Claude session left running on an older
