@@ -9,20 +9,11 @@ window.AgentSessions = function (options) {
   var encoder = new TextEncoder(), decoder = new TextDecoder(), buffer = '';
   var mode = 'list', editing = null, expanded = null, busy = false, generation = 0, showUnused = false;
   var agents = options.config.agents, workspaces = options.config.workspaces;
-  // Small local vector marks; labels carry the provider name as well as color.
-  var icons = {
-    claude: '<path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18"/>',
-    codex: '<rect x="7" y="2.5" width="10" height="19" rx="5"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(60 12 12)"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(120 12 12)"/>',
-    shell: '<path d="m5 6 6 6-6 6m8 0h6"/>',
-    ollama: '<path d="M7 10V4a2 2 0 0 1 4 0v5h2V4a2 2 0 0 1 4 0v6a7 7 0 1 1-10 0Z"/><path d="M9 15h.01M15 15h.01M10 19h4"/>',
-    antigravity: '<path d="M4 20C6 10 9 4 12 4s6 6 8 16"/><path d="M9 20c.5-4 1.5-7 3-7s2.5 3 3 7"/>',
-    custom: '<path d="M8 4H6v6l-2 2 2 2v6h2m8-16h2v6l2 2-2 2v6h-2"/>'
-  };
   function mark(agent) {
     var icon = document.createElement('span');
-    icon.className = 'provider-mark provider-' + (icons[agent] ? agent : 'custom');
+    icon.className = 'provider-mark provider-' + (window.AgentSessions.icons[agent] ? agent : 'custom');
     icon.setAttribute('aria-hidden', 'true');
-    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + (icons[agent] || icons.custom) + '</svg>';
+    icon.innerHTML = window.AgentSessions.icon(agent);
     return icon;
   }
   function displayName(record) { return record.name === 'Main' && record.id.indexOf('agent-') === 0 ? 'General session' : record.name; }
@@ -298,4 +289,18 @@ window.AgentSessions = function (options) {
     }
   }, true);
   return { connect: connect, open: open, close: close, refresh: refresh, request: send, records: function () { return records; } };
+};
+// Small local vector marks; labels carry the provider name as well as color.
+// The top bar shows the same marks, alone where there is no room for names.
+window.AgentSessions.icons = {
+  claude: '<path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5M8 3l8 18M3 8l18 8M3 16l18-8M8 21l8-18"/>',
+  codex: '<rect x="7" y="2.5" width="10" height="19" rx="5"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(60 12 12)"/><rect x="7" y="2.5" width="10" height="19" rx="5" transform="rotate(120 12 12)"/>',
+  shell: '<path d="m5 6 6 6-6 6m8 0h6"/>',
+  ollama: '<path d="M7 10V4a2 2 0 0 1 4 0v5h2V4a2 2 0 0 1 4 0v6a7 7 0 1 1-10 0Z"/><path d="M9 15h.01M15 15h.01M10 19h4"/>',
+  antigravity: '<path d="M4 20C6 10 9 4 12 4s6 6 8 16"/><path d="M9 20c.5-4 1.5-7 3-7s2.5 3 3 7"/>',
+  custom: '<path d="M8 4H6v6l-2 2 2 2v6h2m8-16h2v6l2 2-2 2v6h-2"/>'
+};
+window.AgentSessions.icon = function (agent) {
+  var icons = window.AgentSessions.icons;
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (icons[agent] || icons.custom) + '</svg>';
 };

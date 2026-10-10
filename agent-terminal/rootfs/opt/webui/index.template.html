@@ -53,7 +53,12 @@ body { position: fixed; inset: 0; }
   background: var(--key); color: var(--fg); font: inherit; font-size: 16px;
 }
 #agents { display: flex; gap: 4px; }
-#agents .agent-button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#agents .agent-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; white-space: nowrap; }
+#agents .agent-button svg { flex: none; width: 18px; height: 18px; }
+#agents .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Names only where the bar has room for them; the mark alone everywhere else. */
+@media (max-width: 900px) { #agents .agent-name { display: none; } }
+#app.compact-height #agents .agent-name, body.split #agents .agent-name, body.side-pane #agents .agent-name { display: none; }
 .agent-button {
   min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--key); color: var(--fg); font: inherit; font-size: 13px;
@@ -311,18 +316,14 @@ body { position: fixed; inset: 0; }
 body.side-pane #split-toggle::before { display: none; }
 #split-toggle[hidden] { display: none; }
 @media (max-width: 560px) {
-  #agents { flex-basis: auto; flex: 1; }
+  /* Marks alone are narrow enough to fit beside the workspace, so the basis
+     is what puts the providers on the second line, with room left there for
+     the longest session name. */
+  #agents { flex: 1 1 calc(100% - 132px); min-width: 0; }
   #agents .agent-button { padding: 0 4px; font-size: 12px; }
+  #agents .agent-button svg { width: 20px; height: 20px; }
   #sessions-open, #split-toggle { order: 2; }
   #sessions-open { flex: 0 0 auto; max-width: min(125px, calc(100% - 236px)); padding: 0 8px; }
-  /* More than four providers do not fit beside a session name at equal widths.
-     Size each to its label and let the name give up room first. The row may
-     shrink, so it never forces a third line (a label that still does not fit
-     is cut short); its basis is what keeps it off the workspace's line, and
-     leaves room for the longest name beside it. */
-  #agents.crowded { min-width: 0; flex-basis: calc(100% - 132px); }
-  #agents.crowded .agent-button { flex: 1 1 auto; }
-  #agents.crowded ~ #sessions-open { max-width: min(125px, max(64px, calc(100% - 280px))); }
   #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
   #app.compact-height #workspace { width: 0; }
   #app.compact-height #agents .agent-button { padding: 0 5px; font-size: 12px; }
@@ -768,13 +769,16 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   sessionConfig.agents.forEach(function (agent, i) {
     var button = document.createElement('button');
     button.type = 'button'; button.className = 'agent-button';
-    button.dataset.agent = agent.id; button.textContent = agent.name;
+    button.dataset.agent = agent.id; button.setAttribute('aria-label', agent.name);
+    if (window.AgentSessions) button.innerHTML = window.AgentSessions.icon(agent.id);
+    var name = document.createElement('span');
+    name.className = 'agent-name'; name.textContent = agent.name;
+    button.appendChild(name);
     button.title = 'Switch to ' + agent.name + (i < 3 ? ' (Ctrl+Shift+' + (i + 1) + ')' : '');
     if (i < 3) button.setAttribute('aria-keyshortcuts', 'Control+Shift+' + (i + 1));
     button.addEventListener('click', function () { switchSession(agent.id, selectedWorkspace); });
     agentsEl.appendChild(button);
   });
-  agentsEl.classList.toggle('crowded', sessionConfig.agents.length > 4);
   workspaceEl.addEventListener('change', function () { switchSession(selectedAgent, workspaceEl.value); });
   window.addEventListener('keydown', function (e) {
     if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !/^Digit[123]$/.test(e.code)) return;

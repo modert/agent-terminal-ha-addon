@@ -719,6 +719,10 @@ test('phone taps and composition with real browser events and xterm', {
   await until(`testSocket.args[2] === ${JSON.stringify(first)} && testSocket.readyState === 1`);
   await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await load();
+  assert.equal(await evaluate(`document.body.classList.contains('split') || [...document.querySelectorAll('#agents button')].every(b => {
+    const name = b.querySelector('.agent-name');
+    return b.querySelector('svg') && name.getBoundingClientRect().width > 0 && name.scrollWidth <= name.clientWidth;
+  })`), true, 'a wide screen shows each provider\'s name in full beside its mark');
   assert.equal(await evaluate(`testHub.sessions.some(s => ${JSON.stringify([second, disposable, currentTemporary])}.includes(s.id))`), false, 'removed sessions stay gone after reload');
 
   // Attaching files with real browser events: a pasted screenshot, a drop of
@@ -897,7 +901,7 @@ test('phone taps and composition with real browser events and xterm', {
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
 
-  // A fifth provider shares the phone's toolbar row: no wider, and no third row.
+  // Five providers share the phone's second row as marks: no wider, no third row.
   await load();
   await tap("document.querySelector('#agents button[data-agent=antigravity]')");
   await until("testSocket?.args[0] === 'antigravity' && testSocket.readyState === 1");
@@ -910,6 +914,9 @@ test('phone taps and composition with real browser events and xterm', {
     'and share it with the session name');
   assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b => {
     const r = b.getBoundingClientRect();
-    return r.width >= 32 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth;
+    return r.width >= 40 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth;
   })`), true, 'every provider button stays on screen and large enough to tap');
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b =>
+    b.querySelector('svg').getBoundingClientRect().width >= 18 && b.getAttribute('aria-label') &&
+    getComputedStyle(b.querySelector('.agent-name')).display === 'none')`), true, 'a phone shows each provider as its mark, named for screen readers');
 });

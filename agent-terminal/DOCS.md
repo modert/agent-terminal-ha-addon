@@ -260,7 +260,9 @@ shell, and are never stored in status snapshots or settings. Read
 `/run/agent-terminal/remote-status.json` to diagnose the current connection.
 
 The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
-**Ollama**, **Antigravity**, or **Shell**. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
+**Ollama**, **Antigravity**, or **Shell**. Each button carries the provider's mark;
+on a phone, in split view and in a narrow window it shows the mark alone, and
+**Sessions** shows the same marks beside the names. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
 ChatGPT, and **Ctrl+Shift+3** opens Shell. Use the buttons if your browser or OS reserves
 a shortcut. The workspace selector chooses the task folder. The keyboard
 button at the right end shows or hides the on-screen helper keys (see
