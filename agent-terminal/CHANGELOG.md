@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.13.2
+- Add **Sessions → ••• → Start fresh** to end a terminal and open a new
+  conversation when the old Codex conversation is locked or open remotely.
+  Keep the old session stopped and preserve its saved history and workspace files.
+
 ## 2.13.1
 - Keep all six provider buttons large enough to tap on a 320-pixel-wide phone
   by giving the session-name button less space.

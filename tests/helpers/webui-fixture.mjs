@@ -111,6 +111,12 @@ const mock = `<script>
           testHub.sessions.push(record);
         } else if (request.method === 'rename') { record.name = request.name; record.description = request.description ?? record.description; }
         else if (request.method === 'stop') { record.stopped = true; record.running = false; }
+        else if (request.method === 'fresh') {
+          record.stopped = true; record.running = false;
+          record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: record.name === 'Main' ? 'New session' : record.name,
+            description: record.description, agent: record.agent, workspace: record.workspace, stopped: false, running: false };
+          testHub.sessions.push(record);
+        }
         else if (request.method === 'start') record.stopped = false;
         else if (request.method === 'delete') testHub.sessions = testHub.sessions.filter(s => s.id !== request.session);
         if (request.method !== 'list') this.packet({ request: request.request, result: record });
