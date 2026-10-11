@@ -205,6 +205,81 @@ test('the real Antigravity CLI names its conversation to the hook and reopens it
   assert.equal(store.get(task.id).conversationId, replaced.conversation_id, 'and the session follows it');
 });
 
+
+test('the real Grok CLI records and resumes only its named terminal conversation', {
+  skip: spawnSync('grok', ['--version']).status !== 0 && 'Grok CLI not installed', timeout: 180000,
+}, async t => {
+  const { store, run, root } = fixture(t);
+  const home = join(root, 'home'), data = join(root, 'grok'), work = join(root, 'work');
+  mkdirSync(home); mkdirSync(work);
+  const adapter = new URL('../agent-terminal/rootfs/opt/agents/grok.sh', import.meta.url).pathname;
+  const hook = new URL('../agent-terminal/rootfs/opt/agent-terminal/session-hook.mjs', import.meta.url).pathname;
+  execFileSync('bash', ['-euo', 'pipefail', '-c', '. "$1"; AGENT_DATA="$2"; GROK_DEFAULT_HOME="$3"; agent_init', 'bash', adapter, data, home]);
+  const hooks = join(data, 'hooks/agent-terminal.json');
+  writeFileSync(hooks, readFileSync(hooks, 'utf8').replaceAll('/opt/agent-terminal/session-hook.mjs', hook));
+  const requests = [];
+  const model = createServer((request, response) => {
+    let text = ''; request.on('data', chunk => { text += chunk; });
+    request.on('end', () => {
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') { response.end(JSON.stringify({ data: [{ id: 'local-test' }] })); return; }
+      const body = JSON.parse(text || '{}'); requests.push(body);
+      const reply = { id: 'test-completion', object: 'chat.completion', created: 1, model: 'local-test',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'Hello.' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } };
+      if (body.stream) {
+        response.setHeader('content-type', 'text/event-stream');
+        response.end('data: ' + JSON.stringify({ ...reply, object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { role: 'assistant', content: 'Hello.' }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n');
+      } else response.end(JSON.stringify(reply));
+    });
+  }).listen(0, '127.0.0.1');
+  await once(model, 'listening'); t.after(() => model.close());
+  const url = 'http://127.0.0.1:' + model.address().port + '/v1';
+  writeFileSync(join(data, 'config.toml'), '[cli]\nauto_update=false\n[features]\ntelemetry=false\nfeedback=false\ncodebase_indexing=false\n' +
+    '[models]\ndefault="local-test"\nsession_summary="local-test"\n[model.local-test]\nmodel="local-test"\nbase_url=' + JSON.stringify(url) + '\napi_key="test-key"\ncontext_window=10000\n');
+  const task = store.create({ name: 'Grok task', agent: 'grok', workspace: 'homeassistant' });
+  store.ensure('grok', 'homeassistant', task.id, 'exec sleep 300');
+  const launch = run('show-environment', '-t', '=' + task.id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+  const env = { PATH: process.env.PATH, HOME: home, GROK_HOME: data, GROK_DISABLE_AUTOUPDATER: '1',
+    XAI_API_KEY: 'test-key', GROK_CLI_CHAT_PROXY_BASE_URL: url, GROK_MODELS_BASE_URL: url,
+    GROK_TELEMETRY_ENABLED: '0', GROK_FEEDBACK_ENABLED: '0',
+    AGENT_TERMINAL_STATE_DIR: root, AGENT_TERMINAL_SESSION_ID: task.id, AGENT_TERMINAL_LAUNCH_ID: launch };
+  const grok = async (...args) => {
+    const { stdout } = await promisify(execFile)('grok', [...args, '--model', 'local-test', '--no-subagents', '--disable-web-search',
+      '--max-turns', '1', '-p', 'Say hello', '--output-format', 'json'], { cwd: work, env, timeout: 60000 });
+    return JSON.parse(stdout);
+  };
+  const first = await grok();
+  assert.equal(first.text, 'Hello.');
+  assert.equal(store.get(task.id).conversationId, first.sessionId, 'global hook recorded the actual ID');
+  const saved = JSON.parse(readFileSync(join(root, 'conversations', task.id + '.json'), 'utf8'));
+  assert.equal(saved.hasTranscript, true);
+  const resumed = await grok('--resume', first.sessionId);
+  assert.equal(resumed.sessionId, first.sessionId);
+  assert.equal(store.get(task.id).conversationId, first.sessionId);
+  assert.ok(requests.some(body => body.messages?.filter(m => m.role === 'user').length >= 2), 'resume sends previous messages');
+
+  const child = join(root, 'child'); mkdirSync(child);
+  writeFileSync(join(child, 'summary.json'), JSON.stringify({ session_kind: 'subagent' }));
+  const report = (sessionId, transcriptPath, token = launch) => execFileSync(process.execPath, [hook, 'grok', 'SessionStart'], {
+    input: JSON.stringify({ hookEventName: 'session_start', sessionId, transcriptPath, source: 'new' }),
+    env: { ...env, AGENT_TERMINAL_LAUNCH_ID: token }, encoding: 'utf8',
+  });
+  const switched = '550e8400-e29b-41d4-a716-446655440000';
+  assert.equal(report(switched, join(child, 'updates.jsonl')), '', 'hook output cannot alter Grok behavior');
+  assert.equal(store.get(task.id).conversationId, first.sessionId, 'subagents cannot redirect the terminal');
+  report(switched, saved.transcript, '00000000-0000-4000-8000-000000000000');
+  assert.equal(store.get(task.id).conversationId, first.sessionId, 'stale launches cannot redirect the terminal');
+  report(switched, saved.transcript);
+  assert.equal(store.get(task.id).conversationId, switched, '/new or /load follows the selected top-level conversation');
+  const reopened = createSessionStore({ stateDir: root, optionsPath: join(root, 'options.json'), homeDirectory: root, tmux: join(root, 'tmux') });
+  reopened.stop(task.id); reopened.start(task.id);
+  reopened.ensure('grok', 'homeassistant', task.id, 'exec sleep 120');
+  assert.equal(run('show-environment', '-t', '=' + task.id, 'AGENT_CONVERSATION_ID'), 'AGENT_CONVERSATION_ID=' + switched,
+    'a restarted store launches the saved conversation');
+});
+
 test('provider launchers resume only their assigned conversation and preserve argument boundaries', t => {
   const root = mkdtempSync(join(tmpdir(), 'resume-adapters-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -297,7 +372,7 @@ test('session operations reject paths, commands, mismatched providers and corrup
   assert.throws(() => store.request({ method: 'exec', command: 'id' }), /Unknown session operation/);
   const file = join(root, 'sessions', record.id + '.json');
   writeFileSync(file, '{broken');
-  assert.equal(store.list().length, 5, 'a corrupt named session does not hide the built-in providers');
+  assert.equal(store.list().length, 6, 'a corrupt named session does not hide the built-in providers');
   assert.equal(readFileSync(file, 'utf8'), '{broken');
 });
 

@@ -9,6 +9,7 @@ fi
 codex --version
 claude --version
 agy --version
+grok --version
 test -s /opt/webui/index.html
 
 # Exercise a real first boot, importing a different agent than the default.
@@ -53,6 +54,10 @@ grep -qx 'AGY_CLI_DISABLE_AUTO_UPDATE=true' /root/.ssh/environment
 jq -e '.["agent-terminal"] | has("PreInvocation") and has("Stop")' /data/antigravity/.gemini/config/hooks.json >/dev/null
 # The real CLI reads the server the adapter wrote for it.
 bash -lc 'agy mcp list' | grep -Eq '^homeassistant +stdio +enabled +node /opt/ha-mcp/server\.mjs *$'
+test "$(bash -lc 'printf %s "$GROK_HOME"')" = /data/grok
+grep -qx 'GROK_DISABLE_AUTOUPDATER=1' /root/.ssh/environment
+bash -lc 'grok mcp list --json' | jq -e 'any(.[]; .name == "homeassistant" and .command == "node" and .scope == "user")' >/dev/null
+jq -e '.hooks | has("SessionStart") and has("Stop")' /data/grok/hooks/agent-terminal.json >/dev/null
 sshd -t
 
 # The terminal and SSH share the selected agent's persistent environment.
@@ -62,6 +67,8 @@ test "$(tmux show-environment -t '=agent-homeassistant-shell' CODEX_HOME)" = COD
 test "$(tmux show-environment -t '=agent-homeassistant-shell' CLAUDE_CONFIG_DIR)" = CLAUDE_CONFIG_DIR=/data/claude/.claude
 test "$(tmux show-environment -t '=agent-homeassistant-shell' DISABLE_AUTOUPDATER)" = DISABLE_AUTOUPDATER=1
 test "$(tmux show-environment -t '=agent-homeassistant-shell' AGY_CLI_DISABLE_AUTO_UPDATE)" = AGY_CLI_DISABLE_AUTO_UPDATE=true
+test "$(tmux show-environment -t '=agent-homeassistant-shell' GROK_HOME)" = GROK_HOME=/data/grok
+test "$(tmux show-environment -t '=agent-homeassistant-shell' GROK_DISABLE_AUTOUPDATER)" = GROK_DISABLE_AUTOUPDATER=1
 tmux kill-server
 
 # Switch to Claude and back, as a container restart would do. Verify Codex's

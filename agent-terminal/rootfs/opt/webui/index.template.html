@@ -390,6 +390,7 @@ body.side-pane #split-toggle::before { display: none; }
 .provider-codex { color: #91d1bd; background: #213830; }
 .provider-shell { color: #a7c7ef; background: #243245; }
 .provider-antigravity { color: #e3cd8b; background: #383122; }
+.provider-grok { color: #e8edf3; background: #30343c; }
 .provider-custom { color: #c7b1e4; background: #30273e; }
 .session-copy { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
 .session-copy strong { font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
@@ -654,7 +655,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var tokenUrl = location.protocol + '//' + location.host + base + '/token';
   // Replaced at boot, and whenever agent-workspace creates a workspace.
   var sessionConfig = /*{{SESSION_CONFIG}}*/ null || {
-    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }, { id: 'antigravity', name: 'Antigravity' }],
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }, { id: 'ollama', name: 'Ollama' }, { id: 'antigravity', name: 'Antigravity' }, { id: 'grok', name: 'Grok' }],
     workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
     defaultAgent: 'claude'
   };
@@ -1070,7 +1071,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     if (e.type !== 'keydown' || e.isComposing || e.keyCode === 229) return true;
     // Legacy terminal input loses Shift on Enter. The agent editors accept
     // Ctrl+J as a newline, so a physical Shift+Enter must send LF, not CR.
-    if (['claude', 'codex', 'ollama', 'antigravity'].indexOf(selectedAgent) !== -1 &&
+    if (['claude', 'codex', 'ollama', 'antigravity', 'grok'].indexOf(selectedAgent) !== -1 &&
         e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
       fixedKey('\n');
