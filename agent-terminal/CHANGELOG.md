@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2.13.1
+- Keep all six provider buttons large enough to tap on a 320-pixel-wide phone
+  by giving the session-name button less space.
+
 ## 2.13.0
 - Add xAI's official Grok Build CLI as a provider with device-code account
   login, persistent settings and conversations, Home Assistant tools, and
