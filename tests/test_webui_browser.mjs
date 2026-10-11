@@ -939,4 +939,9 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('sessions-save')");
   await until("testSocket?.args[0] === 'grok' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Grok coding task');
+  await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 844, deviceScaleFactor: 1, mobile: true });
+  await load();
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b => {
+    const r = b.getBoundingClientRect(); return r.width >= 40 && r.right <= innerWidth;
+  })`), true, 'six providers retain usable touch targets at 320px');
 });
