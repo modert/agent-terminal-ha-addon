@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.13.0
+- Add xAI's official Grok Build CLI as a provider with device-code account
+  login, persistent settings and conversations, Home Assistant tools, and
+  named sessions that resume their own conversation. Grok 1.0.50 is pinned
+  for both amd64 and aarch64 and does not update itself inside the container.
+
 ## 2.12.1
 - Return keyboard focus to the terminal after pasting from the clipboard or
   paste box, so Enter works without clicking the terminal first.

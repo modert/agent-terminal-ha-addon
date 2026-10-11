@@ -209,7 +209,7 @@ window.AgentSessions = function (options) {
       ? 'Delete “' + record.name + '” from ' + label(workspaces, record.workspace) + ' · ' + label(agents, record.agent) + '? This ends its running task and removes it from Sessions in every browser. Terminal scrollback is lost. Workspace files and provider-saved conversations are kept. This cannot be undone.'
       : next === 'stop'
       ? 'Stop “' + record.name + '” and end its running task? ' +
-        (['claude', 'codex', 'ollama', 'antigravity'].indexOf(record.agent) !== -1 ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
+        (['claude', 'codex', 'ollama', 'antigravity', 'grok'].indexOf(record.agent) !== -1 ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
     el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
     el('sessions-save').classList.toggle('session-danger', next === 'delete');
@@ -298,6 +298,7 @@ window.AgentSessions.icons = {
   shell: '<path d="m5 6 6 6-6 6m8 0h6"/>',
   ollama: '<path d="M7 10V4a2 2 0 0 1 4 0v5h2V4a2 2 0 0 1 4 0v6a7 7 0 1 1-10 0Z"/><path d="M9 15h.01M15 15h.01M10 19h4"/>',
   antigravity: '<path d="M4 20C6 10 9 4 12 4s6 6 8 16"/><path d="M9 20c.5-4 1.5-7 3-7s2.5 3 3 7"/>',
+  grok: '<path d="m4 20 16-16M6 5h12v13"/><path d="M18 12a7 7 0 1 1-6-6"/>',
   custom: '<path d="M8 4H6v6l-2 2 2 2v6h2m8-16h2v6l2 2-2 2v6h-2"/>'
 };
 window.AgentSessions.icon = function (agent) {

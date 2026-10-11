@@ -911,13 +911,13 @@ test('phone taps and composition with real browser events and xterm', {
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
 
-  // Five providers share the phone's second row as marks: no wider, no third row.
+  // Six providers share the phone's second row as marks: no wider, no third row.
   await load();
   await tap("document.querySelector('#agents button[data-agent=antigravity]')");
   await until("testSocket?.args[0] === 'antigravity' && testSocket.readyState === 1");
-  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'five providers fit the phone layout');
+  assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'six providers fit the phone layout');
   assert.equal(await evaluate("document.getElementById('session-bar').getBoundingClientRect().height <= 110"), true,
-    'five providers keep the phone header within two rows');
+    'six providers keep the phone header within two rows');
   assert.equal(await evaluate("document.getElementById('agents').getBoundingClientRect().top > document.getElementById('workspace').getBoundingClientRect().bottom"), true,
     'the providers stay on their own line below the workspace');
   assert.equal(await evaluate("Math.abs(document.getElementById('agents').getBoundingClientRect().top - document.getElementById('sessions-open').getBoundingClientRect().top) < 4"), true,
@@ -929,4 +929,14 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b =>
     b.querySelector('svg').getBoundingClientRect().width >= 18 && b.getAttribute('aria-label') &&
     getComputedStyle(b.querySelector('.agent-name')).display === 'none')`), true, 'a phone shows each provider as its mark, named for screen readers');
+  await tap("document.querySelector('#agents button[data-agent=grok]')");
+  await until("testSocket?.args[0] === 'grok' && testSocket.readyState === 1");
+  assert.equal(await evaluate('testSocket.args[1]'), 'homeassistant');
+  await tap("document.getElementById('sessions-open')");
+  await tap("document.getElementById('sessions-new')");
+  await evaluate("document.getElementById('sessions-name').value = 'Grok coding task'");
+  assert.equal(await evaluate("document.getElementById('sessions-provider').value"), 'grok');
+  await tap("document.getElementById('sessions-save')");
+  await until("testSocket?.args[0] === 'grok' && testSocket.args[2]?.startsWith('session-')");
+  assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Grok coding task');
 });
