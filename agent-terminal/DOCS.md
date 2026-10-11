@@ -11,7 +11,7 @@ Supported agents:
 | `claude` | Anthropic's [Claude Code](https://github.com/anthropics/claude-code) | Your normal Claude account (subscription) - no API key |
 | `codex` | [OpenAI Codex](https://developers.openai.com/codex/cli/) (ChatGPT) | ChatGPT account with Codex access, using device code sign-in; API key also supported |
 | `ollama` | Codex terminal connected to your local Ollama server | No ChatGPT account or API key; select an installed local model |
-| `antigravity` | Google's [Antigravity CLI](https://antigravity.google/docs/cli/overview/) (`agy`) | Google account, using a sign-in link and a pasted code; needs a [processor the CLI supports](#antigravity-google) |
+| `antigravity` | Google's [Antigravity CLI](https://antigravity.google/docs/cli/overview/) (`agy`) | Google account, using a sign-in link and a pasted code |
 
 The add-on is built around per-agent adapters, so more can be added - see
 [Adding an agent](#adding-an-agent).
@@ -164,13 +164,13 @@ The container has no desktop keyring; the CLI keeps the login in a file there
 instead.
 
 **Processor.** Google builds `agy` for processors with particular
-instructions; on Intel and AMD the first one it checks for is carry-less
-multiplication (`pclmulqdq`). Without them the CLI cannot start, and an
-Antigravity session explains this and stops instead of restarting. The usual
-cause is a virtual machine with a generic CPU type, the default in QEMU and
-Proxmox, which hides the host's instructions from Home Assistant: set the
-virtual machine's CPU type to `host` and restart it. `agy --version` in a
-shell prints the exact reason. The other agents are not affected.
+instructions, including carry-less multiplication (`pclmulqdq`) on Intel and
+AMD. When a virtual machine hides that instruction, the add-on automatically
+runs the CLI under QEMU CPU emulation. This works without changing or restarting
+the VM, but is slower than native execution. Its command-line tools still run
+natively. To use native execution, expose the host CPU instructions through
+the VM's CPU settings (usually CPU type `host`). Other launch failures are
+shown in the session, which stops instead of restarting repeatedly.
 
 The built-in `homeassistant` MCP server is added to
 `/data/antigravity/.gemini/config/mcp_config.json` on boot when it is missing.
@@ -1006,8 +1006,8 @@ The IP reservation and private infrastructure repository remain host-managed.
   `502` for a few seconds while the proxy warms up - retry.
 - Editing `custom_components/*.py` still requires `ha core restart` to take
   effect (Python module caching).
-- Antigravity cannot start where the processor lacks the instructions it is
-  built for, most often in a virtual machine with a generic CPU type. See
+- Antigravity uses slower CPU emulation on x86 virtual machines that hide
+  `pclmulqdq`. See
   [Antigravity](#antigravity-google).
 - Tested on amd64/aarch64 HAOS. Not tested on armv7/armv6.
 

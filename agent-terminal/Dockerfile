@@ -57,6 +57,7 @@ RUN set -eu; \
 # rest of rootfs doesn't reinstall them.
 COPY rootfs/opt/agents /opt/agents
 COPY rootfs/usr/local/bin/agent-install /usr/local/bin/agent-install
+COPY rootfs/usr/local/bin/agy /usr/local/bin/agy
 RUN chmod +x /usr/local/bin/agent-install \
     && agent-install ${AGENTS} \
     && rm -rf /root/.npm /tmp/*

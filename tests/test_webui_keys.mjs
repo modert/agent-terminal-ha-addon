@@ -10,7 +10,7 @@ const template = readFileSync(process.env.WEBUI_TEMPLATE || resolve(
   import.meta.dirname, '../agent-terminal/rootfs/opt/webui/index.template.html'), 'utf8');
 const script = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/sessions.js', import.meta.url), 'utf8') + '\n' + [...template.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];
 
-async function page({ touch = true, search = '', saved = [], platform = 'Linux', config = null, voiceFactory = null } = {}) {
+async function page({ touch = true, search = '', saved = [], platform = 'Linux', config = null, voiceFactory = null, clipboard = null } = {}) {
   const ids = new Map(), packets = [], timers = new Map(), storage = new Map(saved);
   let timerId = 0, terminal, socket, now = 1000;
   function element() {
@@ -95,7 +95,7 @@ async function page({ touch = true, search = '', saved = [], platform = 'Linux',
   window.top = window;
   window.getSelection = () => ({ removeAllRanges() {} });
   vm.runInNewContext(script.replace('/*{{SESSION_CONFIG}}*/ null', JSON.stringify(config)), {
-    Terminal, WebSocket, document, window, navigator: { platform },
+    Terminal, WebSocket, document, window, navigator: { platform, clipboard },
     FitAddon: { FitAddon: class { fit() {} } },
     location: { pathname: '/terminal', protocol: 'https:', host: 'example.test', search },
     TextEncoder, TextDecoder, Uint8Array, URLSearchParams,
@@ -518,7 +518,21 @@ test('a draft keeps pasted text for editing; the original Paste action still ins
   pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
   pasteBox.fire('paste', { clipboardData: { getData: () => '/help' } });
   assert.deepEqual(p.terminal.pastes, ['hello hello', '/help']);
+  assert.equal(p.activeElement(), p.terminal.textarea, 'Enter goes to the terminal after a paste closes the box');
   assert.deepEqual(p.input(), [], 'the separate Paste action must not execute text');
+});
+
+test('desktop clipboard paste restores keyboard focus after the asynchronous read', async () => {
+  let resolveClipboard;
+  const p = await page({ touch: false, clipboard: { readText: () => new Promise(resolve => { resolveClipboard = resolve; }) } });
+  p.button('Paste').focus();
+  p.tap('Paste');
+  resolveClipboard('Review this change');
+  await new Promise(setImmediate);
+  assert.deepEqual(p.terminal.pastes, ['Review this change']);
+  assert.equal(p.activeElement(), p.terminal.textarea);
+  p.tap('Enter');
+  assert.deepEqual(p.input(), ['\r']);
 });
 
 test('Enter submits a draft and Shift+Enter or the newline key keeps editing', async () => {

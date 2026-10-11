@@ -18,7 +18,7 @@ agent_install() {
     local base="https://antigravity-cli-auto-updater-974169037036.us-central1.run.app"
     local arch manifest url sum tmp
     case "$(uname -m)" in
-        x86_64)  arch=amd64 ;;
+        x86_64)  arch=amd64; apk add --no-cache qemu-x86_64 ;;
         aarch64) arch=arm64 ;;
         *) echo "antigravity: no build for $(uname -m)" >&2; return 1 ;;
     esac
@@ -29,12 +29,12 @@ agent_install() {
     curl -fsSL -o "${tmp}/agy.tar.gz" "${url}"
     echo "${sum}  ${tmp}/agy.tar.gz" | sha512sum -c -
     tar -xzf "${tmp}/agy.tar.gz" -C "${tmp}" antigravity
-    install -m 755 "${tmp}/antigravity" /usr/local/bin/agy
+    mkdir -p /opt/antigravity
+    install -m 755 "${tmp}/antigravity" /opt/antigravity/agy
+    chmod 755 /usr/local/bin/agy
     rm -rf "${tmp}"
-    # Home Assistant builds this image on the machine that runs it, and the
-    # binary stops at once on a processor without the instructions it was
-    # compiled for. That must not fail the build: the other agents still work
-    # there, and agent_run explains it to whoever opens an Antigravity session.
+    # The wrapper supplies missing x86 instructions on generic VM CPUs. Keep
+    # other launch failures from breaking installation of the other agents.
     agy --version || echo "antigravity: installed, but it cannot run on this processor" >&2
 }
 

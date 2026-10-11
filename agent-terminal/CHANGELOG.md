@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.12.1
+- Return keyboard focus to the terminal after pasting from the clipboard or
+  paste box, so Enter works without clicking the terminal first.
+- Run Antigravity through CPU emulation on x86 virtual machines that hide
+  `pclmulqdq`, so it starts without changing the VM's CPU type or restarting.
+
 ## 2.12.0
 - Add Google's Antigravity CLI (`agy`) as a provider: an **Antigravity**
   button, named sessions that reopen their own conversation, the built-in

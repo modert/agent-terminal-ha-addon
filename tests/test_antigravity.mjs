@@ -24,6 +24,25 @@ function fixture(t) {
 }
 const boot = 'agent_init; agent_register_mcp homeassistant node /opt/ha-mcp/server.mjs';
 
+test('the CLI wrapper emulates unsupported x86 CPUs and preserves arguments and exit status', t => {
+  const { root } = fixture(t);
+  const bin = join(root, 'bin'), native = join(root, 'native'), wrapper = join(root, 'agy');
+  mkdirSync(bin);
+  writeFileSync(native, '#!/bin/sh\nprintf "%s\\n" native "$@"\nexit 7\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'uname'), '#!/bin/sh\necho "$TEST_ARCH"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'grep'), '#!/bin/sh\nexit "$TEST_CPU_STATUS"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'qemu-x86_64'), '#!/bin/sh\nprintf "%s\\n" emulated "$1" "$2"\nshift 2\nexec "$@"\n', { mode: 0o755 });
+  writeFileSync(wrapper, readFileSync(new URL('../agent-terminal/rootfs/usr/local/bin/agy', import.meta.url), 'utf8')
+    .replaceAll('/opt/antigravity/agy', native), { mode: 0o755 });
+  for (const [arch, cpu, prefix] of [['x86_64', '1', ['emulated', '-cpu', 'max']], ['x86_64', '0', []], ['aarch64', '1', []]]) {
+    const result = spawnSync(wrapper, ['--conversation', 'id with spaces'], {
+      encoding: 'utf8', env: { PATH: bin + ':' + process.env.PATH, TEST_ARCH: arch, TEST_CPU_STATUS: cpu },
+    });
+    assert.equal(result.status, 7);
+    assert.deepEqual(result.stdout.trim().split('\n'), [...prefix, 'native', '--conversation', 'id with spaces']);
+  }
+});
+
 test('boot keeps the login, the session hook and the HA server in persistent storage', t => {
   const { data, home, run, json } = fixture(t);
   assert.equal(run(boot).status, 0);
