@@ -277,6 +277,16 @@ test('phone taps and composition with real browser events and xterm', {
   await tap("document.getElementById('term')", true);
   await until("document.activeElement.id === 'paste-text'");
   await tap("document.getElementById('paste-cancel')");
+  await tap(button('Keys')); await group('tools'); await tap(button('Paste'));
+  await until("document.activeElement.id === 'paste-text'");
+  await evaluate(`(() => {
+    const data = new DataTransfer(); data.setData('text/plain', 'clipboard focus probe');
+    document.getElementById('paste-text').dispatchEvent(new ClipboardEvent('paste', {
+      clipboardData: data, bubbles: true, cancelable: true
+    }));
+  })()`);
+  assert.equal(await evaluate("document.activeElement.classList.contains('xterm-helper-textarea')"), true,
+    'automatic paste restores terminal focus without a click');
   async function direct() { await tap(button('Keys')); await group('tools'); await tap(button('Direct')); }
   await direct();
   assert.equal(await evaluate("document.activeElement.classList.contains('xterm-helper-textarea')"), true);

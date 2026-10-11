@@ -1011,7 +1011,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     var id = connectionId;
     if (touch || !clipReadOK || !navigator.clipboard || !navigator.clipboard.readText) { openPaste(); return; }
     navigator.clipboard.readText().then(
-      function (t) { if (id !== connectionId) return; if (t) term.paste(t); else pasteClipboardImage(); },
+      function (t) { if (id !== connectionId) return; if (t) { term.paste(t); term.focus(); } else pasteClipboardImage(); },
       function () { if (id === connectionId) { clipReadOK = false; openPaste(); } });
   }
   // A clipboard without text may hold a screenshot, which is attached.
@@ -1426,6 +1426,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       e.preventDefault();
       closePaste();
       term.paste(t);
+      term.focus();
       toast('Pasted ' + t.length + (t.length === 1 ? ' character' : ' characters'));
     });
     box.addEventListener('keydown', function (e) {
