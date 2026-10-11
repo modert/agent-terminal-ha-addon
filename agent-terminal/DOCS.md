@@ -11,6 +11,8 @@ Supported agents:
 | `claude` | Anthropic's [Claude Code](https://github.com/anthropics/claude-code) | Your normal Claude account (subscription) - no API key |
 | `codex` | [OpenAI Codex](https://developers.openai.com/codex/cli/) (ChatGPT) | ChatGPT account with Codex access, using device code sign-in; API key also supported |
 | `ollama` | Codex terminal connected to your local Ollama server | No ChatGPT account or API key; select an installed local model |
+| `antigravity` | Google's [Antigravity CLI](https://antigravity.google/docs/cli/overview/) (`agy`) | Google account, using a sign-in link and a pasted code |
+| `grok` | xAI's official [Grok Build CLI](https://github.com/xai-org/grok-build) (`grok`) | Grok account using device-code sign-in, or an xAI API key |
 
 The add-on is built around per-agent adapters, so more can be added - see
 [Adding an agent](#adding-an-agent).
@@ -28,7 +30,7 @@ add-on's SSH access to anyone you wouldn't hand root on your HA box to.
 
 ## Setup
 
-1. **Configuration tab**: choose the initial agent, `agent: claude`, `agent: codex`, or `agent: ollama`. Add your SSH
+1. **Configuration tab**: choose the initial agent: `claude`, `codex`, `ollama`, `antigravity`, or `grok`. Add your SSH
    public key(s) to `authorized_keys` if you want SSH access, or leave it empty
    to use the web panel only. Leave `web_command` empty to launch the selected
    agent.
@@ -50,6 +52,10 @@ Choose **"Claude account with subscription"**, open the printed URL on any
 device, approve, copy the code, paste it back. No browser needed on the HA
 host itself. This only has to be done once - the login persists across
 add-on restarts and updates.
+
+Claude Code comes with the add-on image and changes only when the add-on is
+updated. Every terminal sets `DISABLE_AUTOUPDATER=1`, so a running session
+never reinstalls the CLI underneath the others.
 
 ### ChatGPT (OpenAI Codex)
 
@@ -142,6 +148,79 @@ From SSH, open the same general local session with:
 agent-session --agent ollama --workspace homeassistant
 ```
 
+### Antigravity (Google)
+
+1. Open the sidebar panel and click **Antigravity**, or run `agy` in a shell.
+2. Choose **Google OAuth**. Open the printed URL on any device, sign in to
+   Google, and paste the authorization code it shows back into the terminal.
+   No browser is needed on the HA host itself.
+3. The first run also asks for a colour scheme, whether Google may use your
+   interactions to improve the product, and whether you trust the workspace
+   folder. The add-on answers none of these for you.
+
+The login, settings and conversations live in `/data/antigravity` and survive
+restarts and updates. Antigravity has no setting for where it keeps its files,
+so `/root/.gemini` and `/root/.config/antigravity` are links into that folder.
+The container has no desktop keyring; the CLI keeps the login in a file there
+instead.
+
+**Processor.** Google builds `agy` for processors with particular
+instructions, including carry-less multiplication (`pclmulqdq`) on Intel and
+AMD. When a virtual machine hides that instruction, the add-on automatically
+runs the CLI under QEMU CPU emulation. This works without changing or restarting
+the VM, but is slower than native execution. Its command-line tools still run
+natively. To use native execution, expose the host CPU instructions through
+the VM's CPU settings (usually CPU type `host`). Other launch failures are
+shown in the session, which stops instead of restarting repeatedly.
+
+The built-in `homeassistant` MCP server is added to
+`/data/antigravity/.gemini/config/mcp_config.json` on boot when it is missing.
+An existing entry is kept as configured, including its disabled tools. Named
+sessions reopen their own conversation: an `agent-terminal` entry in
+`/data/antigravity/.gemini/config/hooks.json` records the conversation each
+terminal is using. The add-on rewrites only that entry, and hooks you add
+beside it are kept. A conversation is recorded when its first prompt is sent,
+so a session restarted before that starts a new one.
+
+The CLI comes with the add-on image, which takes the current release when it
+is built, and changes only when the add-on is updated: every terminal sets
+`AGY_CLI_DISABLE_AUTO_UPDATE=true`.
+
+A Gemini API key works from a Shell session instead of an account: set
+`"modelProvider": "gemini"` in
+`/data/antigravity/.gemini/antigravity-cli/settings.json`, then
+`export GEMINI_API_KEY=...` and run `agy`. Remove the setting to go back to
+the account login.
+
+### Grok (xAI)
+
+1. Open a **Shell** session and run `grok login --device-auth`.
+2. Open the printed URL on your phone or computer, enter its code, and sign
+   in with your Grok account. This needs no browser or callback port on the HA host.
+3. Select **Grok** in the panel, or create a named Grok session in **Sessions**.
+   Account access and usage limits are determined by xAI.
+
+For API-key authentication instead, set `XAI_API_KEY` in a Shell session and
+run `grok` there. Obtain the key from [xAI's console](https://console.x.ai/).
+An exported key applies to that shell and its children, not another panel
+session; use device-code sign-in for persistent account access in the panel.
+
+`GROK_HOME=/data/grok` keeps credentials, configuration, and conversations
+across restarts and updates. The image pins Grok 1.0.50 and verifies the Linux
+release artifacts for amd64 and aarch64 against SHA-256 hashes. Every terminal
+sets `GROK_DISABLE_AUTOUPDATER=1`; CLI changes arrive with add-on releases.
+`/root/.grok` also points to `/data/grok`, so an already-open Shell session
+uses persistent storage even before it receives the new environment.
+
+Boot registers the built-in `homeassistant` MCP server in
+`/data/grok/config.toml` only when it has no user entry. Existing server commands,
+disabled servers, tool restrictions, and other settings are preserved. The
+add-on owns only `/data/grok/hooks/agent-terminal.json` among the global hooks.
+It records each terminal's actual conversation ID, including `/new` and `/load`
+changes, and reopens that exact conversation with `--resume`. Subagent
+conversations cannot replace the parent terminal's saved ID. If global hooks
+are disabled by your Grok policy, automatic conversation tracking is unavailable.
+
 ## What you get
 
 - **Persistent login** - stored under `/data`, survives restarts/updates.
@@ -211,7 +290,9 @@ shell, and are never stored in status snapshots or settings. Read
 `/run/agent-terminal/remote-status.json` to diagnose the current connection.
 
 The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
-**Ollama**, or **Shell**. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
+**Ollama**, **Antigravity**, **Grok**, or **Shell**. Each button carries the provider's mark;
+on a phone, in split view and in a narrow window it shows the mark alone, and
+**Sessions** shows the same marks beside the names. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
 ChatGPT, and **Ctrl+Shift+3** opens Shell. Use the buttons if your browser or OS reserves
 a shortcut. The workspace selector chooses the task folder. The keyboard
 button at the right end shows or hides the on-screen helper keys (see
@@ -553,7 +634,7 @@ available; it cannot send an alert while Home Assistant itself is offline.
 |---|---|---|
 | `authorized_keys` | `[]` | SSH public keys allowed to log in. Empty = SSH effectively unusable (no keys accepted). |
 | `ssh_port` | `2202` | Port sshd listens on. Also update the add-on's `ports` mapping if you change this. |
-| `agent` | `claude` | Initial choice: `claude` (Claude Code), `codex` (ChatGPT), or `ollama` (local models). Switch live with the panel buttons. |
+| `agent` | `claude` | Initial choice: `claude` (Claude Code), `codex` (ChatGPT), `ollama` (local models), `antigravity` (Google Antigravity), or `grok` (xAI). Switch live with the panel buttons. |
 | `web_command` | *(empty)* | Optional trusted shell command for the separate Custom session and initial web selection. Use the Shell button for a plain shell. |
 | `mobile_ui` | `true` | Serve the terminal with agent/workspace controls and touch support. Set `false` for ttyd's stock client without these controls. |
 | `git_user_name` / `git_user_email` | `""` | Optional system-wide git identity for commits made from this add-on. |
@@ -775,6 +856,28 @@ launcher credential isolation. Session tests verify exact local conversation
 resumption. Browser checks open general and named Ollama sessions and verify
 the four-provider phone layout. These suites do not contact a real model.
 
+`tests/test_antigravity.mjs` checks the Antigravity adapter against temporary
+folders: the links into persistent storage, the session hook and MCP server it
+writes, the files it must leave alone, and the launcher, including what is
+shown on a processor that cannot run the CLI. Session tests check that a
+terminal follows the conversation the hook names. Where `agy` is on PATH and
+can run, they also drive the real CLI with an API key against a local stand-in
+for the Gemini API, which confirms its hook payload and `--conversation` flag
+without an account or a model request. The CLI is not pinned, so the daily
+build is what notices a release that changes either. Browser checks cover the
+six-provider phone layout. Google sign-in is a manual acceptance check.
+
+### Checking the Grok adapter
+
+`node --test tests/test_grok.mjs` checks persistent configuration, lifecycle
+hooks, launch arguments, MCP registration, disabled-server preservation, and
+invalid-config handling. CLI-specific checks run when `grok` is on PATH.
+`tests/test_sessions.mjs` also runs the real CLI against a local model stand-in,
+checks conversation creation and resume with prior messages, and rejects stale
+launch and subagent hooks. No account or paid API request is needed. Chromium
+checks provider selection, named sessions, and the six-provider phone layout.
+Device-code account sign-in remains a manual acceptance check.
+
 ### Checking the terminal controls
 
 With Node 22+, run from the repository root:
@@ -951,6 +1054,9 @@ The IP reservation and private infrastructure repository remain host-managed.
   `502` for a few seconds while the proxy warms up - retry.
 - Editing `custom_components/*.py` still requires `ha core restart` to take
   effect (Python module caching).
+- Antigravity uses slower CPU emulation on x86 virtual machines that hide
+  `pclmulqdq`. See
+  [Antigravity](#antigravity-google).
 - Tested on amd64/aarch64 HAOS. Not tested on armv7/armv6.
 
 ## Support

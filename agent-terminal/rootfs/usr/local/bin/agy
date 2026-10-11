@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Google's x86 binary needs carry-less multiplication. Generic VM CPU models
+# often hide it; emulate only that CLI, leaving its child tools native.
+set -euo pipefail
+if [ "$(uname -m)" = x86_64 ] && ! grep -qw pclmulqdq /proc/cpuinfo; then
+    exec qemu-x86_64 -cpu max /opt/antigravity/agy "$@"
+fi
+exec /opt/antigravity/agy "$@"

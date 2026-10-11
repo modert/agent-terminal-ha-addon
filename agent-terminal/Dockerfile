@@ -10,7 +10,7 @@ ENV LANG=C.UTF-8 \
 
 # Agent CLIs baked into the image: space-separated adapter names from
 # rootfs/opt/agents. The add-on's `agent` option picks the initial agent.
-ARG AGENTS="claude codex ollama"
+ARG AGENTS="claude codex ollama antigravity grok"
 
 # System deps: node/npm for the agent CLIs, openssh for VS Code Remote-SSH,
 # ttyd for the Ingress web terminal, gh for GitHub, plus the usual dev CLIs.
@@ -57,6 +57,7 @@ RUN set -eu; \
 # rest of rootfs doesn't reinstall them.
 COPY rootfs/opt/agents /opt/agents
 COPY rootfs/usr/local/bin/agent-install /usr/local/bin/agent-install
+COPY rootfs/usr/local/bin/agy /usr/local/bin/agy
 RUN chmod +x /usr/local/bin/agent-install \
     && agent-install ${AGENTS} \
     && rm -rf /root/.npm /tmp/*

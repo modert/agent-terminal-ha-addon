@@ -2,10 +2,51 @@
 
 ## Unreleased
 
-## 2.11.2
+## 2.13.2
 - Add **Sessions → ••• → Start fresh** to end a terminal and open a new
   conversation when the old Codex conversation is locked or open remotely.
   Keep the old session stopped and preserve its saved history and workspace files.
+
+## 2.13.1
+- Keep all six provider buttons large enough to tap on a 320-pixel-wide phone
+  by giving the session-name button less space.
+
+## 2.13.0
+- Add xAI's official Grok Build CLI as a provider with device-code account
+  login, persistent settings and conversations, Home Assistant tools, and
+  named sessions that resume their own conversation. Grok 1.0.50 is pinned
+  for both amd64 and aarch64 and does not update itself inside the container.
+
+## 2.12.1
+- Return keyboard focus to the terminal after pasting from the clipboard or
+  paste box, so Enter works without clicking the terminal first.
+- Run Antigravity through CPU emulation on x86 virtual machines that hide
+  `pclmulqdq`, so it starts without changing the VM's CPU type or restarting.
+
+## 2.12.0
+- Add Google's Antigravity CLI (`agy`) as a provider: an **Antigravity**
+  button, named sessions that reopen their own conversation, the built-in
+  Home Assistant tools, and a Google sign-in that survives restarts and
+  updates. Set `agent: antigravity` to make it the initial choice.
+- Antigravity needs processor instructions that a virtual machine with a
+  generic CPU type hides. There its session explains what to change and
+  stops instead of restarting, and the other agents are not affected.
+- The provider buttons carry each provider's mark from **Sessions**: alone on
+  a phone and in other narrow layouts, beside its name on a wide screen. Five
+  providers keep a phone's header to two rows.
+
+## 2.11.4
+- Claude Code no longer updates itself inside the add-on; it changes only
+  with the add-on image. Before, a Claude session left running on an older
+  version reinstalled the CLI every half hour, and an install that died
+  midway left every new Claude session unable to start until the add-on was
+  rebuilt.
+
+## 2.11.3
+- Update the Codex CLI to 0.162.1.
+
+## 2.11.2
+- Update the Codex CLI to 0.162.0.
 
 ## 2.11.1
 - Update the Codex CLI to 0.161.0.

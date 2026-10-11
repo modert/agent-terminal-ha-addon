@@ -56,7 +56,7 @@ tmux options apply live with `tmux set`.
 
 The container has Node but no Python.
 
-- Runs here: `node --test tests/test_webui.mjs`, `tests/test_webui_keys.mjs`, `tests/test_workspaces.mjs`, `tests/test_sessions.mjs`, `tests/test_uploads.mjs`. The page tests' `Terminal` stub has to gain any new xterm API the page starts calling. `tests/test_webui_browser.mjs` skips unless `CHROMIUM_BIN` is set; point `WEBUI_BUNDLE` at a bundle built as above.
+- Runs here: `node --test tests/test_webui.mjs`, `tests/test_webui_keys.mjs`, `tests/test_workspaces.mjs`, `tests/test_sessions.mjs`, `tests/test_uploads.mjs`, `tests/test_antigravity.mjs`. The page tests' `Terminal` stub has to gain any new xterm API the page starts calling. `tests/test_webui_browser.mjs` skips unless `CHROMIUM_BIN` is set; point `WEBUI_BUNDLE` at a bundle built as above.
 - Never set `AGENT_TERMINAL_TEST_CONTAINER=1` here: `tests/test_terminal_container.mjs` then runs and kills the tmux server, and every live session with it.
 - Doesn't run here: `tests/test_codex_adapter.py`, `tests/test_mcp_integration.py` and `tests/container-smoke.sh`. Check adapter shell functions by sourcing `agent-terminal/rootfs/opt/agents/<agent>.sh` with a temporary `AGENT_DATA`; CI runs the full suites.
 
@@ -65,6 +65,12 @@ The container has Node but no Python.
 Codex 0.157 and later start a background app-server that dies in this container. The TUI then exits with "failed to record pid-managed app-server process" and ttyd respawns it forever, which looks like the ChatGPT panel loading endlessly. On every boot, `codex.sh`'s `agent_init` adds `daemon_auto_start = false` to `/data/codex/config.toml` when the setting is missing (inside an existing `[features]` table if there is one) and leaves any existing value alone, including a deliberate `true`. If the panel loops after a Codex update, check `codex features list | grep daemon_auto_start` first; `codex --no-daemon` is the one-off escape.
 
 `agent_init` adds `disable_paste_burst = true` the same way. Codex otherwise takes an Enter that arrives within about 10 ms of the key before it for a line break in a paste, and the prompt stays in the composer. A browser, Home Assistant's proxy, ttyd and tmux bunch keys that closely often enough to matter. A prompt left unsent in Codex is that setting missing, or a Codex started before it was added.
+
+## Antigravity gotcha
+
+`agy` is a static binary built for processors with `pclmulqdq`. A virtual machine with a generic CPU type hides that instruction, and the binary dies at once with an illegal instruction. `agent_run` in `antigravity.sh` then shows an explanation and stops the session; `agy --version` in a shell prints the exact reason. Supervisor builds the image on the machine that runs it, so nothing at build or boot time may depend on `agy` running: the adapter writes Antigravity's MCP and hook files itself.
+
+To try the CLI on such a machine, fetch Alpine's `qemu-x86_64` package into a scratch folder (`apk fetch`, then unpack the `.apk` with `tar`) and run `qemu-x86_64 -cpu max agy` with a temporary `HOME`. With that wrapper first on `PATH` as `agy`, `tests/test_sessions.mjs` runs its real-CLI check here. A conversation needs no account: `"modelProvider": "gemini"` in the temporary `~/.gemini/antigravity-cli/settings.json`, any `GEMINI_API_KEY`, and `GOOGLE_GEMINI_BASE_URL` pointing at a local server that answers `streamGenerateContent`, as that test does.
 
 ## Input that does not arrive
 

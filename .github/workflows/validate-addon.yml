@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches: [master]
-  # Claude Code isn't pinned, so a daily build catches a release that breaks
+  # Claude Code and Antigravity aren't pinned, so a daily build catches a release that breaks
   # the image or the adapter before the next rebuild does.
   schedule:
     - cron: '41 13 * * *'
