@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.13.3
+- Update the Codex CLI to 0.163.0.
+
 ## 2.13.2
 - Add **Sessions → ••• → Start fresh** to end a terminal and open a new
   conversation when the old Codex conversation is locked or open remotely.
