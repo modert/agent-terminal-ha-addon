@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 2.14.0
 - Add a quick session dropdown and recent provider icons that return to the
   last task in each workspace, with two icons on phones and three on wider screens.
 - Add slash-command entry and complete tmux actions to the helper keys.
