@@ -25,6 +25,30 @@ function fixture(t) {
   return { root, paths, store, run, pid };
 }
 
+test('sleep preserves saved history, blocks reconnect, and requires explicit wake', t => {
+  const { store, root, paths, run } = fixture(t);
+  const record = store.create({ name: 'Saved task', agent: 'codex', workspace: 'homeassistant' });
+  store.ensure('codex', 'homeassistant', record.id, 'exec sleep 120');
+  assert.throws(() => store.sleep(record.id), /saved conversation/);
+  assert.equal(store.get(record.id).stopped, false);
+  const transcript = join(root, 'history.jsonl'); writeFileSync(transcript, 'history');
+  const launch = run('show-environment', '-t', '=' + record.id, 'AGENT_TERMINAL_LAUNCH_ID').split('=')[1];
+  const conversationId = '550e8400-e29b-41d4-a716-446655440099';
+  store.remember(record.id, 'codex', launch, { hook_event_name: 'SessionStart', session_id: conversationId, transcript_path: transcript });
+  assert.equal(store.request({ method: 'sleep', session: record.id }).sleeping, true);
+  const restarted = createSessionStore(paths);
+  assert.equal(restarted.get(record.id).sleeping, true);
+  assert.equal(restarted.list().find(r => r.id === record.id).running, false);
+  assert.throws(() => restarted.ensure('codex', 'homeassistant', record.id, 'exec sleep 120'), /Session stopped/);
+  assert.equal(restarted.get(record.id).conversationId, conversationId);
+  restarted.request({ method: 'start', session: record.id });
+  assert.equal(restarted.get(record.id).sleeping, undefined);
+  restarted.ensure('codex', 'homeassistant', record.id, 'exec sleep 120');
+  assert.equal(run('show-environment', '-t', '=' + record.id, 'AGENT_CONVERSATION_ID'), 'AGENT_CONVERSATION_ID=' + conversationId);
+  const shell = store.create({ name: 'Shell task', agent: 'shell', workspace: 'homeassistant' });
+  assert.throws(() => store.sleep(shell.id), /saved conversation/);
+});
+
 test('each named task remembers its exact conversation across stops, restarts and renames', t => {
   const { paths, store, run, root } = fixture(t);
   const a = store.create({ name: 'First task', agent: 'codex', workspace: 'homeassistant' });
@@ -288,8 +312,8 @@ test('provider launchers resume only their assigned conversation and preserve ar
     writeFileSync(join(root, agent), '#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURE_ARGS"\n', { mode: 0o755 });
     const adapter = new URL('../agent-terminal/rootfs/opt/agents/' + agent + '.sh', import.meta.url).pathname;
     const invoke = extra => {
-      execFileSync('bash', ['-c', '. "$1"; agent_run', 'bash', adapter], {
-        env: { PATH: root + ':' + process.env.PATH, CAPTURE_ARGS: output, ...extra },
+      execFileSync('bash', ['-c', '. "$1"; AGENT_DATA="$ADAPTER_DATA"; agent_run', 'bash', adapter], {
+        cwd: root, env: { PATH: root + ':' + process.env.PATH, CAPTURE_ARGS: output, ADAPTER_DATA: root, ...extra },
       });
       return readFileSync(output, 'utf8').trim().split('\n');
     };
@@ -298,7 +322,11 @@ test('provider launchers resume only their assigned conversation and preserve ar
       assert.deepEqual(invoke({}), ['--no-daemon']);
       assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id }), ['--no-daemon', 'resume', id]);
     } else {
-      const settings = ['--settings', '/opt/agent-terminal/claude-session-hooks.json'];
+      const settings = invoke({});
+      assert.equal(settings[0], '--settings');
+      const inline = JSON.parse(settings[1]);
+      assert.equal(inline.statusLine.command, 'node /opt/agent-terminal/claude-statusline.mjs');
+      assert.ok(inline.hooks.SessionStart);
       assert.deepEqual(invoke({}), settings);
       assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id }), [...settings, '--resume', id]);
       const transcript = join(root, 'empty conversation.jsonl');
@@ -306,6 +334,9 @@ test('provider launchers resume only their assigned conversation and preserve ar
       assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id, AGENT_CONVERSATION_TRANSCRIPT: transcript, AGENT_CONVERSATION_SAVED: 'true' }), [...settings, '--resume', id], 'a previously saved transcript must not silently reset');
       writeFileSync(transcript, 'history');
       assert.deepEqual(invoke({ AGENT_CONVERSATION_ID: id, AGENT_CONVERSATION_TRANSCRIPT: transcript }), [...settings, '--resume', id]);
+      mkdirSync(join(root, '.claude'));
+      writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'my-status-line' } }));
+      assert.deepEqual(invoke({}), ['--settings', '/opt/agent-terminal/claude-session-hooks.json'], 'preserve a custom status line');
     }
   }
 });

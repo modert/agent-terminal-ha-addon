@@ -9,6 +9,44 @@ window.AgentSessions = function (options) {
   var encoder = new TextEncoder(), decoder = new TextDecoder(), buffer = '';
   var mode = 'list', editing = null, expanded = null, busy = false, generation = 0, showUnused = false;
   var agents = options.config.agents, workspaces = options.config.workspaces;
+  var usage = null, usageLoading = false;
+  function providerUsage() {
+    var report = usage && usage.providers && usage.providers[el('sessions-provider').value];
+    el('sessions-provider-usage').textContent = report ? report.windows.length ? report.windows.map(function (w) { return w.label + ': ' + Math.round(w.usedPercent) + '% used'; }).join(' · ') + ' (last provider report)' : report.source : 'Usage report not available yet';
+  }
+  function renderUsage() {
+    providerUsage();
+    var container = el('provider-usage'); container.textContent = '';
+    agents.filter(function (a) { return a.id !== 'shell' && a.id !== 'custom'; }).forEach(function (agent) {
+      var card = document.createElement('div'); card.className = 'usage-card';
+      var heading = document.createElement('strong'); heading.className = 'usage-heading';
+      heading.innerHTML = window.AgentSessions.icon(agent.id);
+      var name = document.createElement('span'); name.textContent = agent.name; heading.appendChild(name); card.appendChild(heading);
+      var report = usage && usage.providers && usage.providers[agent.id];
+      if (report && report.windows.length) {
+        report.windows.forEach(function (window) {
+          var line = document.createElement('p'); line.textContent = window.label + ' · ' + Math.round(window.usedPercent) + '% used'; card.appendChild(line);
+          var meter = document.createElement('meter'); meter.min = 0; meter.max = 100; meter.value = window.usedPercent;
+          meter.setAttribute('aria-label', agent.name + ' ' + window.label + ' quota used'); card.appendChild(meter);
+          if (window.resetsAt) {
+            var reset = document.createElement('p'); reset.textContent = 'Resets ' + new Date(window.resetsAt * 1000).toLocaleString(); card.appendChild(reset);
+          }
+        });
+        var age = document.createElement('p'); age.textContent = 'Reported ' + Math.max(0, Math.floor((Date.now() - report.updatedAt) / 60000)) + 'm ago'; card.appendChild(age);
+      } else {
+        var unavailable = document.createElement('p'); unavailable.textContent = report ? report.source : 'Loading usage…'; card.appendChild(unavailable);
+      }
+      container.appendChild(card);
+    });
+  }
+  function loadUsage() {
+    renderUsage();
+    if (usageLoading || !socket || socket.readyState !== WebSocket.OPEN) return;
+    usageLoading = true; el('usage-status').textContent = 'Reading provider reports…';
+    send('usage').then(function (value) { usage = value; renderUsage(); el('usage-status').textContent = 'Shared account limits, not tokens used by one conversation. Reports may be stale.'; }, function () {
+      el('usage-status').textContent = 'Usage reports unavailable. Reopen Sessions to retry.';
+    }).finally(function () { usageLoading = false; });
+  }
   function mark(agent) {
     var icon = document.createElement('span');
     icon.className = 'provider-mark provider-' + (window.AgentSessions.icons[agent] ? agent : 'custom');
@@ -37,7 +75,7 @@ window.AgentSessions = function (options) {
       options.config.agents = agents; options.config.workspaces = workspaces;
       options.changed(records);
       if (options.healthChanged && packet.health) options.healthChanged(packet.health);
-      if (mode === 'list' && !sheet.hidden) { message(''); refresh(); }
+      if (mode === 'list' && !sheet.hidden) { message(''); refresh(); if (!usage && !usageLoading) loadUsage(); }
     } else if (pending.has(packet.request)) {
       var task = pending.get(packet.request); pending.delete(packet.request); clearTimeout(task.timer);
       if (packet.error) task.reject(new Error(packet.error)); else task.resolve(packet.result);
@@ -143,11 +181,11 @@ window.AgentSessions = function (options) {
         var detail = document.createElement('span'); detail.className = 'session-meta';
         var provider = document.createElement('span'); provider.textContent = label(agents, record.agent); detail.appendChild(provider);
         var state = document.createElement('span'); state.className = 'session-state' + (record.running && !record.stopped ? ' is-running' : '');
-        state.textContent = record.stopped ? 'Stopped' : record.running ? 'Running' : record.conversationId ? 'Ready to resume' : 'Ready to start'; detail.appendChild(state);
+        state.textContent = record.sleeping ? 'Sleeping' : record.stopped ? 'Stopped' : record.running ? 'Running' : record.conversationId ? 'Ready to resume' : 'Ready to start'; detail.appendChild(state);
         copy.appendChild(detail); main.appendChild(copy);
         if (place || record.stopped || picking()) {
           var badge = document.createElement('span'); badge.className = 'session-place';
-          badge.textContent = record.stopped ? 'Start' : place || 'Open →'; main.appendChild(badge);
+          badge.textContent = record.sleeping ? 'Wake' : record.stopped ? 'Start' : place || 'Open →'; main.appendChild(badge);
         }
         row.appendChild(main);
         var more = action('•••', 'Actions for ' + displayName(record), function () { expanded = expanded === record.id ? null : record.id; render(); });
@@ -155,13 +193,14 @@ window.AgentSessions = function (options) {
         row.appendChild(more);
         if (expanded === record.id) {
           var actions = document.createElement('div'); actions.className = 'session-actions';
-          if (record.stopped) actions.appendChild(action('Start', 'Start ' + record.name, function () {
+          if (record.stopped) actions.appendChild(action(record.sleeping ? 'Wake' : 'Start', 'Start ' + record.name, function () {
             run('start', { session: record.id }, function (result) { choose(result); });
           }));
           if (options.canSplit() && !record.stopped && record.id !== current) actions.appendChild(action('Open beside', 'Open ' + record.name + ' beside this session', function () {
             if (options.beside(record) !== false) close(false);
           }));
           actions.appendChild(action('Edit details', 'Edit details for ' + displayName(record), function () { edit('rename', record); }));
+          if (!record.stopped && record.running && record.conversationId && ['claude', 'codex', 'ollama', 'antigravity', 'grok'].indexOf(record.agent) !== -1) actions.appendChild(action('Sleep', 'Sleep ' + record.name, function () { edit('sleep', record); }));
           if (!record.stopped) actions.appendChild(action('Stop', 'Stop ' + record.name, function () { edit('stop', record); }));
           if (/^session-[a-f0-9]{32}$/.test(record.id)) {
             var remove = action('Delete', 'Delete ' + record.name, function () { edit('delete', record); });
@@ -192,9 +231,9 @@ window.AgentSessions = function (options) {
   function edit(next, record) {
     if (busy) return;
     mode = next; editing = record; form.hidden = false; el('sessions-browse').hidden = true;
-    var destructive = next === 'stop' || next === 'delete';
-    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'rename' ? 'Edit session details' : next === 'delete' ? 'Delete session' : 'Stop session';
-    el('sessions-subtitle').textContent = next === 'delete' ? 'Remove this temporary session.' : next === 'stop' ? 'This ends the running task.' : 'Give this conversation a clear job.';
+    var destructive = next === 'stop' || next === 'delete' || next === 'sleep';
+    el('sessions-title').textContent = next === 'create' ? (picking() ? 'New session in right pane' : 'New session') : next === 'rename' ? 'Edit session details' : next === 'delete' ? 'Delete session' : next === 'sleep' ? 'Sleep session' : 'Stop session';
+    el('sessions-subtitle').textContent = next === 'delete' ? 'Remove this temporary session.' : destructive ? 'This ends the running task.' : 'Give this conversation a clear job.';
     el('sessions-context').hidden = true;
     el('sessions-name-row').hidden = destructive;
     el('sessions-purpose-row').hidden = destructive;
@@ -204,14 +243,16 @@ window.AgentSessions = function (options) {
     el('sessions-provider-row').hidden = el('sessions-workspace-row').hidden = next !== 'create';
     var current = options.current();
     selectOptions(el('sessions-provider'), agents, current.agent);
+    providerUsage();
     selectOptions(el('sessions-workspace'), workspaces, current.workspace);
     el('sessions-explanation').textContent = next === 'delete'
       ? 'Delete “' + record.name + '” from ' + label(workspaces, record.workspace) + ' · ' + label(agents, record.agent) + '? This ends its running task and removes it from Sessions in every browser. Terminal scrollback is lost. Workspace files and provider-saved conversations are kept. This cannot be undone.'
+      : next === 'sleep' ? 'Sleep “' + record.name + '”? This ends its process and any running task, freeing memory. Wake resumes its saved conversation; terminal scrollback is lost. Sleep only when you know its work has finished.'
       : next === 'stop'
       ? 'Stop “' + record.name + '” and end its running task? ' +
         (['claude', 'codex', 'ollama', 'antigravity', 'grok'].indexOf(record.agent) !== -1 ? 'Starting it again resumes its saved conversation.' : 'Starting it again launches a fresh process.')
       : next === 'create' ? 'A separate conversation in this workspace. Sessions share its files and provider login.' : '';
-    el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
+    el('sessions-save').textContent = next === 'delete' ? 'Delete session' : next === 'sleep' ? 'Sleep session' : next === 'stop' ? 'Stop session' : next === 'rename' ? 'Save details' : picking() ? 'Create in right pane' : 'Create session';
     el('sessions-save').classList.toggle('session-danger', next === 'delete');
     message(''); (destructive ? el('sessions-back') : el('sessions-name')).focus();
   }
@@ -237,6 +278,7 @@ window.AgentSessions = function (options) {
     if (busy) return;
     sheet.hidden = false; search.value = ''; expanded = null; showUnused = false;
     el('sessions-open').setAttribute('aria-expanded', 'true'); browse();
+    loadUsage();
     if (socket && socket.readyState === WebSocket.OPEN) send('list').then(function (snapshot) { receive(Object.assign({ type: 'sessions' }, snapshot)); }, fail);
   }
   function run(method, fields, done) {
@@ -254,12 +296,14 @@ window.AgentSessions = function (options) {
     if (mode === 'create') run('create', { name: el('sessions-name').value, description: el('sessions-purpose').value, agent: el('sessions-provider').value, workspace: el('sessions-workspace').value }, choose);
     else if (mode === 'rename') run('rename', { session: editing.id, name: el('sessions-name').value, description: el('sessions-purpose').value }, browse);
     else if (mode === 'stop') run('stop', { session: editing.id }, browse);
+    else if (mode === 'sleep') run('sleep', { session: editing.id }, browse);
     else if (mode === 'delete') run('delete', { session: editing.id }, function (result) {
       records = records.filter(function (record) { return record.id !== result.id; });
       expanded = null; options.changed(records); browse();
     });
   });
   search.addEventListener('input', render);
+  el('sessions-provider').addEventListener('change', providerUsage);
   el('sessions-unused').addEventListener('click', function () { showUnused = !showUnused; render(); });
   el('sessions-new').addEventListener('click', function () { edit('create'); });
   el('sessions-back').addEventListener('click', function () { if (!busy) browse(); });

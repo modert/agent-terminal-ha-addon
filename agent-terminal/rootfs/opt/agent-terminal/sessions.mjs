@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createWorkspaceStore } from './workspaces.mjs';
 import { requestRemote } from './remote-client.mjs';
+import { readProviderUsage } from './usage.mjs';
 
 import { createHealthStore, createHA, discover, reviewIncident, validateConfig, supervisorToken } from './health.mjs';
 
@@ -62,6 +63,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     if (!NAMED.test(id) && id !== `agent-${selection.workspace}-${selection.agent}`) throw new Error('Invalid session record.');
     const saved = conversation(id);
     return { id, name: name(record.name), description: description(record.description), ...selection, stopped: record.stopped,
+      ...(record.sleeping === true && record.stopped ? { sleeping: true } : {}),
       ...(saved?.conversationId ? { conversationId: saved.conversationId } : {}) };
   }
   function conversation(id) {
@@ -160,8 +162,8 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
   }
   // Call while holding the session lock. Save before detaching clients so
   // automatic reconnect cannot create a replacement process, even on error.
-  function stopLocked(id) {
-    const record = save({ ...get(id), stopped: true });
+  function stopLocked(id, sleeping = false) {
+    const record = save({ ...get(id), stopped: true, sleeping });
     if (has(id)) {
       const result = spawnSync(tmux, ['kill-session', '-t', '=' + id], { encoding: 'utf8' });
       if (result.status !== 0 && has(id)) throw new Error('Could not stop session.');
@@ -169,6 +171,13 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     return record;
   }
   const stop = id => locked(id, () => stopLocked(id));
+  const sleep = id => locked(id, () => {
+    const record = get(id), saved = conversation(id);
+    if (!['claude', 'codex', 'ollama', 'antigravity', 'grok'].includes(record.agent) || !saved?.conversationId || !saved.hasTranscript) {
+      throw new Error('Sleep needs a saved conversation. Use Stop for a session without saved history.');
+    }
+    return stopLocked(id, true);
+  });
   function remove(id) {
     return locked(id, () => {
       if (!NAMED.test(id)) throw new Error('Built-in sessions cannot be deleted. Use Stop instead.');
@@ -181,7 +190,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
       return record;
     });
   }
-  const start = id => locked(id, () => save({ ...get(id), stopped: false }));
+  const start = id => locked(id, () => save({ ...get(id), stopped: false, sleeping: false }));
   function ensure(agent, workspace, id, command, environment = []) {
     id ||= `agent-${workspace}-${agent}`;
     return locked(id, () => {
@@ -223,15 +232,17 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     if (typeof input.method === 'string' && input.method.startsWith('health.')) return health.request(input);
     switch (input.method) {
       case 'list': return snapshot();
+      case 'usage': return readProviderUsage({ stateDir, records: list() });
       case 'create': return create(input);
       case 'rename': return rename(input.session, input.name, input.description);
       case 'stop': return stop(input.session);
+      case 'sleep': return sleep(input.session);
       case 'start': return start(input.session);
       case 'delete': return remove(input.session);
       default: throw new Error('Unknown session operation.');
     }
   }
-  return { get, list, create, rename, stop, start, remove, ensure, remember, failed, snapshot, request };
+  return { get, list, create, rename, stop, sleep, start, remove, ensure, remember, failed, snapshot, request };
 }
 
 export function serve(store, input = process.stdin, output = process.stdout) {

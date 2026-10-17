@@ -29,6 +29,17 @@ agent_env() {
 # Additional CLI settings merge with the user's existing settings and hooks.
 agent_run() {
     local args=(--settings /opt/agent-terminal/claude-session-hooks.json)
+    # Preserve a user's status line at every ordinary settings scope. New
+    # sessions without one can report the documented quota fields locally.
+    local settings custom_status=false
+    for settings in "${AGENT_DATA}/.claude/settings.json" .claude/settings.json .claude/settings.local.json /etc/claude-code/managed-settings.json; do
+        if [ -f "${settings}" ] && { ! jq -e 'type == "object"' "${settings}" >/dev/null 2>&1 || jq -e 'has("statusLine")' "${settings}" >/dev/null 2>&1; }; then
+            custom_status=true
+        fi
+    done
+    if [ "${custom_status}" = false ]; then
+        args=(--settings "$(jq -c '. + {statusLine: {type: "command", command: "node /opt/agent-terminal/claude-statusline.mjs"}}' /opt/agent-terminal/claude-session-hooks.json)")
+    fi
     if [ -n "${AGENT_CONVERSATION_ID:-}" ]; then
         # Claude does not save an empty conversation. Reuse its allocated ID
         # until it has a transcript; never replace a previously saved chat.

@@ -53,7 +53,14 @@ body { position: fixed; inset: 0; }
   background: var(--key); color: var(--fg); font: inherit; font-size: 16px;
 }
 #agents { display: flex; gap: 4px; }
-#agents .agent-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; white-space: nowrap; }
+#agents { flex: 1; min-width: 0; }
+#agents .agent-button[hidden] { display: none !important; }
+#agents .agent-name { display: none; }
+#quick-session { min-width: 0; flex: 1; max-width: 300px; height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--key); color: var(--fg); font: inherit; font-size: 16px; }
+#quick-session:focus-visible { outline: 2px solid var(--accent); }
+@media (pointer: coarse) { #quick-session { min-height: 44px; } }
+#app.compact-height #agents .agent-button:not([aria-pressed="true"]) { display: none; }
+#agents .agent-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; flex: 0 0 44px; padding: 0; white-space: nowrap; }
 #agents .agent-button svg { flex: none; width: 18px; height: 18px; }
 #agents .agent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Names only where the bar has room for them; the mark alone everywhere else. */
@@ -323,7 +330,9 @@ body.side-pane #split-toggle::before { display: none; }
   #agents .agent-button { padding: 0 4px; font-size: 12px; }
   #agents .agent-button svg { width: 20px; height: 20px; }
   #sessions-open, #split-toggle { order: 2; }
-  #sessions-open { flex: 0 0 auto; max-width: min(125px, calc(100% - 280px)); padding: 0 8px; }
+  #sessions-open { flex: 0 0 auto; max-width: 125px; padding: 0 8px; }
+  #agents .agent-button[data-quick-rank="2"] { display: none; }
+  #app.compact-height #sessions-open { display: none; }
   #app.compact-height #sessions-open { order: 0; padding: 0 7px; }
   #app.compact-height #workspace { width: 0; }
   #app.compact-height #agents .agent-button { padding: 0 5px; font-size: 12px; }
@@ -372,6 +381,13 @@ body.side-pane #split-toggle::before { display: none; }
 .sessions-toolbar button { flex: 0 0 auto; min-height: 44px; }
 #sessions-new { color: #ebc5b7; border-color: #785343; background: #3b2c27; }
 #sessions-list { min-height: 0; overflow-y: auto; padding: 0 12px; scrollbar-width: thin; }
+#provider-usage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 16px 12px; max-height: 180px; overflow-y: auto; flex: 0 0 auto; }
+.usage-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; font-size: 12px; }
+.usage-heading { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.usage-heading svg { width: 16px; height: 16px; }
+.usage-card p { margin: 4px 0; color: #aeb9c8; line-height: 1.4; }
+.usage-card meter { display: block; width: 100%; height: 8px; }
+.usage-caption { color: #9ba7b8; font-size: 11px; padding: 0 16px 10px; margin: 0; }
 .session-workspace + .session-workspace { margin-top: 18px; }
 .workspace-heading { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; color: #aeb9c8; font-size: 12px; font-weight: 600; }
 .workspace-folder { display: inline-flex; width: 16px; height: 16px; flex: 0 0 auto; }
@@ -480,7 +496,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   <div id="session-bar" aria-label="Terminal session">
     <label id="workspace-label" for="workspace">Workspace</label>
     <select id="workspace" title="Task folder and instructions"></select>
-    <div id="agents" role="group" aria-label="Agent"></div>
+    <div id="agents" role="group" aria-label="Recent providers and session"><select id="quick-session" aria-label="Quick switch session"></select></div>
     <button type="button" class="agent-button" id="sessions-open" aria-haspopup="dialog" aria-controls="sessions-sheet"
             aria-expanded="false" title="Sessions (Ctrl+Shift+K)">Sessions</button>
     <button type="button" class="agent-button" id="split-toggle" title="Show two sessions side by side" hidden>Split view</button>
@@ -533,6 +549,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
         <div class="page" id="keys-ctrl" hidden></div>
         <div class="page" id="keys-edit" hidden></div>
         <div class="page" id="keys-tools" hidden></div>
+        <div class="page" id="keys-tmux" hidden></div>
         <div class="page" id="key-groups" role="group" aria-label="Key groups" hidden></div>
       </div>
     </div>
@@ -560,14 +577,16 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
         <input id="sessions-search" type="search" placeholder="Find a task…" aria-label="Find a session by task, purpose, provider, or workspace" autocomplete="off">
         <button type="button" class="agent-button" id="sessions-new">+ New session</button>
       </div>
+      <details id="usage-details" open><summary class="usage-caption">Provider usage · account windows</summary><div id="provider-usage"></div><p class="usage-caption" id="usage-status" role="status"></p></details>
       <div id="sessions-list"></div>
       <button type="button" id="sessions-unused" hidden>Show unused sessions</button>
       <button type="button" class="agent-button" id="remote-open" aria-haspopup="dialog" aria-controls="remote-sheet">Phone remote</button>
+      <p class="usage-caption">Automatic process sleep is off. Sleep a session explicitly from its actions.</p>
     </div>
     <form id="sessions-form" hidden>
       <label id="sessions-name-row">Task name<input id="sessions-name" required maxlength="80" autocomplete="off" placeholder="Dashboard refresh"></label>
       <label id="sessions-purpose-row">Purpose <span>(optional)</span><input id="sessions-purpose" maxlength="160" autocomplete="off" placeholder="Build a simpler overview for the wall tablet"></label>
-      <label id="sessions-provider-row">Provider<select id="sessions-provider"></select></label>
+      <label id="sessions-provider-row">Provider<select id="sessions-provider"></select><span id="sessions-provider-usage" class="session-meta"></span></label>
       <label id="sessions-workspace-row">Workspace<select id="sessions-workspace"></select></label>
       <p id="sessions-explanation"></p>
       <footer><button type="button" class="agent-button" id="sessions-back">Back</button><button type="submit" class="agent-button" id="sessions-save">Create session</button></footer>
@@ -702,6 +721,15 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   var selectedSession = queryArgs.length ? (queryArgs[2] || '') : (savedSession.id || '');
   if (!/^session-[a-f0-9]{32}$/.test(selectedSession)) selectedSession = '';
   var sessionManager = null, sessionStopped = false, healthManager = null;
+  var quickSession = document.getElementById('quick-session'), recentAgents = [], lastSessions = {};
+  try { recentAgents = JSON.parse(lsGet('recent-agents:' + base, '[]')); if (!Array.isArray(recentAgents)) recentAgents = []; } catch (e) {}
+  try { lastSessions = JSON.parse(lsGet('last-sessions:' + base, '{}')) || {}; if (typeof lastSessions !== 'object' || Array.isArray(lastSessions)) lastSessions = {}; } catch (e) {}
+  function selectProvider(agent) {
+    var id = lastSessions[selectedWorkspace + ':' + agent];
+    var record = sessionManager && sessionManager.records().find(function (r) { return r.id === id && r.agent === agent && r.workspace === selectedWorkspace; });
+    if (record && record.stopped) { sessionManager.open(); return; }
+    switchSession(agent, selectedWorkspace, record && record.id);
+  }
   function currentSession() {
     return { id: selectedSession || 'agent-' + selectedWorkspace + '-' + selectedAgent, agent: selectedAgent, workspace: selectedWorkspace };
   }
@@ -718,18 +746,41 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   function updateSessionControls() {
     workspaceEl.value = selectedWorkspace;
     Array.prototype.forEach.call(agentsEl.children, function (button) {
+      if (!button.dataset.agent) return;
       button.setAttribute('aria-pressed', String(button.dataset.agent === selectedAgent));
+      var visible = [selectedAgent].concat(recentAgents, sessionConfig.agents.map(function (a) { return a.id; })).filter(function (id, i, all) { return hasAgent(id) && all.indexOf(id) === i; }).slice(0, 3);
+      button.hidden = visible.indexOf(button.dataset.agent) === -1;
+      button.dataset.quickRank = String(visible.indexOf(button.dataset.agent));
     });
     var agent = sessionConfig.agents.find(function (a) { return a.id === selectedAgent; }) || { name: selectedAgent };
     var workspace = sessionConfig.workspaces.find(function (w) { return w.id === selectedWorkspace; }) || { name: selectedWorkspace, directory: '' };
     workspaceEl.title = workspace.directory;
     var record = sessionManager && sessionManager.records().find(function (r) { return r.id === currentSession().id; });
+    var records = sessionManager ? sessionManager.records() : [];
+    var choices = records.filter(function (r) { return r.workspace === selectedWorkspace && (r.running || r.conversationId || r.id === currentSession().id || r.name !== 'Main'); });
+    if (!choices.some(function (r) { return r.id === currentSession().id; })) choices.unshift({ id: currentSession().id, name: 'General session', agent: selectedAgent });
+    var signature = JSON.stringify(choices.map(function (r) { return [r.id, r.name, r.agent, r.stopped, r.sleeping]; }));
+    if (quickSession.dataset.choices !== signature) {
+      quickSession.textContent = ''; quickSession.dataset.choices = signature;
+      choices.forEach(function (r) {
+        var option = document.createElement('option'); option.value = r.id;
+        var provider = sessionConfig.agents.find(function (a) { return a.id === r.agent; });
+        option.textContent = (r.name === 'Main' ? 'General session' : r.name) + ' · ' + (provider ? provider.name : r.agent) + (r.sleeping ? ' · Sleeping' : r.stopped ? ' · Stopped' : '');
+        quickSession.appendChild(option);
+      });
+      var more = document.createElement('option'); more.value = '__all'; more.textContent = 'All sessions / New…'; quickSession.appendChild(more);
+    }
+    quickSession.value = currentSession().id;
+    if (!choosingPane) {
+      lastSessions[selectedWorkspace + ':' + selectedAgent] = currentSession().id;
+      lsSet('last-sessions:' + base, JSON.stringify(lastSessions));
+    }
     var title = (record ? record.name + ' · ' : selectedSession ? 'Session · ' : '') + agent.name + ' · ' + workspace.name;
     document.getElementById('session-summary').textContent = title;
     document.title = (choosingPane ? 'Choose a second session' : title) + ' · Agent Terminal';
     document.getElementById('sessions-open').title = title + (record && record.description ? ' — ' + record.description : '') + ' (Ctrl+Shift+K)';
     document.getElementById('sessions-open').setAttribute('aria-label', 'Switch session: ' + title);
-    document.getElementById('sessions-open').textContent = choosingPane ? 'Choose session' : record && record.name !== 'Main' ? record.name : 'Sessions';
+    document.getElementById('sessions-open').textContent = choosingPane ? 'Choose session' : 'Sessions';
     if (!choosingPane) lsSet(sessionKey, JSON.stringify({ agent: selectedAgent, workspace: selectedWorkspace, id: selectedSession }));
   }
   function switchSession(agent, workspace, session) {
@@ -742,6 +793,10 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     selectedAgent = agent;
     selectedWorkspace = workspace;
     selectedSession = session;
+    recentAgents = [agent].concat(recentAgents).filter(function (id, i, all) { return all.indexOf(id) === i; }).slice(0, 6);
+    lastSessions[workspace + ':' + agent] = id;
+    lsSet('recent-agents:' + base, JSON.stringify(recentAgents));
+    lsSet('last-sessions:' + base, JSON.stringify(lastSessions));
     var record = sessionManager && sessionManager.records().find(function (r) { return r.id === id; });
     sessionStopped = !!(record && record.stopped);
     hideMenu(); closePaste(); closeSelect(); setKeysOpen(false);
@@ -777,15 +832,20 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
     button.appendChild(name);
     button.title = 'Switch to ' + agent.name + (i < 3 ? ' (Ctrl+Shift+' + (i + 1) + ')' : '');
     if (i < 3) button.setAttribute('aria-keyshortcuts', 'Control+Shift+' + (i + 1));
-    button.addEventListener('click', function () { switchSession(agent.id, selectedWorkspace); });
+    button.addEventListener('click', function () { selectProvider(agent.id); });
     agentsEl.appendChild(button);
   });
   workspaceEl.addEventListener('change', function () { switchSession(selectedAgent, workspaceEl.value); });
+  quickSession.addEventListener('change', function () {
+    var record = sessionManager && sessionManager.records().find(function (r) { return r.id === quickSession.value; });
+    if (!record || record.stopped) { quickSession.value = currentSession().id; if (sessionManager) sessionManager.open(); return; }
+    switchSession(record.agent, record.workspace, record.id);
+  });
   window.addEventListener('keydown', function (e) {
     if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !/^Digit[123]$/.test(e.code)) return;
     if (!document.getElementById('sessions-sheet').hidden || !document.getElementById('remote-sheet').hidden) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    switchSession(sessionConfig.agents[Number(e.code.slice(-1)) - 1].id, selectedWorkspace);
+    selectProvider(sessionConfig.agents[Number(e.code.slice(-1)) - 1].id);
   }, true);
   updateSessionControls();
 
@@ -1831,6 +1891,12 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       term.focus();
     }
   }
+  function slashCommand() {
+    if (draftOpen() && pasteBox.value) { toast('Send or close the draft before entering a slash command'); return; }
+    if (draftOpen()) closePaste();
+    if (touch && term.textarea) { setDirect(true); term.textarea.setAttribute('inputmode', 'text'); }
+    setKeysOpen(false); term.focus(); fixedKey('/');
+  }
   function setKeysOpen(open) {
     stopKeyHolds.forEach(function (stop) { stop(); });
     keyPanel.hidden = !open;
@@ -1889,6 +1955,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   // away and the panel never grows past one row.
   var KEY_GROUPS = [
     { id: 'agent', l: 'Agent', keys: [
+      { l: '/', t: 'Open slash commands with the direct keyboard', click: true, go: slashCommand },
       { l: 'Tab', t: 'Tab / next field / complete', go: function () { key('\t'); } },
       { l: 'Mode', t: 'Shift+Tab — Claude permissions / Codex plan mode',
         go: function () { fixedKey('\x1b[Z'); } },
@@ -1903,13 +1970,13 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       // Both agents clear typed input with Ctrl+C; it also interrupts, and a
       // second press on an empty prompt exits. Kept away from the group button.
       { l: 'Ctrl+C', t: 'Ctrl+C — clear input or interrupt; twice on an empty prompt exits', go: function () { fixedKey('\x03'); } },
-      { l: 'Space', t: 'Space / toggle a choice in terminal', go: function () { key(' '); } }
     ] },
     { id: 'ctrl', l: 'Ctrl', keys: [
       { l: 'Ctrl', t: 'Ctrl (applies to the next key)', mod: 'ctrl', go: function () { setMod('ctrl', !mods.ctrl); } },
       { l: 'Alt', t: 'Alt (applies to the next key)', mod: 'alt', go: function () { setMod('alt', !mods.alt); } },
       { l: 'Shift', t: 'Shift (applies to the next key)', mod: 'shift', go: function () { setMod('shift', !mods.shift); } },
-      { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } }
+      { l: 'tmux', t: 'tmux prefix (Ctrl+B); then [ to scroll or d to detach; twice for Claude background tasks', go: function () { fixedKey('\x02'); } },
+      { l: 'Space', t: 'Space / toggle a choice in terminal', go: function () { key(' '); } }
     ] },
     { id: 'edit', l: 'Edit', keys: [
       { l: '↵', t: 'New line (Shift+Enter) — edit the open draft or send Ctrl+J to the terminal', click: true, go: newLineKey },
@@ -1927,6 +1994,12 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
         toggle: true, click: true, go: toggleDirectKeyboard },
       { l: 'A−', t: 'Smaller text', go: function () { setFont(-1); } },
       { l: 'A+', t: 'Larger text', go: function () { setFont(1); } }
+    ] },
+    { id: 'tmux', l: 'tmux', keys: [
+      { l: 'Scroll', t: 'tmux scroll / copy mode (Ctrl+B [)', go: function () { fixedKey('\x02['); } },
+      { l: 'Leave', t: 'Leave tmux copy mode', go: function () { fixedKey('\x1b'); } },
+      { l: 'Tasks', t: 'Claude background tasks (Ctrl+B through tmux)', go: function () { fixedKey('\x02\x02'); } },
+      { l: 'Prefix', t: 'tmux prefix (Ctrl+B)', go: function () { fixedKey('\x02'); } }
     ] }
   ];
 
@@ -2025,6 +2098,10 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   // Keys > More > Direct enables live input for terminal shortcuts. Physical
   // keyboards are untouched. With the bar hidden, a tap types directly again.
   var terminalInput = term.textarea;
+  if (terminalInput) {
+    terminalInput.setAttribute('autocorrect', 'off'); terminalInput.setAttribute('autocapitalize', 'off');
+    terminalInput.setAttribute('autocomplete', 'off'); terminalInput.setAttribute('spellcheck', 'false');
+  }
   function setBarShown(shown) {
     bar.hidden = !shown;
     keysSwitch.setAttribute('aria-pressed', String(shown));
@@ -2298,7 +2375,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
         sessionStopped = true; ++connectionId;
         clearTimeout(retryTimer); retryTimer = null;
         var previous = sock; sock = null; if (previous) previous.close();
-        showOverlay(record ? 'Session stopped. Open Sessions to start it.' : 'Session unavailable. Choose another in Sessions.');
+        showOverlay(record && record.sleeping ? 'Session sleeping. Open Sessions to wake it.' : record ? 'Session stopped. Open Sessions to start it.' : 'Session unavailable. Choose another in Sessions.');
       } else if (sessionStopped) { sessionStopped = false; retry = 500; connect(); }
     },
     healthChanged: function (value) { if (healthManager) healthManager.update(value); }

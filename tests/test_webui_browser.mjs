@@ -299,7 +299,7 @@ test('phone taps and composition with real browser events and xterm', {
   await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'l', code: 'KeyL', windowsVirtualKeyCode: 76 });
   await group('agent');
   await tap(button('Answer')); await tap(button('↓')); await tap(button('Enter'));
-  await tap(button('Mode')); await tap(button('Space'));
+  await tap(button('Mode')); await group('ctrl'); await tap(button('Space')); await group('agent');
   await tap(button('Esc²')); await delay(160);
   await group('edit'); await tap(button('↵')); await enter(8);
   await group('ctrl'); await tap(button('tmux')); await tap(button('tmux'));
@@ -501,7 +501,7 @@ test('phone taps and composition with real browser events and xterm', {
   const second = await createSession('Attic fan');
   assert.notEqual(first, second, 'same provider and workspace must get separate terminal identities');
   assert.equal(await evaluate(`testHub.sessions.find(s => s.id === ${JSON.stringify(first)}).running`), true);
-  assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Attic fan');
+  assert.equal(await evaluate("document.getElementById('quick-session').value"), second);
 
   async function actions(id) {
     await click(`document.querySelector('[data-session-action="${id}:actions"]')`);
@@ -530,7 +530,7 @@ test('phone taps and composition with real browser events and xterm', {
   await click("document.getElementById('sessions-save')");
   await until("document.getElementById('sessions-title').textContent === 'Sessions'");
   await click("document.getElementById('sessions-done')");
-  assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Fan tuning');
+  assert.match(await evaluate("document.getElementById('quick-session').selectedOptions[0].textContent"), /Fan tuning/);
 
   const side = "document.getElementById('side-terminal').contentWindow";
   const connections = await evaluate('testTerminalConnections.length');
@@ -582,7 +582,7 @@ test('phone taps and composition with real browser events and xterm', {
   await load();
   await until(`document.getElementById('side-terminal') && ${side}.testSocket?.args[2] === ${JSON.stringify(first)}`);
   assert.equal(await evaluate('testSocket.args[2]'), second, 'reload restores the two different sessions');
-  assert.equal(await evaluate("document.getElementById('sessions-open').textContent"), 'Fan tuning');
+  assert.match(await evaluate("document.getElementById('quick-session').selectedOptions[0].textContent"), /Fan tuning/);
   assert.equal(await evaluate(`testHub.sessions.find(s => s.id === ${JSON.stringify(second)}).description`), 'Tune the upstairs cooling schedule', 'purpose survives reload');
 
   // The panes connect on their own schedules. The keyboard starts in the left
@@ -729,10 +729,7 @@ test('phone taps and composition with real browser events and xterm', {
   await until(`testSocket.args[2] === ${JSON.stringify(first)} && testSocket.readyState === 1`);
   await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   await load();
-  assert.equal(await evaluate(`document.body.classList.contains('split') || [...document.querySelectorAll('#agents button')].every(b => {
-    const name = b.querySelector('.agent-name');
-    return b.querySelector('svg') && name.getBoundingClientRect().width > 0 && name.scrollWidth <= name.clientWidth;
-  })`), true, 'a wide screen shows each provider\'s name in full beside its mark');
+  assert.equal(await evaluate(`document.body.classList.contains('split') || [...document.querySelectorAll('#agents button')].filter(b => b.getBoundingClientRect().width).length === 3`), true, 'a wide screen shows three recent provider shortcuts');
   assert.equal(await evaluate(`testHub.sessions.some(s => ${JSON.stringify([second, disposable, currentTemporary])}.includes(s.id))`), false, 'removed sessions stay gone after reload');
 
   // Attaching files with real browser events: a pasted screenshot, a drop of
@@ -899,7 +896,13 @@ test('phone taps and composition with real browser events and xterm', {
 
   // A local provider owns its connection just like the hosted providers.
   await load();
-  await tap("document.querySelector('#agents button[data-agent=ollama]')");
+  async function pickProvider(agent) {
+    await tap("document.getElementById('sessions-open')");
+    await evaluate(`document.getElementById('sessions-search').value = ${JSON.stringify(agent)}; document.getElementById('sessions-search').dispatchEvent(new Event('input'))`);
+    await evaluate(`document.querySelector('[data-session-action="agent-homeassistant-${agent}:open"]').scrollIntoView({ block: 'nearest' })`);
+    await tap(`document.querySelector('[data-session-action="agent-homeassistant-${agent}:open"]')`);
+  }
+  await pickProvider('ollama');
   await until("testSocket?.args[0] === 'ollama' && testSocket.readyState === 1");
   assert.equal(await evaluate('testSocket.args[1]'), 'homeassistant');
   assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'Ollama provider fits the phone layout');
@@ -911,9 +914,9 @@ test('phone taps and composition with real browser events and xterm', {
   await until("testSocket?.args[0] === 'ollama' && testSocket.args[2]?.startsWith('session-')");
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Local coding task');
 
-  // Six providers share the phone's second row as marks: no wider, no third row.
+  // The quick dropdown and two recent providers share the phone's second row.
   await load();
-  await tap("document.querySelector('#agents button[data-agent=antigravity]')");
+  await pickProvider('antigravity');
   await until("testSocket?.args[0] === 'antigravity' && testSocket.readyState === 1");
   assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true, 'six providers fit the phone layout');
   assert.equal(await evaluate("document.getElementById('session-bar').getBoundingClientRect().height <= 110"), true,
@@ -922,14 +925,14 @@ test('phone taps and composition with real browser events and xterm', {
     'the providers stay on their own line below the workspace');
   assert.equal(await evaluate("Math.abs(document.getElementById('agents').getBoundingClientRect().top - document.getElementById('sessions-open').getBoundingClientRect().top) < 4"), true,
     'and share it with the session name');
-  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b => {
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].filter(b => b.getBoundingClientRect().width).every(b => {
     const r = b.getBoundingClientRect();
     return r.width >= 40 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth;
   })`), true, 'every provider button stays on screen and large enough to tap');
-  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b =>
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].filter(b => b.getBoundingClientRect().width).every(b =>
     b.querySelector('svg').getBoundingClientRect().width >= 18 && b.getAttribute('aria-label') &&
     getComputedStyle(b.querySelector('.agent-name')).display === 'none')`), true, 'a phone shows each provider as its mark, named for screen readers');
-  await tap("document.querySelector('#agents button[data-agent=grok]')");
+  await pickProvider('grok');
   await until("testSocket?.args[0] === 'grok' && testSocket.readyState === 1");
   assert.equal(await evaluate('testSocket.args[1]'), 'homeassistant');
   await tap("document.getElementById('sessions-open')");
@@ -941,7 +944,8 @@ test('phone taps and composition with real browser events and xterm', {
   assert.equal(await evaluate('testHub.sessions.find(s => s.id === testSocket.args[2]).name'), 'Grok coding task');
   await command('Emulation.setDeviceMetricsOverride', { width: 320, height: 844, deviceScaleFactor: 1, mobile: true });
   await load();
-  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].every(b => {
+  assert.equal(await evaluate(`[...document.querySelectorAll('#agents button')].filter(b => b.getBoundingClientRect().width).every(b => {
     const r = b.getBoundingClientRect(); return r.width >= 40 && r.right <= innerWidth;
-  })`), true, 'six providers retain usable touch targets at 320px');
+  })`), true, 'recent providers retain usable touch targets at 320px');
+  assert.equal(await evaluate("document.getElementById('quick-session').getBoundingClientRect().width >= 90"), true, 'the session dropdown remains usable at 320px');
 });

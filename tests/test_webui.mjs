@@ -151,7 +151,8 @@ test('named session URLs survive reload and remote stops cancel every terminal r
     workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
     sessions: [{ id, name: 'Dashboard refresh', agent: 'codex', workspace: 'homeassistant', stopped, running: !stopped }] }) + '\n';
   control.output(snapshot(false));
-  assert.equal(c.elements['sessions-open'].textContent, 'Dashboard refresh');
+  assert.equal(c.elements['sessions-open'].textContent, 'Sessions');
+  assert.equal(c.elements['quick-session'].value, id);
   control.output(snapshot(true));
   assert.equal(c.sockets[0].readyState, 3);
   assert.match(c.elements['overlay-msg'].textContent, /Session stopped/);
