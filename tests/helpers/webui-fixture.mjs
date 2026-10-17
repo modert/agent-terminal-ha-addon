@@ -83,6 +83,15 @@ const mock = `<script>
         }
         if (text[0] === '{') { testHub.publish(); return; }
         const request = JSON.parse(text.slice(1));
+        if (request.method === 'usage') {
+          this.packet({ request: request.request, result: { providers: {
+            codex: { windows: [{ label: '5-hour', usedPercent: 25, resetsAt: Math.floor(Date.now() / 1000) + 3600 }, { label: 'Weekly', usedPercent: 40 }], updatedAt: Date.now() },
+            claude: { windows: [], source: 'Usage unavailable from this provider' },
+            ollama: { windows: [], source: 'Local models: no subscription quota' },
+            antigravity: { windows: [], source: 'Usage unavailable from this provider' },
+            grok: { windows: [], source: 'Usage unavailable from this provider' }
+          } } }); return;
+        }
         if (request.method.startsWith('remote/')) {
           if (request.method === 'remote/start') testHub.remote = { enabled: true, status: 'connected', serverName: 'Test Home Assistant' };
           if (request.method === 'remote/stop') testHub.remote = { enabled: false, status: 'disabled' };
@@ -111,13 +120,14 @@ const mock = `<script>
           testHub.sessions.push(record);
         } else if (request.method === 'rename') { record.name = request.name; record.description = request.description ?? record.description; }
         else if (request.method === 'stop') { record.stopped = true; record.running = false; }
+        else if (request.method === 'sleep') { record.stopped = true; record.sleeping = true; record.running = false; }
         else if (request.method === 'fresh') {
           record.stopped = true; record.running = false;
           record = { id: 'session-' + crypto.randomUUID().replaceAll('-', ''), name: record.name === 'Main' ? 'New session' : record.name,
             description: record.description, agent: record.agent, workspace: record.workspace, stopped: false, running: false };
           testHub.sessions.push(record);
         }
-        else if (request.method === 'start') record.stopped = false;
+        else if (request.method === 'start') { record.stopped = false; record.sleeping = false; }
         else if (request.method === 'delete') testHub.sessions = testHub.sessions.filter(s => s.id !== request.session);
         if (request.method !== 'list') this.packet({ request: request.request, result: record });
         else this.packet({ request: request.request, result: { sessions: testHub.sessions,

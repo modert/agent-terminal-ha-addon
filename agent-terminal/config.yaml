@@ -1,5 +1,5 @@
 name: "Agent Terminal"
-version: "2.13.3"
+version: "2.14.0"
 slug: "agent_terminal"
 description: "Claude, ChatGPT, Grok, Antigravity, Ollama, and Shell sessions with health alerts, voice prompts, mobile terminal + SSH"
 url: "https://github.com/modert/agent-terminal-ha-addon"

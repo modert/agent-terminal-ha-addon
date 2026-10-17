@@ -112,7 +112,7 @@ async function page({ touch = true, search = '', saved = [], platform = 'Linux',
   socket.onopen();
   socket.onmessage({ data: '0' });                 // tmux draws the session; keys wait for that
   packets.length = 0;
-  const buttons = ['key-rail', 'keys-agent', 'keys-ctrl', 'keys-edit', 'keys-tools', 'key-row'].flatMap(id => ids.get(id).children);
+  const buttons = ['key-rail', 'keys-agent', 'keys-ctrl', 'keys-edit', 'keys-tools', 'keys-tmux', 'key-row'].flatMap(id => ids.get(id).children);
   const button = label => {
     const b = buttons.find(b => b.dataset.key === label);
     assert.ok(b, `button ${label} exists`);
@@ -206,10 +206,32 @@ test('Keys opens the agent keys, which answer a Codex question', async () => {
   p.tap('Keys');
   assert.equal(p.ids.get('keys-agent').hidden, false);
   for (const id of ['keys-ctrl', 'keys-edit', 'keys-tools', 'key-groups']) assert.equal(p.ids.get(id).hidden, true);
-  assert.deepEqual(p.ids.get('keys-agent').children.map(b => b.dataset.key), ['Tab', 'Mode', 'Answer', 'Esc²', 'Ctrl+C', 'Space'],
+  assert.deepEqual(p.ids.get('keys-agent').children.map(b => b.dataset.key), ['/', 'Tab', 'Mode', 'Answer', 'Esc²', 'Ctrl+C'],
     'Ctrl+C clears input in both agents, so it sits with the agent keys');
   p.tap('Answer'); p.tap('↓'); p.tap('Enter');
   assert.deepEqual(p.input(), ['\x1b[1;2D', '\x1b[B', '\r']);
+});
+
+test('slash opens direct input once, disables autocorrect, and preserves an unsent draft', async () => {
+  const p = await page(); p.tap('Keys'); p.tap('/');
+  assert.deepEqual(p.input(), ['/']);
+  assert.equal(p.activeElement(), p.terminal.textarea);
+  assert.equal(p.terminal.textarea.getAttribute('inputmode'), 'text');
+  assert.equal(p.terminal.textarea.getAttribute('autocorrect'), 'off');
+  assert.equal(p.ids.get('key-panel').hidden, true);
+  p.terminal.type('help'); p.tap('Enter');
+  assert.deepEqual(p.input(), ['help', '\r']);
+  p.terminal.textarea.blur(); p.write(); p.ids.get('paste-text').value = 'keep my draft';
+  p.tap('Keys'); p.tap('/');
+  assert.equal(p.ids.get('paste-text').value, 'keep my draft');
+  assert.equal(p.ids.get('paste').hidden, false);
+  assert.deepEqual(p.input(), []);
+});
+
+test('tmux actions send complete sequences without typing into a draft', async () => {
+  const p = await page(); p.tap('Keys'); p.group('tmux');
+  p.tap('Scroll'); p.tap('Leave'); p.tap('Tasks'); p.tap('Prefix');
+  assert.deepEqual(p.input(), ['\x02[', '\x1b', '\x02\x02', '\x02']);
 });
 
 test('desktop word shortcuts emit one editing command on keydown for each provider', async () => {
