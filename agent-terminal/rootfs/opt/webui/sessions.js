@@ -144,7 +144,7 @@ window.AgentSessions = function (options) {
       if (picking() && (r.id === current || other && r.id === other.id)) return false;
       var unopened = r.id.indexOf('agent-') === 0 && r.name === 'Main' && !r.description && !r.running && !r.stopped && !position(r.id);
       if (unopened) { unused++; if (!showUnused && !query) return false; }
-      return (displayName(r) + ' ' + (r.description || '') + ' ' + label(agents, r.agent) + ' ' + label(workspaces, r.workspace)).toLowerCase().includes(query);
+      return (displayName(r) + ' ' + (r.description || '') + ' ' + r.agent + ' ' + label(agents, r.agent) + ' ' + label(workspaces, r.workspace)).toLowerCase().includes(query);
     }).sort(function (a, b) {
       return Number(b.id === current) - Number(a.id === current) || Number(b.running) - Number(a.running) || a.name.localeCompare(b.name);
     });

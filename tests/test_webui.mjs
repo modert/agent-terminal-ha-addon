@@ -165,6 +165,26 @@ test('named session URLs survive reload and remote stops cancel every terminal r
   assert.deepEqual(c.sockets.at(-1).url.searchParams.getAll('arg'), ['codex', 'homeassistant', id]);
 });
 
+test('quick switching remembers the last named session for each provider', async () => {
+  const c = client(); await tick(); await c.connect();
+  const id = 'session-' + 'c'.repeat(32);
+  const control = c.control(); control.open();
+  control.output(JSON.stringify({ type: 'sessions',
+    agents: [{ id: 'claude', name: 'Claude' }, { id: 'codex', name: 'ChatGPT' }, { id: 'shell', name: 'Shell' }],
+    workspaces: [{ id: 'homeassistant', name: 'Home Assistant', directory: '/homeassistant' }],
+    sessions: [{ id, name: 'Saved task', agent: 'codex', workspace: 'homeassistant', stopped: false, running: true }] }) + '\n');
+  c.elements['quick-session'].value = id; c.elements['quick-session'].emit('change'); await tick(); await c.connect();
+  assert.equal(c.sockets.at(-1).url.searchParams.getAll('arg')[2], id);
+  c.select('shell'); await tick(); await c.connect();
+  c.select('codex'); await tick(); await c.connect();
+  assert.equal(c.sockets.at(-1).url.searchParams.getAll('arg')[2], id, 'return to the task rather than opening General session');
+  assert.equal(c.elements['quick-session'].value, id);
+  const connections = c.sockets.length;
+  c.elements['quick-session'].value = '__all'; c.elements['quick-session'].emit('change');
+  assert.equal(c.elements['sessions-sheet'].hidden, false);
+  assert.equal(c.sockets.length, connections, 'opening the picker must not launch a terminal');
+});
+
 test('shortcuts change agents and delayed clipboard input stays with its original session', async () => {
   const c = client(); await tick(); await c.connect();
   c.elements['keys-tools'].children.find(b => b.textContent === 'Paste').emit('click', { detail: 1 });

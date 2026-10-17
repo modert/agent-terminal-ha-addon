@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Add a quick session dropdown and recent provider icons that return to the
+  last task in each workspace, with two icons on phones and three on wider screens.
+- Add slash-command entry and complete tmux actions to the helper keys.
+- Show provider-reported account usage windows and their age in Sessions and
+  the new-session form. Unsupported counters remain explicitly unavailable.
+- Add explicit Sleep/Wake for saved conversations. Automatic process sleep
+  remains off; Sleep ends the process and drops terminal scrollback.
 
 ## 2.13.3
 - Update the Codex CLI to 0.163.0.
