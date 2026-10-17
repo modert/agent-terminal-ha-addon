@@ -178,6 +178,13 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     }
     return stopLocked(id, true);
   });
+  function fresh(id) {
+    return locked(id, () => {
+      const record = stopLocked(id);
+      // A new terminal ID has no resume mapping and ignores late old hooks.
+      return create({ ...record, name: record.name === 'Main' ? 'New session' : record.name });
+    });
+  }
   function remove(id) {
     return locked(id, () => {
       if (!NAMED.test(id)) throw new Error('Built-in sessions cannot be deleted. Use Stop instead.');
@@ -237,12 +244,13 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
       case 'rename': return rename(input.session, input.name, input.description);
       case 'stop': return stop(input.session);
       case 'sleep': return sleep(input.session);
+      case 'fresh': return fresh(input.session);
       case 'start': return start(input.session);
       case 'delete': return remove(input.session);
       default: throw new Error('Unknown session operation.');
     }
   }
-  return { get, list, create, rename, stop, sleep, start, remove, ensure, remember, failed, snapshot, request };
+  return { get, list, create, rename, stop, sleep, start, fresh, remove, ensure, remember, failed, snapshot, request };
 }
 
 export function serve(store, input = process.stdin, output = process.stdout) {
