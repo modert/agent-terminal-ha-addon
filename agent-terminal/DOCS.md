@@ -289,10 +289,9 @@ same controls. Pairing codes are only returned to the requesting browser or
 shell, and are never stored in status snapshots or settings. Read
 `/run/agent-terminal/remote-status.json` to diagnose the current connection.
 
-The top bar is available on desktop and phones. Choose **Claude**, **ChatGPT**,
-**Ollama**, **Antigravity**, **Grok**, or **Shell**. Each button carries the provider's mark;
-on a phone, in split view and in a narrow window it shows the mark alone, and
-**Sessions** shows the same marks beside the names. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
+The top bar is available on desktop and phones. The quick session dropdown
+sits beside recent provider icons. **Sessions** shows all providers with their
+marks and names. **Ctrl+Shift+1** opens Claude, **Ctrl+Shift+2** opens
 ChatGPT, and **Ctrl+Shift+3** opens Shell. Use the buttons if your browser or OS reserves
 a shortcut. The workspace selector chooses the task folder. The keyboard
 button at the right end shows or hides the on-screen helper keys (see
@@ -318,15 +317,36 @@ Open **Sessions** (or **Ctrl+Shift+K**, **⌘Shift+K** on a Mac), then **+ New s
 Give the session a task name and optional short purpose, choose its provider and workspace, and click
 **Create session**. You can run several ChatGPT or Claude sessions in the same
 workspace with separate conversations. They share that workspace's files and
-the provider's saved login. The existing provider buttons return to each
-provider's original session, shown as **General session** in the picker until
-you rename it; existing running sessions are preserved.
+the provider's saved login. The top dropdown switches among used sessions in
+the current workspace, including named tasks. **All sessions / New…** opens
+the full picker. Three recent provider icons (two on a narrow phone) return
+to that provider's last session in this workspace. A stopped or sleeping
+session opens the picker so you can explicitly Start or Wake it. All
+providers remain available in **Sessions → + New session**. Original provider
+sessions appear as **General session** until renamed.
 
 The picker groups tasks by workspace, with a provider icon and label on each
 row. **Current**, **Left pane**, and **Right pane** show where a session is
 visible. Search by task name, purpose, provider, or workspace; arrow keys and
 Enter choose a result. Unused default sessions are hidden until you choose
 **Show unused sessions** or search for them.
+
+The collapsible **Provider usage** cards show the account's short usage window
+and weekly quota where the provider supplies them, with reset times and the
+age of the report. These are account limits shared by conversations, not
+tokens used in one terminal. The new-session form repeats the selected
+provider's last reported percentages. ChatGPT reads bounded tails of the
+add-on's registered Codex transcripts; a quiet session may have an old report.
+Claude reports its documented status-line counters from newly started
+sessions without a custom status line. Existing custom status lines are kept.
+Missing or unsupported counters say **Usage unavailable**; Ollama has no
+subscription quota. No credentials or transcript content enter these cards.
+
+**••• → Sleep** ends a session's process to free memory and keeps its saved
+conversation. Confirm only after its work has finished: running tasks and
+terminal scrollback are lost. **Wake** resumes the same saved conversation.
+Sessions without a saved transcript use **Stop** instead. Automatic process
+sleep is off; detachment and quiet output alone do not prove work has finished.
 
 Use **••• → Edit details** to change a task name or purpose without restarting
 it. The menu also offers **Stop** and **Start**. **Running** means the terminal
@@ -655,17 +675,23 @@ Assistant companion app.
 
   | Group | Keys |
   |---|---|
-  | Agent | Tab, Mode, Answer, Esc², Ctrl+C, Space |
-  | Ctrl | Ctrl, Alt, Shift, tmux |
+  | Agent | /, Tab, Mode, Answer, Esc², Ctrl+C |
+  | Ctrl | Ctrl, Alt, Shift, tmux, Space |
   | Edit | ↵ (New line), Bksp, Home, End, PgUp, PgDn |
   | Tools | Copy, Paste, Attach, Direct, A−, A+ |
+  | tmux | Scroll, Leave, Tasks, Prefix |
 
   The group button stays put, so tapping it twice returns you to where you
   were. Reloading, switching an agent/workspace, or starting a new draft
   closes Keys; an old saved expanded-toolbar preference is ignored. You can reopen Keys while typing: keyboard resizing leaves your
   choice alone.
 - **Answer Codex questions:** **Keys → Answer** (Codex's Shift+Left), choose
-  with the arrows, then **Enter**. Tab moves between fields; Space toggles a choice where supported.
+  with the arrows, then **Enter**. Tab moves between fields; **Ctrl → Space** toggles a choice where supported.
+- **Slash commands:** **Keys → /** opens the direct terminal keyboard and types
+  one slash, so the provider's live command menu appears. Type the command,
+  navigate with the arrows, and confirm with Enter. A nonempty draft is kept
+  and must be sent or closed first. Direct input disables browser autocorrect,
+  capitalization, and spellcheck; keyboard behavior still depends on the phone.
 - **Write a prompt:** tap the terminal to open a compact draft and the phone
   keyboard. The response stays visible and scrollable. **Enter** or **Send**
   submits; **Shift+Enter**, **↵** beside the draft, or **Keys → Edit → ↵** adds a line. The helper
@@ -689,6 +715,8 @@ Assistant companion app.
 - **tmux:** Keys → Ctrl → tmux sends the default Ctrl+B prefix. In Direct
   mode, follow with `[` to scroll or `d` to detach. Tap tmux twice to pass
   Ctrl+B through to Claude's background-task control.
+  **Keys → Group → tmux** also offers **Scroll** (prefix + `[`), **Leave**
+  (Escape from copy mode), **Tasks** (Ctrl+B through tmux), and **Prefix**.
 - **Touch targets are at least 44 × 44 pixels** on phones 350 pixels wide or
   larger. Between 320 and 350 pixels, the seven-key rows (the bottom row and
   the agent keys) are at least 40 pixels wide. Keyboard actions run on a completed tap. Scrolling, long-press menus,
