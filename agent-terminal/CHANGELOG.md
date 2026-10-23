@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.14.1
+- Update the Codex CLI to 0.164.0.
+
 ## 2.14.0
 - Add a quick session dropdown and recent provider icons that return to the
   last task in each workspace, with two icons on phones and three on wider screens.
