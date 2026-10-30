@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.14.3
+- Update the Codex CLI to 0.166.0.
+
 ## 2.14.2
 - Update the Codex CLI to 0.165.0.
 
