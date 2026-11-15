@@ -332,7 +332,7 @@ window.AgentSessions = function (options) {
   });
   window.addEventListener('keydown', function (event) {
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.code === 'KeyK') {
-      if (!el('remote-sheet').hidden) return;
+      if (!el('remote-sheet').hidden || !el('tasks-view').hidden) return;
       event.preventDefault(); event.stopImmediatePropagation(); open(false);
     }
   }, true);

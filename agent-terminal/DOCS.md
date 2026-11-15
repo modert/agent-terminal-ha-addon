@@ -311,6 +311,48 @@ still connecting are kept and typed into it, in order, once it is on screen.
 After a disconnect of more than ten seconds they are dropped instead, and the
 page says so.
 
+### Task workspace
+
+Open **Sessions → Tasks** for an additional view of your work. The existing
+terminal remains available through **Terminal** or **Inspect terminal**.
+Nothing is migrated or automatically stopped when you use this view.
+
+Create a task with a new session, or attach an existing session. Creating the
+record does not launch an agent. Tasks have a title, objective/summary, optional
+case name, notes, and a manually selected status: Open, In progress, Needs you,
+Ready for review, Done, or Archived. Use the same case name to group related
+work in search. A case is a label in this first version, not a separate project
+or permission boundary. Filter the inbox to find work that needs attention.
+
+Link additional sessions from the same workspace to keep multiple providers'
+conversations with one task. Archiving or completing a task does not stop its
+terminals. Deleting a session does not delete the task or its notes. Tasks are
+stored separately under `/data/agent-terminal/tasks` and survive updates.
+Conflicting saves from another browser are rejected; reload the task before
+editing again. Unsaved edits and message drafts are not persisted across reloads.
+
+The conversation view shows bounded recent saved text for Claude, ChatGPT,
+and Ollama. It refreshes while the task is open and excludes reasoning and tool
+payloads. Other providers, live output, approvals, attachments, and full history
+remain in the terminal. **Review in terminal** transfers your draft to the
+existing composer without sending it. Inspect the destination and press Send
+there. Start or Wake a stopped session from Sessions before continuing.
+
+This is the task-management foundation, not a separate agent execution engine:
+status is manual, case names organize tasks, and provider conversations remain
+independent. It does not infer completion, execute background jobs, transfer
+context between agents, or handle approvals outside the terminal.
+
+Task storage is bounded to 500 tasks, 20 linked sessions per task, and 100 notes
+per task. The UI shows the latest 20 notes and a bounded tail of each supported
+transcript. Earlier notes remain in the task record on disk.
+
+Run `node --test tests/test_tasks.mjs` for persistence, validation, and transcript
+checks. `tests/test_tasks_browser.mjs` checks task creation, saving, mobile layout,
+and preparing an unsent terminal draft against a temporary real task store; set
+`CHROMIUM_BIN` and `WEBUI_BUNDLE` as for the existing browser suite. On a slow host,
+`WEBUI_TEST_TIMEOUT=180000` gives the existing terminal browser suite more time.
+
 ### Named sessions and split view
 
 Open **Sessions** (or **Ctrl+Shift+K**, **⌘Shift+K** on a Mac), then **+ New session**.
