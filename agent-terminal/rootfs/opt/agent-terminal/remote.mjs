@@ -10,7 +10,7 @@ import { connectCodex } from './codex-rpc.mjs';
 import { remoteRuntimeDir } from './remote-client.mjs';
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-function nativeCodex() {
+export function nativeCodex() {
   // The npm launcher is a Node parent. Killing only that parent leaves the
   // native server alive, so supervise the platform binary directly.
   const launcher = realpathSync('/usr/local/bin/codex');

@@ -7,7 +7,7 @@ import vm from 'node:vm';
 
 const template = readFileSync(new URL('../agent-terminal/rootfs/opt/webui/index.template.html', import.meta.url), 'utf8');
 const webui = name => readFileSync(new URL('../agent-terminal/rootfs/opt/webui/' + name, import.meta.url), 'utf8');
-const source = webui('tasks.js') + '\n' + webui('sessions.js') + '\n' + webui('remote.js') + '\n' + webui('uploads.js') + '\n' + webui('health.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
+const source = webui('workspace.js') + '\n' + webui('sessions.js') + '\n' + webui('remote.js') + '\n' + webui('uploads.js') + '\n' + webui('health.js') + '\n' + template.split('<script>').at(-1).split('</script>')[0];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client(search = '') {
@@ -29,7 +29,7 @@ function client(search = '') {
   document.createElement = () => new Element();
   document.documentElement = new Element(); document.body = new Element();
   const window = new Element();
-  window.top = window.parent = window; window.innerHeight = 800; window.matchMedia = () => ({ matches: false });
+  window.AGENT_WORKSPACE_DEFAULT = false; window.top = window.parent = window; window.innerHeight = 800; window.matchMedia = () => ({ matches: false });
   window.isSecureContext = true;                   // as Ingress serves the page
   window.getSelection = () => ({ removeAllRanges() {} });
   const location = new URL('https://example.test/api/hassio_ingress/test/' + search);

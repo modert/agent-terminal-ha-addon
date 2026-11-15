@@ -10,6 +10,7 @@ import { createWorkspaceStore } from './workspaces.mjs';
 import { requestRemote } from './remote-client.mjs';
 import { readProviderUsage } from './usage.mjs';
 import { createTaskStore } from './tasks.mjs';
+import { requestWork } from './work-client.mjs';
 
 import { createHealthStore, createHA, discover, reviewIncident, validateConfig, supervisorToken } from './health.mjs';
 
@@ -17,7 +18,7 @@ const ID = /^(?:session-[a-f0-9]{32}|agent-[a-z][a-z0-9_-]{0,39}-(?:claude|codex
 const NAMED = /^session-[a-f0-9]{32}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE_DIR || '/data/agent-terminal',
-  optionsPath = '/data/options.json', tmux = 'tmux', ...paths } = {}) {
+  optionsPath = '/data/options.json', tmux = 'tmux', workRequest = requestWork, ...paths } = {}) {
   const workspaces = createWorkspaceStore({ stateDir, optionsPath, ...paths });
   const registry = join(stateDir, 'sessions');
   const locks = join(stateDir, 'session-locks');
@@ -225,9 +226,56 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
   }
   const health = createHealthStore({ stateDir, sessions: { create, get, start } });
   const tasks = createTaskStore({ stateDir, sessions: { create, get, list }, conversation });
+  async function workspaceRequest(input) {
+    if (input.method === 'workspace.list') {
+      const inventory = await workRequest('list', { force: input.force === true });
+      tasks.reconcileThreads(inventory.threads, workspaces.list());
+      return { tasks: tasks.request({ method: 'tasks.list' }).map(task => {
+        const statuses = (task.threads || []).map(ref => inventory.threads.find(row => row.id === ref.id && row.provider === ref.provider)?.status).filter(Boolean);
+        return { ...task, runtime: statuses.find(s => s.activeFlags?.length || ['needs_you', 'requires_action'].includes(s.type)) || statuses.find(s => ['active', 'running'].includes(s.type)) || statuses[0] || null };
+      }), errors: inventory.errors };
+    }
+    if (input.method === 'workspace.create') {
+      tasks.validateNew(input); workspaces.get(input.workspace);
+      if (['codex', 'claude', 'ollama'].includes(input.provider)) {
+        const row = await workRequest('create', { provider: input.provider, workspace: input.workspace, model: input.model });
+        return tasks.newConversation(row, input);
+      }
+      return tasks.request({ ...input, method: 'tasks.create', agent: input.provider });
+    }
+    const task = tasks.get(input.task);
+    if (input.method === 'workspace.get') return { ...task, sessions: task.sessions.flatMap(id => { try { return [get(id)]; } catch { return []; } }) };
+    if (input.method === 'workspace.addConversation') {
+      if (!['codex', 'claude', 'ollama'].includes(input.provider)) throw new Error('Choose a chat provider.');
+      const row = await workRequest('create', { provider: input.provider, workspace: task.workspace });
+      return tasks.linkThread(task.id, row);
+    }
+    const ref = (task.threads || []).find(r => r.id === input.thread && r.provider === input.provider);
+    if (!ref) throw new Error('Conversation does not belong to this task.');
+    if (input.method === 'workspace.inspect') {
+      const existing = list().find(s => task.sessions.includes(s.id) && s.agent === ref.provider && s.conversationId === ref.id && !s.stopped);
+      if (existing) return existing;
+      await workRequest('inspect', { provider: ref.provider, thread: ref.id });
+      const description = `Task backend: ${ref.provider}:${ref.id}`;
+      let inspection = list().find(s => task.sessions.includes(s.id) && s.agent === 'shell' && s.description === description);
+      if (inspection?.stopped) inspection = start(inspection.id);
+      inspection ||= create({ agent: 'shell', workspace: task.workspace, name: ('Inspect: ' + task.title).slice(0, 80), description });
+      tasks.linkSession(task.id, inspection.id);
+      ensure('shell', task.workspace, inspection.id, `exec node /opt/agent-terminal/work-inspect.mjs ${ref.provider} ${ref.id}`);
+      return inspection;
+    }
+    const method = input.method.slice('workspace.'.length);
+    if (!['history', 'send', 'interrupt', 'respond', 'file'].includes(method)) throw new Error('Unknown workspace operation.');
+    if (method === 'send' && ref.provider === 'claude' && list().some(s => s.conversationId === ref.id && s.agent === 'claude' && s.running && !s.stopped)) {
+      throw new Error('This Claude conversation is open in a terminal. Stop its terminal from this task before sending here. Its history is preserved.');
+    }
+    return workRequest(method, { provider: ref.provider, thread: ref.id, text: input.text, messageId: input.messageId,
+      cursor: input.cursor, requestId: input.requestId, answer: input.answer, path: input.path, model: input.model, attachments: input.attachments });
+  }
   const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list(), health: health.snapshot() });
   function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid request.');
+    if (typeof input.method === 'string' && input.method.startsWith('workspace.')) return workspaceRequest(input);
     if (typeof input.method === 'string' && input.method.startsWith('tasks.')) return tasks.request(input);
     if (typeof input.method === 'string' && input.method.startsWith('remote/')) return requestRemote(input.method.slice(7));
 
@@ -268,7 +316,7 @@ export function serve(store, input = process.stdin, output = process.stdout) {
   }
   input.on('data', chunk => {
     buffer += chunk;
-    if (buffer.length > 8192) { input.destroy(); return; }
+    if (buffer.length > 65536) { input.destroy(); return; }
     let end;
     while ((end = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);

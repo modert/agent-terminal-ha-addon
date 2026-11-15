@@ -1,6 +1,6 @@
 // Shared, inert ttyd/session transport for browser tests and exploratory runs.
 const mock = `<script>
-    window.testPackets = []; window.testFocus = []; window.testTerminalConnections = []; window.testUploaded = [];
+    window.AGENT_WORKSPACE_DEFAULT = false; window.testPackets = []; window.testFocus = []; window.testTerminalConnections = []; window.testUploaded = [];
     window.testVoiceRequests = [];
     document.addEventListener('focusin', e => {
       window.testFocus.push({ id: e.target.id, active: navigator.userActivation.isActive });

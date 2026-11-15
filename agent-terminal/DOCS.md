@@ -311,51 +311,52 @@ still connecting are kept and typed into it, in order, once it is on screen.
 After a disconnect of more than ten seconds they are dropped instead, and the
 page says so.
 
-### Task workspace
+### Agent Workspace
 
-Open **Sessions → Tasks** for an additional view of your work. The existing
-terminal remains available through **Terminal** or **Inspect terminal**.
-Existing named sessions and used general sessions appear automatically when you
-open or reload Tasks. Unused default sessions stay hidden. This creates task
-records linked to the existing terminals; it never starts or stops a session,
-copies a conversation, or overwrites task details you have already edited.
-Archived and completed tasks keep their session links and are not imported again.
+Agent Workspace is the default landing view. It discovers saved ChatGPT, Claude,
+and Ollama conversations as well as named and used terminal sessions. Existing
+conversations keep their original history; discovery does not start an agent.
+Search and filter by project, case, outcome, or current agent activity.
 
-Create a task with a new session, or attach an existing session. Creating the
-record does not launch an agent. Tasks have a title, objective/summary, optional
-case name, notes, and a manually selected status: Open, In progress, Needs you,
-Ready for review, Done, or Archived. Use the same case name to group related
-work in search. A case is a label in this first version, not a separate project
-or permission boundary. Filter the inbox to find work that needs attention.
+Open a task to chat directly, load earlier messages, answer questions, approve or
+decline requests, stop work, attach files, dictate, and inspect reported files.
+ChatGPT and Ollama use their native Codex app-server; Claude uses its official
+Agent SDK and existing account configuration. Agent permissions are preserved.
+External authorization flows may require **Inspect backend**. If an existing
+Claude conversation is running in its original terminal, stop that linked
+terminal before continuing it in chat, so two processes cannot write it at once.
 
-Link additional sessions from the same workspace to keep multiple providers'
-conversations with one task. Archiving or completing a task does not stop its
-terminals. Deleting a session does not delete the task or its notes. Tasks are
-stored separately under `/data/agent-terminal/tasks` and survive updates.
-Conflicting saves from another browser are rejected; reload the task before
-editing again. Unsaved edits and message drafts are not persisted across reloads.
+**Inspect backend** opens inside the task. ChatGPT/Ollama attach to the same native
+conversation; Claude's SDK conversation has a text inspection console. Existing
+linked terminal sessions remain accessible. **Terminal view** returns to the full
+original interface, including split view. Grok, Antigravity, and shell tasks use
+an embedded terminal rather than the direct chat composer.
 
-The conversation view shows bounded recent saved text for Claude, ChatGPT,
-and Ollama. It refreshes while the task is open and excludes reasoning and tool
-payloads. Other providers, live output, approvals, attachments, and full history
-remain in the terminal. **Review in terminal** transfers your draft to the
-existing composer without sending it. Inspect the destination and press Send
-there. Start or Wake a stopped session from Sessions before continuing.
+Task details contain the objective, case label, status, notes, linked terminals,
+and conversations. Add another ChatGPT, Claude, or Ollama conversation to the same
+task. Each agent retains its own context: shared decisions belong in the task's
+summary and notes. Cases group related tasks by label; projects select the working
+directory. Task outcome is manual and separate from the agent's live activity.
+Completing or archiving a task does not stop its agents.
 
-This is the task-management foundation, not a separate agent execution engine:
-status is manual, case names organize tasks, and provider conversations remain
-independent. It does not infer completion, execute background jobs, transfer
-context between agents, or handle approvals outside the terminal.
+Tasks and notes persist under /data/agent-terminal/tasks; provider history stays
+in its native storage. Draft messages persist in this browser's local storage.
+Unsaved task-detail edits require Save details. Conflicting saves from another
+browser are rejected. Uploaded files are scoped to the selected conversation;
+file previews are limited to its project directory and 512 KB. Large files remain
+available through backend inspection. Discovery is bounded to 1,000 tasks, and
+history is paginated with bounded message and tool-output excerpts.
 
-Task storage is bounded to 500 tasks, 20 linked sessions per task, and 100 notes
-per task. The UI shows the latest 20 notes and a bounded tail of each supported
-transcript. Earlier notes remain in the task record on disk.
+The workspace service runs independently of browser connections, so leaving the
+page does not stop work. It retains pending requests while running. A full add-on
+restart still stops live agent processes; saved conversations remain available.
 
-Run `node --test tests/test_tasks.mjs` for persistence, validation, and transcript
-checks. `tests/test_tasks_browser.mjs` checks task creation, saving, mobile layout,
-and preparing an unsent terminal draft against a temporary real task store; set
-`CHROMIUM_BIN` and `WEBUI_BUNDLE` as for the existing browser suite. On a slow host,
-`WEBUI_TEST_TIMEOUT=180000` gives the existing terminal browser suite more time.
+Run node --test tests/test_tasks.mjs tests/test_workspace_service.mjs for task
+persistence, submission isolation, permissions, and file boundaries.
+tests/test_workspace_native.mjs exercises real isolated Codex and Claude processes
+against synthetic local responses. tests/test_tasks_browser.mjs checks discovery,
+direct chat, approvals, embedded inspection, and phone layouts with Chromium;
+set CHROMIUM_BIN and WEBUI_BUNDLE as for the terminal browser tests.
 
 ### Named sessions and split view
 

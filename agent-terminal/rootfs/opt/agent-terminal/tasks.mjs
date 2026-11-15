@@ -65,7 +65,7 @@ export function createTaskStore({ stateDir, sessions, conversation }) {
     return change(records => {
       const linked = new Set(records.flatMap(task => task.sessions));
       for (const session of sessions.list()) {
-        if (records.length >= 500) break;
+        if (records.length >= 1000) break;
         if (linked.has(session.id)) continue;
         if (!session.id.startsWith('session-') && session.name === 'Main' &&
             !session.description && !session.running && !session.conversationId && !session.stopped) continue;
@@ -79,6 +79,44 @@ export function createTaskStore({ stateDir, sessions, conversation }) {
       return records;
     });
   }
+  function reconcileThreads(threads, workspaces) {
+    return change(records => {
+      const registered = sessions.list();
+      for (const row of threads) {
+        if (!row || !['codex', 'claude', 'ollama'].includes(row.provider) || typeof row.id !== 'string') continue;
+        let task = records.find(t => (t.threads || []).some(r => r.id === row.id && r.provider === row.provider));
+        if (task) continue;
+        task = records.find(t => t.sessions.some(id => registered.some(s => s.id === id && s.agent === row.provider && s.conversationId === row.id)));
+        const ref = { provider: row.provider, id: row.id, cwd: row.cwd };
+        if (task) {
+          task.threads ||= []; task.threads.push(ref); task.project ||= row.cwd;
+          if (task.revision === 1 && task.title.startsWith('General session')) task.title = text(row.title.slice(0, 80) || 'Conversation', 80, true);
+          task.revision++;
+        } else if (records.length < 1000) {
+          records.push({ id: randomUUID(), title: text((row.title || 'Conversation').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 80), 80, true),
+            caseName: '', summary: '', project: row.cwd, workspace: workspaces.find(w => w.directory === row.cwd)?.id || 'homeassistant',
+            status: row.archived ? 'archived' : 'open', threads: [ref], sessions: [], notes: [], revision: 1,
+            createdAt: row.createdAt || Date.now(), updatedAt: row.updatedAt || Date.now() });
+        }
+      }
+      return records;
+    });
+  }
+  function newConversation(row, input) {
+    return change(records => {
+      if (records.length >= 1000) throw new Error('Task limit reached (1000).');
+      const task = { id: randomUUID(), ...validateNew(input), project: row.cwd, workspace: input.workspace,
+        status: 'open', threads: [{ provider: row.provider, id: row.id, cwd: row.cwd }], sessions: [], notes: [], revision: 1, createdAt: Date.now(), updatedAt: Date.now() };
+      records.push(task); return task;
+    });
+  }
+  function linkThread(taskId, row) { return change(records => {
+    const task = records.find(t => t.id === taskId); if (!task) throw new Error('Unknown task.');
+    task.threads ||= []; if (!task.threads.some(r => r.id === row.id && r.provider === row.provider)) task.threads.push({ provider: row.provider, id: row.id, cwd: row.cwd });
+    task.revision++; task.updatedAt = Date.now(); return task;
+  }); }
+  function validateNew(input) { return { title: text(input.title, 80, true), caseName: text(input.caseName || '', 80), summary: text(input.summary || '', 2000) }; }
+  function linkSession(taskId, sessionId) { return change(records => { const task = records.find(t => t.id === taskId); if (!task) throw new Error('Unknown task.'); sessions.get(sessionId); if (!task.sessions.includes(sessionId)) { task.sessions.push(sessionId); task.revision++; } return task; }); }
   function request(input) {
     if (input.method === 'tasks.list') return existingTasks().map(({ notes, sessions: linked, ...task }) => ({ ...task, summary: task.summary.slice(0, 160), sessionCount: linked.length, noteCount: notes.length }));
     if (input.method === 'tasks.get') {
@@ -90,7 +128,7 @@ export function createTaskStore({ stateDir, sessions, conversation }) {
     }
     return change(records => {
       if (input.method === 'tasks.create') {
-        if (records.length >= 500) throw new Error('Task limit reached (500).');
+        if (records.length >= 1000) throw new Error('Task limit reached (1000).');
         const title = text(input.title, 80, true), caseName = text(input.caseName || '', 80), summary = text(input.summary || '', 2000);
         // Validate all task fields before creating a terminal registration.
         const session = input.session ? sessions.get(input.session) : sessions.create({ name: title, agent: input.agent, workspace: input.workspace });
@@ -119,5 +157,5 @@ export function createTaskStore({ stateDir, sessions, conversation }) {
       task.revision++; task.updatedAt = Date.now(); return task;
     });
   }
-  return { request };
+  return { request, get, reconcileThreads, newConversation, validateNew, linkSession, linkThread };
 }

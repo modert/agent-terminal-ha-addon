@@ -2,7 +2,7 @@
 // directory, which Codex hides from model-generated sandboxed commands.
 import WebSocket from 'ws';
 
-export async function connectCodex(socketPath, { timeout = 15000, connectTimeout = 1000, onNotification = () => {} } = {}) {
+export async function connectCodex(socketPath, { timeout = 15000, connectTimeout = 1000, onNotification = () => {}, onRequest = () => {} } = {}) {
   const socket = new WebSocket('ws+unix:' + socketPath + ':/', { maxPayload: 16 * 1024 * 1024 });
   const pending = new Map();
   let serial = 0, closed = false;
@@ -16,11 +16,16 @@ export async function connectCodex(socketPath, { timeout = 15000, connectTimeout
   socket.on('message', bytes => {
     let message;
     try { message = JSON.parse(bytes.toString()); } catch { return; }
+    if (message.method) {
+      if (message.id !== undefined) onRequest(message);
+      else onNotification(message);
+      return;
+    }
     const request = pending.get(message.id);
     if (request) {
       pending.delete(message.id); clearTimeout(request.timer);
       if (message.error) request.reject(new Error(message.error.message)); else request.resolve(message.result);
-    } else if (message.method) onNotification(message);
+    }
     // This client never handles approvals or agent tools. Those belong to
     // the phone or terminal that starts the turn, not this service.
   });
@@ -46,6 +51,9 @@ export async function connectCodex(socketPath, { timeout = 15000, connectTimeout
     await call('initialize', { clientInfo: { name: 'agent_terminal_remote', title: 'Agent Terminal', version: '2.10.0' },
       capabilities: { experimentalApi: true } });
     socket.send(JSON.stringify({ method: 'initialized' }));
-    return { call, dispose, get closed() { return closed; } };
+    return { call, dispose, respond(id, result) {
+      if (closed || socket.readyState !== WebSocket.OPEN) throw new Error('Codex server disconnected.');
+      socket.send(JSON.stringify({ id, result }));
+    }, get closed() { return closed; } };
   } catch (error) { dispose(); throw error; }
 }
