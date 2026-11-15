@@ -7,13 +7,18 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
-import { createSessionStore } from '../agent-terminal/rootfs/opt/agent-terminal/sessions.mjs';
+const controlRoot = process.env.AGENT_TERMINAL_TEST_CONTAINER === '1' ? new URL('file:///opt/agent-terminal/') : new URL('../agent-terminal/rootfs/opt/agent-terminal/', import.meta.url);
+const { createWorkService } = await import(new URL('work-service.mjs', controlRoot));
+const { createSessionStore } = await import(new URL('sessions.mjs', controlRoot));
+
+import { fakeWorkProvider } from './helpers/workspace-provider.mjs';
+
 import { fixtureHtml } from './helpers/webui-fixture.mjs';
 
 // Opt in with CHROMIUM_BIN and WEBUI_BUNDLE. The real bundled xterm runs in
 // Chromium, but its ttyd transport is replaced before any page code executes.
 // No test input can reach an agent or tmux process.
-test('task workspace persists work and preserves the terminal on desktop and phone', {
+test('unified workspace discovers history, chats, approves and inspects without leaving the task', {
   skip: !process.env.CHROMIUM_BIN,
   timeout: 120000,
 }, async t => {
@@ -21,12 +26,13 @@ test('task workspace persists work and preserves the terminal on desktop and pho
     '../agent-terminal/rootfs/opt/webui/index.html');
   const root = mkdtempSync(join(tmpdir(), 'task-browser-store-'));
   const optionsPath = join(root, 'options.json'); writeFileSync(optionsPath, '{"agent":"codex"}');
-  const store = createSessionStore({ stateDir: root, optionsPath, homeDirectory: root, tmux: '/nonexistent-task-test-tmux' });
-  store.create({ name: 'Existing terminal task', agent: 'claude', workspace: 'homeassistant' });
+  const provider = fakeWorkProvider();
+  const service = createWorkService({ stateDir: root, runtime: join(root,'runtime'), providers: { codex: provider }, workspaces: { get() { return { directory: root }; } } });
+  const store = createSessionStore({ stateDir: root, optionsPath, homeDirectory: root, tmux: '/nonexistent-task-test-tmux', workRequest: (method, fields) => service.request({ method, ...fields }) });
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  let html = fixtureHtml(readFileSync(bundle, 'utf8'));
+  let html = fixtureHtml(readFileSync(bundle, 'utf8')).replace('window.AGENT_WORKSPACE_DEFAULT = false', 'window.AGENT_WORKSPACE_DEFAULT = true');
   html = html.replace('window.fetch = async', "window.testTasksRequest = window.fetch.bind(window); window.fetch = async");
-  html = html.replace("if (request.method === 'usage')", `if (request.method.startsWith('tasks.')) {
+  html = html.replace("if (request.method === 'usage')", `if (request.method.startsWith('tasks.') || request.method.startsWith('workspace.')) {
     window.testTasksRequest('/task-api', { method: 'POST', body: JSON.stringify(request) }).then(r => r.json()).then(result => this.packet({ request: request.request, ...result })); return;
   }
   if (request.method === 'usage')`);
@@ -35,7 +41,7 @@ test('task workspace persists work and preserves the terminal on desktop and pho
     if (req.url === '/task-api') {
       let body = ''; for await (const chunk of req) body += chunk;
       res.setHeader('Content-Type','application/json');
-      try { res.end(JSON.stringify({ result: store.request(JSON.parse(body)) })); }
+      try { const input = JSON.parse(body); const result = input.method === 'workspace.inspect' ? { id: 'agent-homeassistant-codex', agent: 'codex', workspace: 'homeassistant', name: 'Backend fixture' } : await store.request(input); res.end(JSON.stringify({ result })); }
       catch (error) { res.end(JSON.stringify({ error: error.message })); }
       return;
     }
@@ -99,44 +105,53 @@ test('task workspace persists work and preserves the terminal on desktop and pho
       if (await evaluate(expression)) return;
       await delay(20);
     }
-    assert.fail('Timed out: ' + expression + ' — ' + await evaluate("document.getElementById('tasks-message').textContent"));
+    assert.fail('Timed out: ' + expression + ' — ' + JSON.stringify({calls:provider.calls,ui:await evaluate("({notice:document.getElementById('work-notice').textContent,errors:window.testErrors,draft:document.getElementById('work-compose').value,disabled:document.getElementById('work-send').disabled})")}));
   }
   const target = await command('Target.createTarget', { url: 'about:blank' });
   session = (await command('Target.attachToTarget', { targetId: target.targetId, flatten: true })).sessionId;
   await command('Page.enable');
+  await command('Page.addScriptToEvaluateOnNewDocument', { source: "window.testErrors=[];addEventListener('error',e=>testErrors.push(e.message));addEventListener('unhandledrejection',e=>testErrors.push(String(e.reason)));" });
+
   for (const width of [1280, 390, 320]) {
     await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 500 });
     await command('Page.navigate', { url: origin });
-    await until("window.testSocket?.onmessage && document.getElementById('overlay').hidden");
-    await evaluate("document.getElementById('sessions-open').click(); document.getElementById('tasks-open').click();");
-    await until("!document.getElementById('tasks-view').hidden");
-    await until("document.getElementById('tasks-list').textContent.includes('Existing terminal task')");
-    assert.equal(await evaluate("document.getElementById('app').inert"), true);
-    await evaluate(`document.getElementById('tasks-new').click();
-      document.getElementById('task-new-title').value = 'Task at ${width}';
-      document.getElementById('task-new-case').value = 'Review';
-      document.getElementById('task-new-session').value = 'agent-homeassistant-codex';
-      document.getElementById('task-create').requestSubmit();`);
-    await until("!document.getElementById('task-detail').hidden && !document.getElementById('task-save').disabled && !document.getElementById('tasks-message').textContent");
-    await evaluate("document.querySelector('#task-detail details').open = true; document.getElementById('task-state').value = 'needs_you'; document.getElementById('task-summary').value = '<img src=x onerror=window.unsafe=true>'; document.getElementById('task-save').click()");
-    await until("document.getElementById('tasks-list').textContent.includes('Needs you') && !document.getElementById('task-save').disabled && !document.getElementById('tasks-message').textContent");
+    await until("document.getElementById('work-list')?.textContent.includes('Existing saved work')");
+    assert.equal(await evaluate("document.getElementById('tasks-view').hidden"), false, 'workspace is the primary view');
+    assert.equal(await evaluate("window.testTerminalConnections.length"), 0, 'opening the workspace does not launch a terminal');
+    await evaluate("document.querySelector('#work-list button').click()");
+    await until("document.getElementById('work-messages').textContent.includes('Existing saved conversation')");
+    await evaluate("document.getElementById('work-older').click()");
+    await until("document.getElementById('work-messages').textContent.includes('An older message')");
+    await evaluate(`document.getElementById('work-new').click(); document.getElementById('work-new-title').value = 'Unified task ${width}'; document.getElementById('work-new-case').value = 'A case'; document.getElementById('work-new-form').requestSubmit();`);
+    await until("document.getElementById('work-title').textContent.startsWith('Unified task') && !document.getElementById('work-send').disabled");
+    await evaluate("document.getElementById('work-compose').value = 'Do the task'; document.getElementById('work-send').click()");
+    await until("document.getElementById('work-approvals').textContent.includes('Approval needed')");
+    assert.equal(await evaluate("document.getElementById('tasks-view').hidden"), false);
+    assert.equal(await evaluate("document.getElementById('work-compose').value"), '');
+    await evaluate("[...document.querySelectorAll('#work-approvals button')].find(b=>b.textContent==='Allow once').click()");
+    await until("document.getElementById('work-messages').textContent.includes('Completed after your approval.')");
+    assert.equal(await evaluate("document.getElementById('work-approvals').textContent"), '');
+    assert.deepEqual(await evaluate("window.testPackets.filter(p => p.startsWith('0'))"), [], 'chat never types into a terminal');
+    await evaluate("document.getElementById('work-compose').value = 'Unsent draft'; document.getElementById('work-compose').dispatchEvent(new Event('input'))");
+    await command('Page.reload');
+    await until(`document.getElementById('work-list')?.textContent.includes('Unified task ${width}')`);
+    await evaluate(`[...document.querySelectorAll('#work-list button')].find(b=>b.textContent.includes('Unified task ${width}')).click()`);
+    await until("document.getElementById('work-messages').textContent.includes('Completed after your approval.')");
+    assert.equal(await evaluate("document.getElementById('work-compose').value"), 'Unsent draft');
+    await evaluate("document.getElementById('work-details').open = true; document.getElementById('work-case').value = 'Reviewed case'; document.getElementById('work-summary').value = '<img src=x onerror=window.unsafe=true>'; document.getElementById('work-save').click()");
+    await until("document.getElementById('work-notice').textContent === 'Saved.'");
     assert.equal(await evaluate("!!window.unsafe"), false);
-    assert.equal(await evaluate("document.getElementById('tasks-view').scrollWidth <= innerWidth"), true);
-    await evaluate("document.getElementById('task-draft').value = 'Inspect the configuration'; document.getElementById('task-draft').dispatchEvent(new Event('input')); document.getElementById('task-prepare').click()");
-    await until("document.getElementById('tasks-view').hidden && !document.getElementById('paste').hidden");
-    assert.equal(await evaluate("document.getElementById('paste-text').value"), 'Inspect the configuration');
-    assert.equal(await evaluate("document.getElementById('app').inert"), false);
-    assert.deepEqual(await evaluate("window.testPackets.filter(p => p.startsWith('0'))"), [], 'review never sends the draft automatically');
-    await evaluate("document.getElementById('sessions-open').click(); document.getElementById('tasks-open').click()");
-    assert.equal(await evaluate("document.getElementById('task-draft').value"), 'Inspect the configuration');
-    if (process.env.TASK_SCREENSHOT_DIR) {
-      const shot = await command('Page.captureScreenshot');
-      writeFileSync(join(process.env.TASK_SCREENSHOT_DIR, 'tasks-' + width + '.png'), Buffer.from(shot.data,'base64'));
-    }
-    // Esc closes only the task workspace; an unsent terminal draft survives.
-    await command('Input.dispatchKeyEvent', { type:'keyDown', key:'Escape', code:'Escape', windowsVirtualKeyCode:27 });
-    await until("document.getElementById('tasks-view').hidden");
-    assert.equal(await evaluate("document.getElementById('paste-text').value"), 'Inspect the configuration');
+    await evaluate("document.getElementById('work-add-conversation').click()");
+    await until("document.getElementById('work-thread').options.length === 2 && !document.getElementById('work-send').disabled");
+    assert.equal(await evaluate("document.getElementById('work-title').textContent"), 'Unified task ' + width);
+    await evaluate("document.getElementById('work-details').open = false; document.getElementById('work-inspect').click()");
+    await until("!document.getElementById('work-inspector').hidden");
+    assert.equal(await evaluate("document.getElementById('tasks-view').hidden"), false, 'inspection stays inside the task');
+    await evaluate("document.getElementById('work-inspector-close').click()");
+    assert.equal(await evaluate("document.getElementById('tasks-view').scrollWidth <= innerWidth"), true, JSON.stringify(await evaluate("({width:innerWidth,overflow:[...document.querySelectorAll('#tasks-view *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>[e.id,e.tagName,Math.round(e.getBoundingClientRect().right)]).slice(0,20)})")));
+    if (process.env.TASK_SCREENSHOT_DIR) { const shot = await command('Page.captureScreenshot'); writeFileSync(join(process.env.TASK_SCREENSHOT_DIR, 'workspace-' + width + '.png'), Buffer.from(shot.data,'base64')); }
   }
-  assert.equal(store.request({ method: 'tasks.list' }).length, 4);
+  assert.equal(provider.calls.filter(c=>c.method==='send').length, 3);
+  assert.equal(provider.calls.filter(c=>c.method==='respond').length, 3);
+  assert.equal((await store.request({ method:'workspace.list' })).tasks.length, 4);
 });

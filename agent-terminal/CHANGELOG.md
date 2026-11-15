@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.16.0
+- Make Agent Workspace the default view, discovering saved provider conversations
+  alongside existing terminal sessions. Keep full terminal and split views available.
+- Chat directly with ChatGPT, Claude and Ollama; answer questions and permission
+  requests, stop work, attach files, dictate, and load earlier messages in the task.
+- Group tasks by case and project, keep durable notes and browser drafts, and add
+  multiple agent conversations to one task. Inspect the backend without leaving it.
+- Add file previews, an independent workspace service, isolated native-provider
+  tests, and browser coverage for reloads and narrow phones.
+
 ## 2.15.1
 - Show existing named and used general terminal sessions automatically in
   Tasks. Preserve session state and edited task details, skip unused defaults,
