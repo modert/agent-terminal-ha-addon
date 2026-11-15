@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createWorkspaceStore } from './workspaces.mjs';
 import { requestRemote } from './remote-client.mjs';
 import { readProviderUsage } from './usage.mjs';
+import { createTaskStore } from './tasks.mjs';
 
 import { createHealthStore, createHA, discover, reviewIncident, validateConfig, supervisorToken } from './health.mjs';
 
@@ -223,9 +224,11 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     });
   }
   const health = createHealthStore({ stateDir, sessions: { create, get, start } });
+  const tasks = createTaskStore({ stateDir, sessions: { create, get }, conversation });
   const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list(), health: health.snapshot() });
   function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid request.');
+    if (typeof input.method === 'string' && input.method.startsWith('tasks.')) return tasks.request(input);
     if (typeof input.method === 'string' && input.method.startsWith('remote/')) return requestRemote(input.method.slice(7));
 
     if (input.method === 'health.discover') return discover(createHA({ token: supervisorToken() }));

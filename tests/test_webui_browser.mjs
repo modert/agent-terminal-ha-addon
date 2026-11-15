@@ -14,7 +14,7 @@ import { fixtureHtml } from './helpers/webui-fixture.mjs';
 // No test input can reach an agent or tmux process.
 test('phone taps and composition with real browser events and xterm', {
   skip: !process.env.CHROMIUM_BIN,
-  timeout: 60000,
+  timeout: Number(process.env.WEBUI_TEST_TIMEOUT || 60000),
 }, async t => {
   const bundle = process.env.WEBUI_BUNDLE || resolve(import.meta.dirname,
     '../agent-terminal/rootfs/opt/webui/index.html');

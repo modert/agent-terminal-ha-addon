@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.15.0
+- Add an optional task workspace under Sessions → Tasks while preserving the
+  full terminal interface and live sessions.
+- Organize work with case labels, manual status, summaries, durable notes,
+  and multiple linked conversations. Completing or archiving a task does not
+  stop its sessions; conflicting edits from another browser are rejected.
+- View recent saved Claude, ChatGPT, and Ollama messages and prepare an unsent
+  draft for review in the existing terminal composer. Other providers and
+  approvals remain available through Inspect terminal.
+- Add persistence and real-browser coverage for desktop and narrow phones.
+
 ## 2.14.7
 - Update the Codex CLI to 0.169.0.
 

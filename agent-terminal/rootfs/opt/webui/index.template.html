@@ -489,6 +489,53 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 @media (pointer: coarse) {
   body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button { min-height: 44px; }
 }
+
+#tasks-view { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column; touch-action: auto; }
+#tasks-view[hidden], #tasks-view [hidden] { display: none !important; }
+#tasks-view header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+#tasks-view h1 { font-size: 20px; margin: 0; flex: 1; }
+#tasks-view h2 { font-size: 18px; margin: 0 0 14px; }
+#tasks-view h3 { font-size: 14px; }
+#tasks-view .agent-button { min-height: 44px; flex: 0 0 auto; }
+#tasks-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); flex: 1; min-height: 0; }
+#tasks-sidebar { overflow-y: auto; padding: 16px; border-right: 1px solid var(--line); }
+#tasks-main { min-width: 0; overflow-y: auto; padding: 24px; }
+#tasks-view input, #tasks-view textarea, #tasks-view select { width: 100%; min-height: 44px; padding: 10px; margin: 6px 0 14px; background: var(--bar); color: var(--fg); border: 1px solid #424958; border-radius: 8px; font: inherit; font-size: 16px; }
+#tasks-view textarea { min-height: 90px; resize: vertical; }
+#tasks-view label { display: block; color: #bdc7d4; font-size: 13px; }
+#tasks-view button:focus-visible, #tasks-view input:focus-visible, #tasks-view select:focus-visible, #tasks-view textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tasks-muted { color: #a2afc0; font-size: 12px; line-height: 1.6; }
+.task-card { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; padding: 16px; margin: 12px 0; background: #181e28; border: 1px solid var(--line); border-radius: 12px; color: var(--fg); cursor: pointer; font: inherit; overflow-wrap: anywhere; }
+.task-card[aria-current=true] { border-color: var(--accent); background: #29221f; }
+.task-card strong { font-size: 15px; }
+.task-card span { font-size: 12px; }
+.tasks-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.tasks-row > label { flex: 1; min-width: 160px; }
+#tasks-message { padding: 0 20px; color: #ebc5b7; font-size: 13px; }
+#tasks-message:empty { display: none; }
+#tasks-empty { max-width: 560px; padding: 40px 0; }
+#task-create, #task-detail { max-width: 920px; margin: auto; }
+#task-detail details { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 18px 0; }
+#task-detail summary { cursor: pointer; min-height: 30px; }
+#task-history { max-height: 48vh; min-height: 120px; overflow-y: auto; padding: 4px; }
+.task-message { padding: 14px; margin: 12px 0; background: var(--bar); border: 1px solid var(--line); border-radius: 10px; }
+.task-user { margin-left: 24px; border-color: #645044; }
+.task-message strong { font-size: 12px; color: #cab8a8; }
+.task-message-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; margin-top: 8px; }
+#tasks-inbox { display: none; }
+#tasks-view footer { padding-bottom: var(--safe-b); }
+@media (max-width: 650px) {
+  #tasks-view.task-selected #tasks-sidebar { display: none; }
+  #tasks-view:not(.task-selected) #tasks-main { display: none; }
+  #tasks-view.task-selected #tasks-inbox { display: inline-block; }
+  #tasks-view.task-selected #tasks-title { display: none; }
+  #tasks-layout { grid-template-columns: 1fr; overflow-y: auto; display: block; }
+  #tasks-sidebar { border-right: 0; border-bottom: 1px solid var(--line); max-height: none; }
+  #tasks-main { overflow: visible; padding: 16px; }
+  #tasks-view header { padding: 10px; gap: 6px; }
+  #tasks-view h1 { font-size: 17px; }
+  #tasks-view header .agent-button { padding: 0 9px; }
+}
 </style>
 </head>
 <body>
@@ -570,7 +617,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   <input type="file" id="upload-input" multiple tabindex="-1" aria-hidden="true">
   <section id="sessions-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sessions-title" aria-describedby="sessions-subtitle" hidden>
     <div class="sessions-dialog">
-    <header><div class="sessions-heading"><h2 id="sessions-title">Sessions</h2><p id="sessions-subtitle">Pick a task to continue.</p></div><button type="button" class="agent-button" id="health-open">Health</button><button type="button" class="agent-button" id="sessions-done">Done</button></header>
+    <header><div class="sessions-heading"><h2 id="sessions-title">Sessions</h2><p id="sessions-subtitle">Pick a task to continue.</p></div><button type="button" class="agent-button" id="tasks-open">Tasks</button><button type="button" class="agent-button" id="health-open">Health</button><button type="button" class="agent-button" id="sessions-done">Done</button></header>
     <div id="sessions-browse">
       <p id="sessions-context" hidden></p>
       <div class="sessions-toolbar">
@@ -655,6 +702,42 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 
 <script>/*{{XTERM_JS}}*/</script>
 <script>/*{{FIT_JS}}*/</script>
+
+<section id="tasks-view" role="dialog" aria-modal="true" aria-labelledby="tasks-title" hidden>
+  <header><h1 id="tasks-title">Task workspace</h1><button class="agent-button" id="tasks-inbox">Inbox</button><button class="agent-button" id="tasks-new">+ New task</button><button class="agent-button" id="tasks-reload">Reload</button><button class="agent-button" id="tasks-close">Terminal</button></header>
+  <p id="tasks-message" role="status"></p>
+  <div id="tasks-layout">
+    <aside id="tasks-sidebar" aria-label="Task inbox">
+      <label for="tasks-search">Find a task or case</label><input id="tasks-search" type="search" placeholder="Search work…">
+      <label for="tasks-filter">Show</label><select id="tasks-filter"><option value="active">Active tasks</option><option value="needs_you">Needs you</option><option value="in_progress">In progress</option><option value="review">Ready for review</option><option value="done">Done</option><option value="archived">Archived</option><option value="all">All tasks</option></select>
+      <nav id="tasks-list" aria-label="Tasks"></nav>
+    </aside>
+    <main id="tasks-main">
+      <div id="tasks-empty"><h2>A home for your work</h2><p>Keep the objective, decisions, and conversations together. Create a task or link a session you already use.</p><p class="tasks-muted">Your existing terminals remain available. Task status is set by you; it does not claim that an agent is working or finished.</p></div>
+      <form id="task-create" hidden><h2>Create a task</h2>
+        <label for="task-new-title">Task name</label><input id="task-new-title" required maxlength="80" placeholder="What do you want to accomplish?">
+        <label for="task-new-case">Case (optional)</label><input id="task-new-case" maxlength="80" placeholder="Group related tasks under the same case name">
+        <label for="task-new-session">Session</label><select id="task-new-session"></select>
+        <div class="tasks-row"><label>Provider for a new session<select id="task-new-provider"></select></label><label>Workspace for a new session<select id="task-new-workspace"></select></label></div>
+        <button class="agent-button" type="submit">Create task</button><p class="tasks-muted">Creating a task does not launch an agent. Inspect its terminal when you are ready.</p>
+      </form>
+      <section id="task-detail" hidden>
+        <h2 id="task-heading"></h2><p id="task-context" class="tasks-muted"></p>
+        <details><summary>Task details and status</summary>
+        <label for="task-title">Task</label><input id="task-title" maxlength="80">
+        <div class="tasks-row"><label>Case<input id="task-case" maxlength="80" placeholder="Optional case name"></label><label>Status (set manually)<select id="task-state"><option value="open">Open</option><option value="in_progress">In progress</option><option value="needs_you">Needs you</option><option value="review">Ready for review</option><option value="done">Done</option><option value="archived">Archived</option></select></label></div>
+        <label for="task-summary">Objective and current summary</label><textarea id="task-summary" maxlength="2000"></textarea><button class="agent-button" id="task-save">Save details</button></details>
+        <details><summary>Decisions and notes</summary><div id="task-notes"></div><label for="task-note">Add a note</label><textarea id="task-note" maxlength="4000"></textarea><button class="agent-button" id="task-note-save">Save note</button></details>
+        <h2>Conversations</h2><div class="tasks-row"><label>Session to inspect<select id="task-session"></select></label><button class="agent-button" id="task-inspect">Inspect terminal</button></div>
+        <div id="task-history" tabindex="0" aria-label="Recent saved conversation messages"></div>
+        <label for="task-draft">Prepare your next message</label><textarea id="task-draft" maxlength="4000" placeholder="Write here, then review and send in the terminal…"></textarea>
+        <button class="agent-button" id="task-prepare">Review in terminal</button><p class="tasks-muted">The terminal handles sending, login, approvals, and live output. Drafts here stay in this browser view until it is reloaded.</p>
+        <label for="task-link">Add an existing conversation to this task</label><select id="task-link"></select>
+      </section>
+    </main>
+  </div><footer></footer>
+</section>
+<script>/*{{TASKS_JS}}*/</script>
 <script>/*{{SESSIONS_JS}}*/</script>
 <script>/*{{REMOTE_JS}}*/</script>
 <script>/*{{UPLOADS_JS}}*/</script>
@@ -843,7 +926,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   });
   window.addEventListener('keydown', function (e) {
     if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey || !/^Digit[123]$/.test(e.code)) return;
-    if (!document.getElementById('sessions-sheet').hidden || !document.getElementById('remote-sheet').hidden) return;
+    if (!document.getElementById('tasks-view').hidden || !document.getElementById('sessions-sheet').hidden || !document.getElementById('remote-sheet').hidden) return;
     e.preventDefault(); e.stopImmediatePropagation();
     selectProvider(sessionConfig.agents[Number(e.code.slice(-1)) - 1].id);
   }, true);
@@ -1274,6 +1357,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
   });
   window.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (!document.getElementById('tasks-view').hidden) return;
     if (!menu.hidden) hideMenu();
     else if (!pasteEl.hidden) closePaste();
     else if (!selEl.hidden) closeSelect();
@@ -2388,6 +2472,20 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
       // An investigation already open beside this pane owns its own draft.
       if (switchSession(result.session.agent, result.session.workspace, result.session.id) === 'other') return;
       openPaste(false); pasteBox.value = result.prompt; pasteBox.focus();
+    }
+  });
+  if (window.AgentTasks && sessionManager) new window.AgentTasks({
+    request: sessionManager.request, config: sessionConfig, records: sessionManager.records,
+    closeSessions: function () { sessionManager.close(false); },
+    cover: function (covered) { app.inert = covered; if (sideFrame) sideFrame.inert = covered; if (covered && voice) voice.cancel(); },
+    focus: function () { if (!pasteEl.hidden) pasteBox.focus(); else term.focus(); },
+    inspect: function (record, draft) {
+      if (record.stopped) throw new Error('This session is stopped. Start or Wake it from Sessions, then return to the task.');
+      if (!pasteEl.hidden && pasteBox.value) throw new Error('An existing terminal draft is open. Return to Terminal and send or close it first.');
+      if (draft && (peer && peer.id === record.id || sidePane && parentSession && parentSession.id === record.id)) throw new Error('This session is open in the other pane. Close split view before preparing its message here.');
+      switchSession(record.agent, record.workspace, record.id);
+      if (draft) { openPaste(false); pasteBox.value = draft; }
+      return true;
     }
   });
   notifySelection();
