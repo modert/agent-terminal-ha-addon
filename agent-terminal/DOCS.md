@@ -315,7 +315,11 @@ page says so.
 
 Open **Sessions → Tasks** for an additional view of your work. The existing
 terminal remains available through **Terminal** or **Inspect terminal**.
-Nothing is migrated or automatically stopped when you use this view.
+Existing named sessions and used general sessions appear automatically when you
+open or reload Tasks. Unused default sessions stay hidden. This creates task
+records linked to the existing terminals; it never starts or stops a session,
+copies a conversation, or overwrites task details you have already edited.
+Archived and completed tasks keep their session links and are not imported again.
 
 Create a task with a new session, or attach an existing session. Creating the
 record does not launch an agent. Tasks have a title, objective/summary, optional

@@ -59,3 +59,28 @@ test('conversation reader returns bounded public messages and tolerates partial 
   assert.ok(JSON.stringify(readConversation({ agent: 'codex', transcript })).length < 16000);
   assert.equal(readConversation({ agent: 'grok', transcript }).messages.length, 0);
 });
+
+test('opening Tasks imports existing work once and keeps user organization intact', t => {
+  const { root, paths, store } = fixture(t);
+  const named = store.create({ name: 'Existing investigation', description: 'Keep its purpose', agent: 'codex', workspace: 'homeassistant' });
+  const stopped = store.create({ name: 'Paused investigation', agent: 'claude', workspace: 'homeassistant' });
+  // Seed a stopped registration without invoking a tmux process.
+  writeFileSync(join(root, 'sessions', stopped.id + '.json'), JSON.stringify({ ...stopped, stopped: true }));
+  store.rename('agent-homeassistant-claude', 'Existing general work');
+  const sessionBefore = readFileSync(join(root, 'sessions', named.id + '.json'), 'utf8');
+  const tasks = store.request({ method: 'tasks.list' });
+  assert.equal(tasks.length, 3, 'unused defaults are not imported');
+  const imported = tasks.find(task => task.title === named.name);
+  assert.equal(imported.summary, named.description);
+  assert.deepEqual(store.request({ method: 'tasks.get', task: imported.id }).sessions, [named.id]);
+  assert.equal(readFileSync(join(root, 'sessions', named.id + '.json'), 'utf8'), sessionBefore, 'import never changes terminal records');
+  assert.equal(store.get(stopped.id).stopped, true);
+  const archived = store.request({ method: 'tasks.update', task: imported.id, revision: imported.revision,
+    title: 'Organized title', caseName: 'Existing case', summary: 'Edited summary', status: 'archived' });
+  const before = readFileSync(join(root, 'tasks', 'records.json'), 'utf8');
+  assert.equal(createSessionStore(paths).request({ method: 'tasks.list' }).length, 3);
+  assert.equal(readFileSync(join(root, 'tasks', 'records.json'), 'utf8'), before, 'reload does not rewrite or duplicate imports');
+  assert.equal(store.request({ method: 'tasks.get', task: archived.id }).status, 'archived');
+  store.create({ name: 'Work started later in terminal', agent: 'grok', workspace: 'homeassistant' });
+  assert.equal(store.request({ method: 'tasks.list' }).length, 4, 'later terminal work also appears');
+});

@@ -49,14 +49,38 @@ export function createTaskStore({ stateDir, sessions, conversation }) {
     const fd = openSync(join(directory, 'lock'), 'a', 0o600);
     try {
       execFileSync('flock', ['-x', '3'], { stdio: ['ignore', 'ignore', 'pipe', fd], timeout: 5000 });
-      const records = read(), result = operation(records);
+      const records = read(), before = JSON.stringify(records), result = operation(records);
+      if (JSON.stringify(records) === before) return result;
       const temp = path + '.' + randomUUID() + '.tmp';
       writeFileSync(temp, JSON.stringify(records) + '\n', { mode: 0o600 }); renameSync(temp, path);
       return result;
     } finally { closeSync(fd); }
   }
+  function existingTasks() {
+    // The task view is also an entry point to work started in the terminal.
+    // Reconcile under the same lock as edits/creation so concurrent browsers
+    // cannot import the same session twice. All statuses count as linked,
+    // including archived tasks, and imported metadata is never refreshed over
+    // edits the user has made in Tasks.
+    return change(records => {
+      const linked = new Set(records.flatMap(task => task.sessions));
+      for (const session of sessions.list()) {
+        if (records.length >= 500) break;
+        if (linked.has(session.id)) continue;
+        if (!session.id.startsWith('session-') && session.name === 'Main' &&
+            !session.description && !session.running && !session.conversationId && !session.stopped) continue;
+        records.push({ id: randomUUID(),
+          title: session.name === 'Main' ? `General session · ${session.agent}` : session.name,
+          caseName: '', summary: session.description || '', workspace: session.workspace,
+          status: 'open', sessions: [session.id], notes: [], revision: 1,
+          createdAt: Date.now(), updatedAt: Date.now() });
+        linked.add(session.id);
+      }
+      return records;
+    });
+  }
   function request(input) {
-    if (input.method === 'tasks.list') return read().map(({ notes, sessions: linked, ...task }) => ({ ...task, summary: task.summary.slice(0, 160), sessionCount: linked.length, noteCount: notes.length }));
+    if (input.method === 'tasks.list') return existingTasks().map(({ notes, sessions: linked, ...task }) => ({ ...task, summary: task.summary.slice(0, 160), sessionCount: linked.length, noteCount: notes.length }));
     if (input.method === 'tasks.get') {
       const task = get(input.task);
       return { ...task, notes: task.notes.slice(-20), conversations: task.sessions.map(id => {
