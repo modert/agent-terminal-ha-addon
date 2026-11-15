@@ -22,6 +22,7 @@ test('task workspace persists work and preserves the terminal on desktop and pho
   const root = mkdtempSync(join(tmpdir(), 'task-browser-store-'));
   const optionsPath = join(root, 'options.json'); writeFileSync(optionsPath, '{"agent":"codex"}');
   const store = createSessionStore({ stateDir: root, optionsPath, homeDirectory: root, tmux: '/nonexistent-task-test-tmux' });
+  store.create({ name: 'Existing terminal task', agent: 'claude', workspace: 'homeassistant' });
   t.after(() => rmSync(root, { recursive: true, force: true }));
   let html = fixtureHtml(readFileSync(bundle, 'utf8'));
   html = html.replace('window.fetch = async', "window.testTasksRequest = window.fetch.bind(window); window.fetch = async");
@@ -109,6 +110,7 @@ test('task workspace persists work and preserves the terminal on desktop and pho
     await until("window.testSocket?.onmessage && document.getElementById('overlay').hidden");
     await evaluate("document.getElementById('sessions-open').click(); document.getElementById('tasks-open').click();");
     await until("!document.getElementById('tasks-view').hidden");
+    await until("document.getElementById('tasks-list').textContent.includes('Existing terminal task')");
     assert.equal(await evaluate("document.getElementById('app').inert"), true);
     await evaluate(`document.getElementById('tasks-new').click();
       document.getElementById('task-new-title').value = 'Task at ${width}';
@@ -136,5 +138,5 @@ test('task workspace persists work and preserves the terminal on desktop and pho
     await until("document.getElementById('tasks-view').hidden");
     assert.equal(await evaluate("document.getElementById('paste-text').value"), 'Inspect the configuration');
   }
-  assert.equal(store.request({ method: 'tasks.list' }).length, 3);
+  assert.equal(store.request({ method: 'tasks.list' }).length, 4);
 });

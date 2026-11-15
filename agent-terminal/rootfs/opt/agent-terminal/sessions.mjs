@@ -224,7 +224,7 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     });
   }
   const health = createHealthStore({ stateDir, sessions: { create, get, start } });
-  const tasks = createTaskStore({ stateDir, sessions: { create, get }, conversation });
+  const tasks = createTaskStore({ stateDir, sessions: { create, get, list }, conversation });
   const snapshot = () => ({ sessions: list(), agents: agents(), workspaces: workspaces.list(), health: health.snapshot() });
   function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid request.');

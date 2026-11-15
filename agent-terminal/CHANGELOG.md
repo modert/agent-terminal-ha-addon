@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 2.15.1
+- Show existing named and used general terminal sessions automatically in
+  Tasks. Preserve session state and edited task details, skip unused defaults,
+  and avoid duplicates across reloads, including completed or archived tasks.
+
 ## 2.15.0
 - Add an optional task workspace under Sessions → Tasks while preserving the
   full terminal interface and live sessions.
