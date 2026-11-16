@@ -142,10 +142,12 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     if (existsSync(registry)) for (const file of readdirSync(registry).sort()) {
       if (file.endsWith('.json') && NAMED.test(file.slice(0, -5))) ids.push(file.slice(0, -5));
     }
-    const live = spawnSync(tmux, ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
-    const running = new Set((live.stdout || '').trim().split('\n'));
+    const live = spawnSync(tmux, ['list-sessions', '-F', '#{session_name}\t#{session_activity}'], { encoding: 'utf8' });
+    const running = new Map((live.stdout || '').trim().split('\n').map(line => {
+      const [id, activity] = line.split('\t'); return [id, Number(activity) * 1000 || 0];
+    }));
     return ids.flatMap(id => {
-      try { const record = get(id); return [{ ...record, running: running.has(id) }]; }
+      try { const record = get(id); return [{ ...record, running: running.has(id), lastActivityAt: running.get(id) || 0 }]; }
       catch (error) { console.error(`agent-sessions: skipping ${id}: ${error.message}`); return []; }
     });
   }
@@ -230,9 +232,18 @@ export function createSessionStore({ stateDir = process.env.AGENT_TERMINAL_STATE
     if (input.method === 'workspace.list') {
       const inventory = await workRequest('list', { force: input.force === true });
       tasks.reconcileThreads(inventory.threads, workspaces.list());
+      const registered = list();
       return { tasks: tasks.request({ method: 'tasks.list' }).map(task => {
-        const statuses = (task.threads || []).map(ref => inventory.threads.find(row => row.id === ref.id && row.provider === ref.provider)?.status).filter(Boolean);
-        return { ...task, runtime: statuses.find(s => s.activeFlags?.length || ['needs_you', 'requires_action'].includes(s.type)) || statuses.find(s => ['active', 'running'].includes(s.type)) || statuses[0] || null };
+        const threads = (task.threads || []).flatMap(ref => inventory.threads.filter(row => row.id === ref.id && row.provider === ref.provider));
+        const statuses = threads.map(row => row.status).filter(Boolean);
+        const linked = tasks.get(task.id).sessions;
+        const terminals = registered.filter(s => (task.threads || []).some(ref => ref.provider === s.agent && ref.id === s.conversationId) ||
+          linked.includes(s.id) && (!s.conversationId || !task.threads?.length));
+        const active = terminals.filter(s => s.running && !s.stopped);
+        const activity = [...threads.map(row => row.updatedAt), ...terminals.map(s => s.lastActivityAt)].filter(v => Number.isFinite(v) && v > 0);
+        return { ...task, activeSessions: active.map(s => ({ id: s.id, name: s.name, agent: s.agent })),
+          lastActivityAt: activity.length ? Math.max(...activity) : task.updatedAt,
+          runtime: statuses.find(s => s.activeFlags?.length || ['needs_you', 'requires_action'].includes(s.type)) || statuses.find(s => ['active', 'running'].includes(s.type)) || statuses[0] || null };
       }), errors: inventory.errors };
     }
     if (input.method === 'workspace.create') {

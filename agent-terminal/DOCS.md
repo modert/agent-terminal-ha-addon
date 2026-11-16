@@ -317,7 +317,11 @@ The terminal remains the default landing view. Open **Sessions → Tasks** to tr
 Agent Workspace. It discovers saved ChatGPT, Claude,
 and Ollama conversations as well as named and used terminal sessions. Existing
 conversations keep their original history; discovery does not start an agent.
-Search and filter by project, case, outcome, or current agent activity.
+Search and filter by project, case, outcome, or current agent activity. The list
+puts Needs you first, active sessions next, and recent work after that, ordered
+by latest conversation or terminal activity within each section. Terminal open
+means a terminal is running, not necessarily that its agent is working. Use the
+Active sessions filter or search a session name to find current terminals.
 
 Open a task to chat directly, load earlier messages, answer questions, approve or
 decline requests, stop work, attach files, dictate, and inspect reported files.
