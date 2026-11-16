@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.16.1
+- Restore the terminal as the default landing view. Agent Workspace stays
+  available through Sessions → Tasks and does not reopen automatically on reload.
+- Add coverage for continuing imported conversations without creating replacement
+  tasks, and reopening saved Codex and Claude conversations in a separate client.
+
 ## 2.16.0
 - Make Agent Workspace the default view, discovering saved provider conversations
   alongside existing terminal sessions. Keep full terminal and split views available.

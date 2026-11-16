@@ -2534,7 +2534,7 @@ body.split #session-bar .agent-button, body.side-pane #session-bar .agent-button
 
   layout();
   doFit();
-  var startInWorkspace = workspaceManager && !sidePane && new URLSearchParams(location.search).get('view') !== 'terminal' && !queryArgs.length && window.AGENT_WORKSPACE_DEFAULT !== false;
+  var startInWorkspace = workspaceManager && !sidePane && new URLSearchParams(location.search).get('view') !== 'terminal' && !queryArgs.length && window.AGENT_WORKSPACE_DEFAULT === true;
   if (startInWorkspace) {
     workspaceManager.open();
     fetch(tokenUrl, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (data) { sessionManager.connect(data.token || ''); }).catch(function () { sessionManager.connect(''); });

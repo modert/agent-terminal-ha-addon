@@ -41,10 +41,21 @@ test('native Codex chat sends and reads a persisted response through an isolated
   assert.ok(history.items.some(m => m.role === 'assistant' && m.text === 'Workspace native test response.'), JSON.stringify({ turn: history.turn, status: history.status }));
   assert.equal(requests, 1);
   assert.ok((await provider.list()).some(row => row.id === thread.id));
+  const endpoint = (await provider.inspect(thread.id)).endpoint;
+  const resumed = createCodexProvider({ home: root, runtime: join(root, 'resume-client'), sharedSocket: endpoint });
+  t.after(() => resumed.close());
+  assert.ok((await resumed.history(thread.id)).items.some(m => m.text === 'Workspace native test response.'));
+  await resumed.send(thread.id, 'Continue the existing conversation.', randomUUID());
+  for (let i = 0; i < 200; i++) { await pause(100); history = await resumed.history(thread.id); if (requests === 2 && history.turn?.status === 'completed') break; }
+  assert.equal(requests, 2);
+  assert.ok(history.items.some(m => m.role === 'user' && m.text === 'Continue the existing conversation.'));
 });
 
 test('native Claude SDK chat keeps its own isolated session and receives a response', { timeout: 60000, skip: spawnSync('claude', ['--version']).status !== 0 }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'workspace-claude-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const originalConfig = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = root;
+  t.after(() => { if (originalConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = originalConfig; });
   let requests = 0;
   const server = createServer(async (req, res) => {
     for await (const chunk of req) { /* drain synthetic requests */ }
@@ -67,4 +78,13 @@ test('native Claude SDK chat keeps its own isolated session and receives a respo
   for (let i=0;i<300;i++) { await pause(100); history=await provider.history(thread.id); if (history.items.some(m=>m.text==='Claude workspace fixture response.') || history.error) break; }
   assert.ok(history.items.some(m=>m.role==='assistant' && m.text==='Claude workspace fixture response.'), history.error || JSON.stringify(history.status));
   assert.ok(requests >= 1);
+  await provider.close();
+  await pause(500);
+  const resumed = createClaudeProvider({ home: root, sdk: { ...sdk, query({prompt,options}) { return sdk.query({ prompt, options: { ...options, settingSources: [], env: { ...options.env, ANTHROPIC_API_KEY:'fixture', ANTHROPIC_AUTH_TOKEN:'', ANTHROPIC_BASE_URL:'http://127.0.0.1:' + server.address().port, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1' } } }); } } });
+  t.after(() => resumed.close());
+  assert.ok((await resumed.list()).some(row => row.id === thread.id));
+  assert.ok((await resumed.history(thread.id)).items.some(m => m.text === 'Claude workspace fixture response.'));
+  await resumed.send(thread.id, 'Continue the existing conversation.', randomUUID());
+  for (let i = 0; i < 300; i++) { await pause(100); history = await resumed.history(thread.id); if (history.items.filter(m => m.role === 'assistant' && m.text === 'Claude workspace fixture response.').length >= 2 || history.error) break; }
+  assert.ok(history.items.filter(m => m.role === 'assistant' && m.text === 'Claude workspace fixture response.').length >= 2, history.error || 'Existing conversation did not continue');
 });

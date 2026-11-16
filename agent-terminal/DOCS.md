@@ -313,7 +313,8 @@ page says so.
 
 ### Agent Workspace
 
-Agent Workspace is the default landing view. It discovers saved ChatGPT, Claude,
+The terminal remains the default landing view. Open **Sessions → Tasks** to try
+Agent Workspace. It discovers saved ChatGPT, Claude,
 and Ollama conversations as well as named and used terminal sessions. Existing
 conversations keep their original history; discovery does not start an agent.
 Search and filter by project, case, outcome, or current agent activity.
