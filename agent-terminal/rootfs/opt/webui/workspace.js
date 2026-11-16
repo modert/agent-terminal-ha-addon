@@ -25,6 +25,8 @@ window.AgentWorkspace = function (options) {
   function project(task) { return task.project || (options.config.workspaces.find(function (w) { return w.id === task.workspace; }) || {}).directory || task.workspace; }
   function projectName(task) { var path = project(task); return path.split('/').filter(Boolean).pop() || path; }
   function runtime(task) { return task.runtime || null; }
+  function active(task) { return !!(task.activeSessions || []).length || ['Working', 'Needs you'].includes(runtimeLabel(runtime(task))); }
+  function priority(task) { return runtimeLabel(runtime(task)) === 'Needs you' || task.status === 'needs_you' ? 0 : active(task) ? 1 : 2; }
   function runtimeLabel(status) {
     if (!status) return '';
     if (status.activeFlags && status.activeFlags.length || status.type === 'needs_you' || status.type === 'requires_action') return 'Needs you';
@@ -37,21 +39,27 @@ window.AgentWorkspace = function (options) {
     list.textContent = '';
     var visible = tasks.filter(function (t) {
       var state = runtimeLabel(runtime(t));
-      return (!scope || project(t) === scope) && (t.title + ' ' + t.caseName + ' ' + t.summary + ' ' + project(t)).toLowerCase().includes(query) &&
-        (filter === 'all' || filter === 'active' && !['done', 'archived'].includes(t.status) || filter === 'needs_you' && (state === 'Needs you' || t.status === filter) || filter === 'working' && state === 'Working' || t.status === filter);
+      return (!scope || project(t) === scope) && (t.title + ' ' + t.caseName + ' ' + t.summary + ' ' + project(t) + ' ' + (t.activeSessions || []).map(function (s) { return s.name; }).join(' ')).toLowerCase().includes(query) &&
+        (filter === 'all' || filter === 'active' && (active(t) || !['done', 'archived'].includes(t.status)) || filter === 'sessions' && active(t) || filter === 'needs_you' && (state === 'Needs you' || t.status === filter) || filter === 'working' && state === 'Working' || t.status === filter);
     });
-    visible.sort(function (a, b) { return Number(runtimeLabel(runtime(b)) === 'Needs you') - Number(runtimeLabel(runtime(a)) === 'Needs you') || (a.caseName || projectName(a)).localeCompare(b.caseName || projectName(b)) || b.updatedAt - a.updatedAt; });
+    visible.sort(function (a, b) { return priority(a) - priority(b) || (b.lastActivityAt || b.updatedAt) - (a.lastActivityAt || a.updatedAt) || a.id.localeCompare(b.id); });
     el('work-count').textContent = visible.length + ' tasks';
     if (!visible.length) node('p', query || scope || filter !== 'active' ? 'No work matches these filters.' : 'Your saved conversations appear here. Start a task to begin new work.', list, 'work-muted');
     var group = '';
     visible.forEach(function (task) {
-      var label = task.caseName || projectName(task);
+      var label = ['Needs you', 'Active sessions', 'Recent work'][priority(task)];
       if (label !== group) { node('h3', label, list, 'work-group'); group = label; }
       var b = button('', list, function () { if (!busy) openTask(task.id); }, 'work-card'); b.dataset.task = task.id;
       b.setAttribute('aria-current', String(selected && selected.id === task.id));
       node('strong', task.title, b);
       var providers = (task.threads || []).map(function (r) { return r.provider; }).filter(function (v, i, all) { return all.indexOf(v) === i; });
-      node('small', (providers.join(' · ') || 'Terminal') + ' · ' + (runtimeLabel(runtime(task)) || states[task.status]), b, 'work-muted');
+      var status = runtimeLabel(runtime(task));
+      if ((task.activeSessions || []).length && !['Working', 'Needs you'].includes(status)) status = 'Terminal open';
+      node('small', (providers.join(' · ') || 'Terminal') + ' · ' + (status || states[task.status]), b, 'work-muted');
+      node('small', [task.caseName, projectName(task)].filter(Boolean).join(' · '), b, 'work-muted');
+      if ((task.activeSessions || []).length) node('small', task.activeSessions.map(function (s) { return s.name === 'Main' ? s.agent : s.name; }).join(' · '), b, 'work-muted');
+      var at = task.lastActivityAt || task.updatedAt;
+      if (at) node('small', 'Last activity: ' + new Date(at).toLocaleString(), b, 'work-muted');
     });
   }
   async function refresh(force) {

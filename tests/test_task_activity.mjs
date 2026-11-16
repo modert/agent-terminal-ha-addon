@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync, writeFileSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createSessionStore} from '../agent-terminal/rootfs/opt/agent-terminal/sessions.mjs';
+
+test('task activity follows provider updates and running terminal activity without changing task edits', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'task-activity-')); t.after(() => rmSync(root, {recursive:true,force:true}));
+  const optionsPath = join(root,'options.json'), tmux = join(root,'tmux');
+  writeFileSync(optionsPath,'{"agent":"codex"}');
+  writeFileSync(tmux,'#!/bin/sh\nexit 1\n',{mode:0o755});
+  const row = {provider:'codex',id:'550e8400-e29b-41d4-a716-446655440040',cwd:root,title:'Existing work',createdAt:1000,updatedAt:2000,status:{type:'notLoaded'}};
+  const store = createSessionStore({stateDir:root,optionsPath,homeDirectory:root,tmux,workRequest:async()=>({threads:[row],errors:[]})});
+  const session = store.create({agent:'shell',workspace:'homeassistant',name:'Current terminal'});
+  writeFileSync(tmux,'#!/bin/sh\nif [ "$1" = "list-sessions" ]; then printf "%s\\t%s\\n" "'+session.id+'" "123"; else exit 1; fi\n',{mode:0o755});
+  let result = await store.request({method:'workspace.list'});
+  const native = result.tasks.find(t=>t.threads?.length), terminal = result.tasks.find(t=>t.activeSessions?.length);
+  assert.equal(native.lastActivityAt,2000);
+  assert.equal(terminal.lastActivityAt,123000);
+  assert.equal(terminal.activeSessions[0].name,'Current terminal');
+  const revision = native.revision;
+  row.updatedAt = 9000;
+  result = await store.request({method:'workspace.list'});
+  assert.equal(result.tasks.find(t=>t.id===native.id).lastActivityAt,9000);
+  assert.equal(result.tasks.find(t=>t.id===native.id).revision,revision);
+  writeFileSync(tmux,'#!/bin/sh\nexit 1\n',{mode:0o755});
+  result = await store.request({method:'workspace.list'});
+  assert.deepEqual(result.tasks.find(t=>t.id===terminal.id).activeSessions,[]);
+});

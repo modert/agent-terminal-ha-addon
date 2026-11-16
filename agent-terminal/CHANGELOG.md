@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.16.2
+- Put tasks needing attention and active sessions ahead of recent work, ordered
+  by current conversation and terminal activity instead of alphabetical case names.
+- Add an Active sessions filter, searchable running-session names, and visible
+  activity timestamps. Distinguish open terminals from agents currently working.
+- Avoid marking an old conversation active when its terminal has moved on.
+
 ## 2.16.1
 - Restore the terminal as the default landing view. Agent Workspace stays
   available through Sessions → Tasks and does not reopen automatically on reload.

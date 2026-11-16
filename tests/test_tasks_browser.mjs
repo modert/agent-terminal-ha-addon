@@ -120,7 +120,7 @@ test('unified workspace discovers history, chats, approves and inspects without 
     await evaluate("document.getElementById('tasks-open').click()");
     await until("document.getElementById('work-list')?.textContent.includes('Existing saved work')");
     assert.equal(await evaluate("document.getElementById('tasks-view').hidden"), false, 'workspace opens on request');
-    await evaluate("document.querySelector('#work-list button').click()");
+    await evaluate("[...document.querySelectorAll('#work-list button')].find(b=>b.textContent.includes('Existing saved work')).click()");
     await until("document.getElementById('work-messages').textContent.includes('Existing saved conversation')");
     await evaluate("document.getElementById('work-older').click()");
     await until("document.getElementById('work-messages').textContent.includes('An older message')");
@@ -161,6 +161,20 @@ test('unified workspace discovers history, chats, approves and inspects without 
     await until("!document.getElementById('work-inspector').hidden");
     assert.equal(await evaluate("document.getElementById('tasks-view').hidden"), false, 'inspection stays inside the task');
     await evaluate("document.getElementById('work-inspector-close').click()");
+    if (width === 1280) {
+      const existing = provider.rows.get('550e8400-e29b-41d4-a716-446655440040');
+      existing.updatedAt = Date.now() + 60000;
+      await evaluate("document.getElementById('work-refresh').click()");
+      await until("document.querySelector('#work-list button').textContent.includes('Existing saved work')");
+      const current = [...provider.rows.values()].find(r => r.id !== existing.id);
+      current.status = { type: 'active' };
+      await evaluate("document.getElementById('work-refresh').click()");
+      await until("document.querySelector('#work-list button').textContent.includes('Unified task 1280')");
+      await evaluate("document.getElementById('work-filter').value = 'sessions'; document.getElementById('work-filter').dispatchEvent(new Event('change'))");
+      assert.equal(await evaluate("document.querySelectorAll('#work-list button').length"), 1);
+      await evaluate("document.getElementById('work-filter').value = 'active'; document.getElementById('work-filter').dispatchEvent(new Event('change'))");
+      current.status = { type: 'idle' };
+    }
     assert.equal(await evaluate("document.getElementById('tasks-view').scrollWidth <= innerWidth"), true, JSON.stringify(await evaluate("({width:innerWidth,overflow:[...document.querySelectorAll('#tasks-view *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>[e.id,e.tagName,Math.round(e.getBoundingClientRect().right)]).slice(0,20)})")));
     if (process.env.TASK_SCREENSHOT_DIR) { const shot = await command('Page.captureScreenshot'); writeFileSync(join(process.env.TASK_SCREENSHOT_DIR, 'workspace-' + width + '.png'), Buffer.from(shot.data,'base64')); }
   }
