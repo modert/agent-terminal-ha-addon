@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 2.16.3
+- Update the Codex CLI to 0.172.0.
+
 ## 2.16.2
 - Put tasks needing attention and active sessions ahead of recent work, ordered
   by current conversation and terminal activity instead of alphabetical case names.
